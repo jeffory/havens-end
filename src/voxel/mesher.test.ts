@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Block } from './blocks';
 import { buildPaddedVolume, meshPaddedVolume } from './mesher';
+import { paletteFromRgba } from './palette';
 import { VoxelWorld } from './VoxelWorld';
 
 function meshChunk(world: VoxelWorld, cx: number, cy: number, cz: number) {
@@ -69,5 +70,24 @@ describe('mesher', () => {
     const occluded = meshChunk(world, 0, 0, 0)!;
     const darkest = (colors: Float32Array) => Math.min(...colors);
     expect(darkest(occluded.colors)).toBeLessThan(darkest(lone.colors));
+  });
+});
+
+describe('mesher options for models', () => {
+  it('keeps underside faces when bedrock is off', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 0, 5, Block.Stone);
+    const mesh = meshPaddedVolume(buildPaddedVolume(world, 0, 0, 0, undefined, false), 0, 0, 0);
+    expect(mesh!.indices.length / 6).toBe(6);
+  });
+
+  it('colours voxels from the palette it is given', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, 200);
+    const rgba = new Uint8Array(256 * 4);
+    rgba.set([255, 0, 0, 255], 200 * 4);
+    const mesh = meshPaddedVolume(buildPaddedVolume(world, 0, 0, 0), 0, 0, 0, paletteFromRgba(rgba))!;
+    expect(mesh.colors[0]).toBeGreaterThan(0.5); // red
+    expect(mesh.colors[1]).toBe(0);
   });
 });

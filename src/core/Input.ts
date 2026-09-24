@@ -14,7 +14,7 @@ export class Input {
   /** Pointer position in normalised device coordinates. */
   readonly pointer = { x: 0, y: 0, inside: false };
   private readonly held = new Set<string>();
-  private readonly pressed = new Set<string>();
+  private readonly pressed = new Map<string, number>();
   private readonly clicks: PointerClick[] = [];
   private wheel = 0;
 
@@ -34,8 +34,9 @@ export class Input {
     return this.held.has(code);
   }
 
-  wasPressed(code: string): boolean {
-    return this.pressed.has(code);
+  /** How many times `code` went down since the last endFrame(). */
+  presses(code: string): number {
+    return this.pressed.get(code) ?? 0;
   }
 
   takeWheel(): number {
@@ -61,7 +62,7 @@ export class Input {
   }
 
   private readonly onKeyDown = (e: KeyboardEvent) => {
-    if (!e.repeat) this.pressed.add(e.code);
+    if (!e.repeat) this.pressed.set(e.code, this.presses(e.code) + 1);
     this.held.add(e.code);
   };
 

@@ -1,6 +1,7 @@
 import { hash3 } from '../util/hash';
-import { Block, BLOCK_COLORS, isSolid } from './blocks';
+import { Block, BLOCK_PALETTE } from './blocks';
 import { Chunk, CHUNK_SIZE } from './Chunk';
+import type { VoxelPalette } from './palette';
 import type { VoxelWorld } from './VoxelWorld';
 
 /** A chunk plus a one-voxel border borrowed from its neighbours. */
@@ -30,10 +31,11 @@ export function buildPaddedVolume(
   cy: number,
   cz: number,
   out: Uint8Array = new Uint8Array(P * P * P),
+  /** Terrain is never seen from below, so treat y < 0 as bedrock and skip the underside faces. Off for models. */
+  bedrock = true,
 ): Uint8Array {
   out.fill(Block.Air);
-  // Nothing is ever visible from below the world, so treat y < 0 as bedrock and skip the underside faces.
-  if (cy === 0) out.fill(Block.Stone, 0, P2);
+  if (bedrock && cy === 0) out.fill(Block.Stone, 0, P2);
 
   for (let ny = -1; ny <= 1; ny++) {
     for (let nz = -1; nz <= 1; nz++) {
@@ -112,12 +114,20 @@ const COLOR_JITTER = 0.07;
 
 /**
  * Builds a face-culled mesh with per-vertex ambient occlusion from a padded volume.
- * Pure function: no world access, no Three.js.
+ * Pure function: no world access, no Three.js. Terrain uses block colours; models
+ * (ships) pass the palette from their .vox file.
  *
  * Plain culled faces rather than greedy meshing: with AO and colour jitter on every
  * voxel, few faces could be merged anyway. Revisit if triangle counts ever matter.
  */
-export function meshPaddedVolume(vol: Uint8Array, originX: number, originY: number, originZ: number): MeshData | null {
+export function meshPaddedVolume(
+  vol: Uint8Array,
+  originX: number,
+  originY: number,
+  originZ: number,
+  palette: VoxelPalette = BLOCK_PALETTE,
+): MeshData | null {
+  const { colors: rgb, solid } = palette;
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -129,25 +139,25 @@ export function meshPaddedVolume(vol: Uint8Array, originX: number, originY: numb
       for (let px = 1; px <= CHUNK_SIZE; px++) {
         const i = px + pz * P + py * P2;
         const id = vol[i];
-        if (!isSolid(id)) continue;
+        if (!solid[id]) continue;
 
         const x = px - 1;
         const y = py - 1;
         const z = pz - 1;
         const shade = 1 + (hash3(originX + x, originY + y, originZ + z) * 2 - 1) * COLOR_JITTER;
-        const r = BLOCK_COLORS[id * 3] * shade;
-        const g = BLOCK_COLORS[id * 3 + 1] * shade;
-        const b = BLOCK_COLORS[id * 3 + 2] * shade;
+        const r = rgb[id * 3] * shade;
+        const g = rgb[id * 3 + 1] * shade;
+        const b = rgb[id * 3 + 2] * shade;
 
         for (const face of FACES) {
-          if (isSolid(vol[i + face.neighbor])) continue;
+          if (solid[vol[i + face.neighbor]]) continue;
 
           const base = positions.length / 3;
           for (let c = 0; c < 4; c++) {
             const corner = face.corners[c];
-            const s1 = isSolid(vol[i + corner.side1]) ? 1 : 0;
-            const s2 = isSolid(vol[i + corner.side2]) ? 1 : 0;
-            const d = isSolid(vol[i + corner.diagonal]) ? 1 : 0;
+            const s1 = solid[vol[i + corner.side1]];
+            const s2 = solid[vol[i + corner.side2]];
+            const d = solid[vol[i + corner.diagonal]];
             ao[c] = s1 && s2 ? 0 : 3 - (s1 + s2 + d);
             const light = AO_CURVE[ao[c]];
             positions.push(x + corner.x, y + corner.y, z + corner.z);

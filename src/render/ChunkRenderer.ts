@@ -1,8 +1,9 @@
-import { BufferAttribute, BufferGeometry, Group, Mesh, MeshLambertMaterial } from 'three';
+import { Group, Mesh, MeshLambertMaterial } from 'three';
 import type { Chunk } from '../voxel/Chunk';
 import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
+import { toGeometry } from './voxelGeometry';
 
 /**
  * Keeps one Three.js mesh per non-empty chunk in sync with the voxel data. It never
@@ -49,12 +50,7 @@ export class ChunkRenderer {
       return;
     }
 
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
-    geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
-    geometry.setAttribute('color', new BufferAttribute(data.colors, 3));
-    geometry.setIndex(new BufferAttribute(data.indices, 1));
-    geometry.computeBoundingSphere();
+    const geometry = toGeometry(data);
 
     if (existing) {
       existing.geometry.dispose();

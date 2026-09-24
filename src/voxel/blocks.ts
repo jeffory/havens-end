@@ -1,3 +1,5 @@
+import { srgbToLinear, type VoxelPalette } from './palette';
+
 /** Block ids stored in chunk voxel arrays (one byte each, so up to 256 kinds). */
 export const Block = {
   Air: 0,
@@ -31,10 +33,7 @@ const DEFS: Record<BlockId, BlockDef> = {
 };
 
 const SOLID = new Uint8Array(256);
-/** Linear-space RGB per block id, ready to be written into vertex colours. */
-export const BLOCK_COLORS = new Float32Array(256 * 3);
-
-const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const BLOCK_COLORS = new Float32Array(256 * 3);
 
 for (const [key, def] of Object.entries(DEFS)) {
   const id = Number(key);
@@ -46,3 +45,6 @@ for (const [key, def] of Object.entries(DEFS)) {
 
 /** Solid blocks occlude neighbouring faces, block movement and stop rays. */
 export const isSolid = (id: BlockId): boolean => SOLID[id] === 1;
+
+/** Terrain colours and solidity, in the form the mesher takes. */
+export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID };

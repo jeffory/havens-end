@@ -1,6 +1,8 @@
 import { FixedStep } from './FixedStep';
 
 export interface LoopHandlers {
+  /** Runs first every frame, before any sim step: the place to poll input. */
+  beginFrame?(frameSeconds: number): void;
   /** Advances the simulation by exactly `dt` seconds. May run 0..n times per frame. */
   update(dt: number): void;
   /**
@@ -43,6 +45,7 @@ export class GameLoop {
     const frameSeconds = this.lastTime < 0 ? 0 : (now - this.lastTime) / 1000;
     this.lastTime = now;
 
+    this.handlers.beginFrame?.(frameSeconds);
     const { steps, alpha } = this.clock.advance(frameSeconds);
     for (let i = 0; i < steps; i++) this.handlers.update(this.clock.step);
     this.handlers.render(alpha, frameSeconds);

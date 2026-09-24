@@ -16,6 +16,7 @@ import {
 } from 'three';
 import type { SeabedMap } from '../ocean/SeabedMap';
 import { glslFloat, WATER_LEVEL, WAVE_AMPLITUDE, WAVE_GLSL, wavePhases } from '../ocean/waves';
+import { WAKE_LIFETIME, WAKE_POINTS } from './Wake';
 
 export const OCEAN_COLORS = {
   shallow: 0x86e8d8,
@@ -37,6 +38,8 @@ export class OceanRenderer {
 
   constructor(
     private readonly seabed: SeabedMap,
+    /** Ship wake points (see Wake); shared objects, so the ocean always sees the latest. */
+    wake: Vector4[],
     gridSize = 160,
   ) {
     this.group.name = 'ocean';
@@ -53,6 +56,7 @@ export class OceanRenderer {
       uMid: { value: new Color(OCEAN_COLORS.mid) },
       uDeep: { value: new Color(OCEAN_COLORS.deep) },
       uFoam: { value: new Color(OCEAN_COLORS.foam) },
+      uWake: { value: wake },
     };
 
     // Unit column whose top face sits at local y = 0; the shader lifts it by the wave height.
@@ -132,6 +136,7 @@ uniform vec3 uMid;
 uniform vec3 uDeep;
 uniform vec3 uFoam;
 uniform float uTime;
+uniform vec4 uWake[${WAKE_POINTS}];
 varying float vDepth;
 varying float vWave;
 varying vec2 vCell;`,
@@ -146,7 +151,19 @@ water *= 1.0 + vWave * ${glslFloat(0.08 / WAVE_AMPLITUDE)};
 // Surf flickering on the cells that touch the beach.
 float flicker = fract(sin(dot(floor(vCell) + mod(floor(uTime * 1.5), 64.0), vec2(12.9898, 78.233))) * 43758.5453);
 float surf = (1.0 - smoothstep(0.5, 1.2, vDepth)) * step(0.45, flicker);
-diffuseColor.rgb = mix(water, uFoam, surf * 0.85);
+// Wake: dithered foam cells along the ship's recent track, spreading and thinning with age.
+float wake = 0.0;
+for (int i = 0; i < ${WAKE_POINTS}; i++) {
+  vec4 w = uWake[i];
+  if (w.w <= 0.0) continue;
+  float radius = 1.0 + w.z * 0.7;
+  float inside = 1.0 - smoothstep(radius - 0.8, radius, distance(vCell, w.xy));
+  wake = max(wake, inside * w.w * (1.0 - w.z / ${glslFloat(WAKE_LIFETIME)}));
+}
+float grain = fract(sin(dot(floor(vCell), vec2(39.34, 11.13)) + mod(floor(uTime * 4.0), 97.0)) * 24634.6345);
+// Strictly greater: fract() can return exactly 0.0 at this magnitude, and step(0.0, 0.0) is 1.
+float foam = max(surf * 0.85, wake * 0.95 > grain ? 0.8 : 0.0);
+diffuseColor.rgb = mix(water, uFoam, foam);
 // Shallows are see-through so the sand shows; deep water is opaque.
 diffuseColor.a = mix(0.6, 1.0, smoothstep(0.8, 4.5, vDepth));`,
         );

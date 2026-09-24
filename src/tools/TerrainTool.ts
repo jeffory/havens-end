@@ -35,6 +35,7 @@ export class TerrainTool {
       new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
     );
     this.highlight.visible = false;
+    this.highlight.renderOrder = 1; // after the transparent ocean
   }
 
   update(input: Input): void {

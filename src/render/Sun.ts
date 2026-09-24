@@ -2,14 +2,16 @@ import { DirectionalLight, HemisphereLight, type Scene, Vector3 } from 'three';
 
 const SHADOW_MAP_SIZE = 2048;
 const LIGHT_DISTANCE = 200;
+const SUN_INTENSITY = 2.4;
+const SKY_INTENSITY = 1.4;
 
 /**
  * Sun and sky light. The shadow frustum follows the camera focus and scales with zoom;
  * it moves in whole shadow-map texels so voxel edges don't crawl as the camera pans.
  */
 export class Sun {
-  readonly light = new DirectionalLight(0xfff0d6, 2.4);
-  readonly sky = new HemisphereLight(0xd4ecff, 0x6b7f56, 1.4);
+  readonly light = new DirectionalLight(0xfff0d6, SUN_INTENSITY);
+  readonly sky = new HemisphereLight(0xd4ecff, 0x6b7f56, SKY_INTENSITY);
   /** Unit vector pointing from the ground toward the sun. */
   private readonly toSun = new Vector3(-0.5, 0.78, 0.38).normalize();
   // Axes of the shadow camera, which looks along -toSun.
@@ -32,6 +34,12 @@ export class Sun {
     this.light.castShadow = true;
 
     scene.add(this.light, this.light.target, this.sky);
+  }
+
+  /** Dims the light under storm cloud: 0 = clear sky, 1 = the heart of a squall. */
+  setOvercast(amount: number): void {
+    this.light.intensity = SUN_INTENSITY * (1 - 0.45 * amount);
+    this.sky.intensity = SKY_INTENSITY * (1 - 0.2 * amount);
   }
 
   follow(focus: Vector3, cameraDistance: number): void {

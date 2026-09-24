@@ -59,3 +59,77 @@ canvas {
   font: 12px ui-monospace, monospace;
   opacity: 0.75;
 }
+
+.hud-nav {
+  left: auto;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compass {
+  flex: none;
+  width: 84px;
+  height: 84px;
+}
+
+.compass-face {
+  fill: rgb(255 255 255 / 0.55);
+  stroke: rgb(18 50 74 / 0.35);
+  stroke-width: 1.5;
+}
+
+.compass-north text {
+  fill: #b3372c;
+  font: 700 13px system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.compass-wind path {
+  fill: #1f7fa3;
+}
+
+.compass-ship path {
+  fill: #3b2a1f;
+}
+
+.nav-lines {
+  min-width: 12.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-muted {
+  opacity: 0.7;
+}
+
+.nav-sails {
+  font-family: ui-monospace, monospace;
+}
+
+.nav-warn {
+  color: #b3372c;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .hud-nav {
+    top: auto;
+    bottom: 12px;
+  }
+}
+
+.fatal {
+  position: absolute;
+  top: 40%;
+  left: 16px;
+  right: 16px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  color: #7a1f1a;
+  font: 13px/1.5 ui-monospace, monospace;
+  white-space: pre-wrap;
+}

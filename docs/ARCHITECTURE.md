@@ -2,18 +2,21 @@
 
 A 2.5D voxel pirate RPG: Sid Meier's *Pirates!* sailing and combat, Stardew-style
 base building on islands you shape yourself. This document records the decisions
-behind the codebase and the plan for the phases after Phase 1.
+behind the codebase and the plan for the phases still to come.
 
 ## 1. Stack
 
 | Concern | Choice | Why |
 |---|---|---|
 | Rendering | **Three.js r186, vanilla, `WebGLRenderer`** | Direct control over the hot paths (chunk meshes, instanced ocean, shadows). WebGL2 runs everywhere. |
-| Language / build | **TypeScript (strict) + Vite** | Fast HMR and zero-config TS. `tsc` typechecks; Vite bundles. |
+| Language / build | **TypeScript (strict) + Vite** | Fast HMR and zero-config TS. `tsc` typechecks; Vite bundles; `tsx` runs asset scripts. |
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §6. |
+| Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
 | UI | **Plain DOM overlay** now; React (DOM only) when menus arrive (Phase 4) | Menus are where React pays off; the 3D scene is not. |
+| Target | Desktop browsers, including higher-end laptops | Budgets below assume a discrete or recent integrated GPU. |
 
 ### Why not React Three Fiber?
 R3F is excellent for declarative scenes. This game's scene is mostly imperative:
@@ -56,8 +59,9 @@ Scale: **1 voxel = 1 world unit** (read it as a metre). Constants are in `src/co
   currently 38 chunks.
 - **Sea level** is `SEA_LEVEL = 12`: cells below y = 12 are underwater. The water
   surface sits at 11.6 ± 0.3, between voxel boundaries, so it never z-fights terrain.
-- **Worldgen is deterministic** in its seed (tested). Saves will store seed + edits,
-  not voxels.
+- **Compass.** North is −z and east is +x.
+- **Worldgen and weather are deterministic** in their seeds (tested). Saves will
+  store seeds + edits, not voxels or weather.
 
 ## 3. Voxel pipeline
 
@@ -75,12 +79,14 @@ per frame: ChunkRenderer.update(budget)
 - **Chunk size 32** balances draw calls (one mesh per chunk) against remesh cost.
 - **Face culling with per-vertex AO**, not greedy meshing. AO and per-voxel colour
   jitter would block most merges anyway, and the island is ~96k triangles.
+- **One mesher for everything.** It takes a palette (colours + solidity): terrain uses
+  block colours, ships use their `.vox` palette (`render/voxelGeometry.ts`).
 - **Worker-ready seam.** `meshPaddedVolume` is a pure function of a 39 KB array.
   When remeshing needs to leave the main thread, it moves into a Web Worker unchanged.
 - **Budgets.** One chunk costs ~3 ms to mesh on the main thread. Startup meshes
   everything; in play, at most 2 chunks are remeshed per frame.
-- **Bedrock.** Space below y = 0 counts as solid, so the world has no underside faces
-  (and tools refuse to dig y = 0).
+- **Bedrock.** For terrain, space below y = 0 counts as solid, so the world has no
+  underside faces (and tools refuse to dig y = 0). Models turn this off.
 - **Picking and hit tests** use a voxel DDA raycast (`voxel/raycast.ts`), which reads
   voxel data directly and is never stale.
 
@@ -88,45 +94,121 @@ per frame: ChunkRenderer.update(budget)
 
 - A **160×160 grid of instanced 1×1 water columns** follows the camera, snapping to
   whole cells so the columns line up with terrain voxels. Beyond it, a flat plane
-  reaches the horizon, and fog blends the two.
+  (just below the lowest wave) reaches the horizon, and fog blends the two.
 - **Waves** are three sine trains, quantised to 7 heights: stepped, voxel-style waves.
   The function exists **once in TypeScript** (`waveOffset`) and is **generated as
-  GLSL** from the same constants (`WAVE_GLSL`). Ships will float on exactly the
-  surface that is drawn. Phases are wrapped in double precision on the CPU, so the
-  waves stay accurate after hours of play.
+  GLSL** from the same constants (`WAVE_GLSL`). Ships ride exactly the surface that
+  is drawn. Phases are wrapped in double precision on the CPU, so the waves stay
+  accurate after hours of play.
 - **Depth-aware colour.** `SeabedMap` keeps a 256×256 byte map of terrain height,
   uploaded as a texture. The shader uses it for the turquoise-to-navy ramp,
   see-through shallows, beach surf, and to collapse columns inside dry land. It
   follows terrain edits, so digging a channel floods it.
+- **Wake.** The ship's recent stern positions (`render/Wake.ts`) are a uniform
+  array; the shader turns them into dithered, blocky foam that spreads and fades.
 - Implemented by injecting into `MeshStandardMaterial` (`onBeforeCompile`), so
   lighting, shadows and fog still apply.
 
-## 5. Simulation, physics and time
+## 5. Sailing and weather (Phase 2)
 
-**Loop.** `GameLoop` runs the **simulation at a fixed 60 Hz** (`FixedStep`,
-accumulator with a 250 ms clamp) and **renders at display rate**, interpolating with
-`alpha`. The rule, enforced by structure in `Game.ts`:
+**Ship frame.** Matches three.js `rotation.y = heading`: local +z is the bow, local
++x is **port**. World forward is `(sin h, cos h)`; increasing the heading turns to port.
+
+**Handling** (`sailing/ship.ts`, pure and deterministic, one call per fixed tick):
+- **Drive** = acceleration × canvas set × wind strength × a point-of-sail curve of
+  the angle off the *true* wind (`pointOfSail.ts`): 6% head to wind ("in irons", a
+  crawl), 45% close-hauled, 90% on a beam reach, 100% on a broad reach, 82% running.
+- **Drag** is quadratic plus a small linear term, tuned so full drive settles at
+  exactly `topSpeed`, so speeds build and bleed off over seconds (momentum).
+- **Leeway.** Wind shoves the hull sideways; a stiff keel lets only a little through.
+- **Steering.** Turn rate scales with speed (the rudder needs water flowing past it).
+  At rest you keep 35%, so a grounded ship can always turn off.
+- **The crew** move the rudder and canvas at finite rates: 2.5 s from furled to full.
+- **Heel** (visual) leans away from the wind and outward in turns.
+- Sail settings are furled, half and full.
+
+**Collision.** The hull's **waterline footprint comes from the model itself**. Hull
+voxels from the keel to one voxel above the water become outline samples every half
+voxel. Each tick the proposed pose is checked against solid voxels between keel
+depth and just above the water, so **water shallower than the draft grounds you**,
+and the shore, docks and anything you build all block. On contact: speed is cut
+hard, then the ship tries to slide along the obstacle on one axis, then to push off
+it (for turning into the shore). Aground status holds for 0.5 s so it doesn't flicker.
+
+**Weather** (`sailing/weather.ts`) is a pure function of `(seed, x, z, time)`:
+- **Trade winds** from the east-north-east, wandering ±20° over minutes.
+- **Squalls**: anticlockwise low-pressure spirals (north is up), strongest at ~0.7
+  radius, gusty, up to ~27 kn.
+- **Calms** smother the wind to a fifth.
+- Systems drift downwind at 2.2 u/s across a 3,000-unit region that wraps, so
+  weather keeps arriving. Generated systems keep clear of each other and of the home
+  island at the start.
+
+Because the field is a function, it costs nothing to save and can be sampled
+anywhere: by ships, the HUD, wind streaks, and later AI captains.
+
+**Feedback.** HUD compass: wind, heading and north in screen space, plus speed,
+point of sail, local conditions and sail setting. Wind streaks drift with the local
+wind. Squalls darken the sky and light. The flag streams with the *apparent* wind.
+
+**Controls** (`core/Controls.ts`) merge keyboard and any standard-mapping gamepad.
+Rudder is analog. Button presses are queued until the simulation takes them, so a
+tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz displays).
+
+| Action | Keyboard | Gamepad |
+|---|---|---|
+| Steer | A / D, ← / → | Left stick, d-pad ← → |
+| Sails up / down | W / S, ↑ / ↓ | D-pad ↑ ↓, Y / A |
+| Turn view | Q / E | LB / RB |
+| Zoom | Mouse wheel | Right stick ↕ |
+
+## 6. Ship art: MagicaVoxel authoring guide
+
+Ships live in `public/models/ships/*.vox`; handling stats are in `sailing/ships.ts`.
+`npm run make:placeholder-ship` regenerates the placeholder sloop, which is also a
+template: open it in MagicaVoxel and restyle it.
+
+1. **Axes:** Z up, **bow toward +Y**, starboard toward +X.
+2. **One object per moving part**, named in the world editor:
+   - `hull` (or any other name): everything fixed to the deck, meaning the hull,
+     masts, rails and, later, guns.
+   - `sail…` (`sail`, `sail_fore`, …): a flat panel square to the keel, hung on the
+     **forward face** of its mast. It swings about its aft face and furls upward
+     toward its top edge.
+   - `flag…`: streaming **aft** from where it meets the mast. It turns about its
+     forward top edge.
+3. **Hidden objects and layers are ignored**, handy for reference geometry.
+4. **Waterline:** nothing to mark. Set `draft` in the ship type (voxels from the keel
+   up to the waterline). It positions the model in the water and sets the grounding depth.
+5. **Palette:** colours come straight from the file. Every non-empty voxel is solid.
+
+**To verify with the first real export:** MagicaVoxel places each object by its
+pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, the
+only choice that keeps voxels on the grid, and our writer uses the same rule. If a
+real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
+
+## 7. Simulation, physics and time
+
+**Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
+60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
+rate**, interpolating with `alpha`. The rule, enforced by structure in `Game.ts`:
 
 > State that must be saved, replayed or kept deterministic lives in `sim` and changes
 > only in `update(dt)`. Everything in `render()` is derived from it and is disposable.
 
-Camera easing, highlights and HUD are presentation, so they run on frame time.
+Camera easing, wave riding, sail bracing, the wake, streaks and the HUD are
+presentation, so they run on frame time.
 
-**Planned physics (Phase 2+):**
-- **Ships:** a 2D rigid body on the water plane (position, heading, surge, sway, yaw
-  rate). Sail thrust comes from a point-of-sail curve of apparent wind. The keel
-  resists sideways drift, the rudder's turning force scales with speed, and drag is
-  quadratic. Heel, pitch and heave are visual only, sampled from `waveOffset` at
-  bow, stern and both beams. Grounding comes from `SeabedMap`/voxel lookups under the hull.
-- **Cannonballs:** point projectiles integrated per tick, inheriting ship velocity.
-  Each step's movement segment is tested against hull boxes, the voxel grid (DDA)
-  and the water plane (splash).
-- **Characters on land:** axis-separated swept AABB against the voxel grid, with
-  one-voxel step-up.
+**Still to build:**
+- **Cannonballs (Phase 3):** point projectiles integrated per tick, inheriting ship
+  velocity. Each step's movement segment is tested against hull footprints, the voxel
+  grid (DDA) and the water plane (splash).
+- **Characters on land (Phase 5):** axis-separated swept AABB against the voxel grid,
+  with one-voxel step-up.
 
-**Entities and systems.** Plain, serialisable data in typed stores (`ships`,
-`projectiles`, …), with systems as functions called in a fixed order each tick. An
-ECS library is only worth adopting once NPC automation (Phase 6) brings many
+**Entities and systems.** Plain, serialisable data (`ShipState`, later `ships[]`,
+`projectiles[]`), with systems as functions called in a fixed order each tick. An ECS
+library is only worth adopting once NPC automation (Phase 6) brings many
 cross-cutting queries.
 
 **Off-screen islands.** Bases keep producing while you sail. Distant islands run a
@@ -134,38 +216,46 @@ coarse *ledger* simulation (rates × elapsed game time, capped by storage and
 workers) instead of simulating every NPC. On return, NPCs and crops are placed
 consistently with the ledger.
 
-**Saves (designed now, built in Phase 5).** Seed, modified chunks (run-length
+**Saves (designed now, built in Phase 5).** Seeds, modified chunks (run-length
 encoded) and the `sim` state as JSON, in IndexedDB.
 
-## 6. Module map
+## 8. Module map
 
 ```
 src/
   config.ts            world constants (SEA_LEVEL, SIM_HZ, …)
   Game.ts              composition root: sim state, update(), render()
-  main.ts              entry; exposes `game` on window in dev
-  core/                FixedStep (tested), GameLoop, Input
+  main.ts              entry: loads the ship, starts the game; `game` on window in dev
+  core/                FixedStep, GameLoop, Input, Controls (keyboard + gamepad)
   voxel/               engine-agnostic voxel core, no three.js imports
     blocks.ts          block ids, colours, solidity
+    palette.ts         colour + solidity tables for the mesher
     Chunk.ts           32³ storage
-    VoxelWorld.ts      sparse chunks, edits, dirty tracking, column queries (tested)
-    mesher.ts          padded volume + face-culled AO mesher (tested)
-    raycast.ts         voxel DDA (tested)
-  worldgen/            seeded noise, island generator (tested for determinism)
-  ocean/               waves.ts (CPU+GLSL twin, tested), SeabedMap
-  render/              CameraRig, Sun (texel-snapped shadows), ChunkRenderer,
-                       OceanRenderer, buoy placeholder
+    VoxelWorld.ts      sparse chunks, edits, dirty tracking, column queries
+    mesher.ts          padded volume + face-culled AO mesher
+    raycast.ts         voxel DDA
+  vox/                 MagicaVoxel .vox parser (scene graph) and writer
+  sailing/             ship handling, hull outline, point of sail, weather,
+                       ship types, .vox → ship parts
+  worldgen/            seeded noise, island generator
+  ocean/               waves.ts (CPU + GLSL twin), SeabedMap
+  render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, ShipView,
+                       Wake, WindStreaks, voxelGeometry
   tools/TerrainTool.ts dig / place dev tool
-  ui/Hud.ts            DOM overlay + perf readout
+  ui/Hud.ts            DOM overlay: help, compass/nav panel, perf readout
+scripts/               asset generators (placeholder ship)
+public/models/ships/   ship .vox files
 ```
 
-Dependency direction: `voxel`, `worldgen`, `ocean` and `core` never import from
-`render`, `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
+`voxel`, `vox`, `sailing`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
+next to the code). The browser-bound `Input` and `GameLoop`, and `SeabedMap`, are
+verified in the running game. None of those directories import from `render`,
+`tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 7. Roadmap (proposed)
+## 9. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
-2. **Sailing:** ship entity, wind, sail/rudder model, wave riding, grounding, `.vox` ship models.
+2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
 3. **Naval combat:** broadsides with per-side reload, ballistic arcs, hull/sail/crew damage, AI ships, sinking.
 4. **Ports & economy:** docking, supply/demand trade, shipyard and upgrades, crew hiring; React DOM menus.
 5. **On foot & base building:** captain controller, dig/flatten/build with inventory, claiming land, save/load.
