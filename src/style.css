@@ -1,0 +1,61 @@
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #a9d9ea;
+}
+
+#app {
+  position: relative;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+  color: #12324a;
+  font: 13px/1.6 system-ui, sans-serif;
+  pointer-events: none; /* clicks go through to the world */
+}
+
+.hud-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.hud-title span {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.hud kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid rgb(18 50 74 / 0.25);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.7);
+  font: 600 11px/17px ui-monospace, monospace;
+  text-align: center;
+}
+
+.hud-stats {
+  font: 12px ui-monospace, monospace;
+  opacity: 0.75;
+}
