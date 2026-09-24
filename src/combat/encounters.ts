@@ -78,6 +78,15 @@ export class Encounters {
   private spawned = 0;
   private nextGroup = 1;
 
+  /** How many groups have come (so a loaded game doesn't replay the opening encounters). */
+  get count(): number {
+    return this.spawned;
+  }
+
+  set count(n: number) {
+    this.spawned = n;
+  }
+
   step(sea: Sea, dt: number): void {
     this.timer -= dt;
     this.review -= dt;
@@ -91,7 +100,7 @@ export class Encounters {
       if (far && members.every((v) => !v.ai?.alerted)) sea.remove(members);
     }
 
-    if (this.timer > 0 || player.status !== 'afloat') return;
+    if (this.timer > 0 || player.status !== 'afloat' || sea.ashore) return;
     this.timer = SPAWN_INTERVAL;
     const tier = regionTier(player.ship.x, player.ship.z);
     const groups = new Set(sea.vessels.filter((v) => v.faction !== 'player').map((v) => v.group)).size;

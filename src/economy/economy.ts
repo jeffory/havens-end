@@ -31,6 +31,21 @@ interface Shock {
   heard: boolean;
 }
 
+export interface EconomySnapshot {
+  ports: Array<{
+    stock: number[];
+    black: number[];
+    office: Contract[];
+    fixer: Contract[];
+    postedAt: number | null;
+    hands: number;
+    rumours: string[];
+  }>;
+  shocks: Shock[];
+  shockIn: number;
+  nextContract: number;
+}
+
 export interface PortState {
   market: Market;
   /** Jobs on the governor's board, and the fixer's. */
@@ -91,6 +106,42 @@ export class Economy {
 
   get captain(): Captain {
     return this.sea.captain;
+  }
+
+  /** The markets and boards as they stand, for a save. */
+  snapshot(): EconomySnapshot {
+    return {
+      ports: this.states.map((s) => ({
+        stock: s.market.lines.map((l) => l.stock),
+        black: s.market.black.map((l) => l.stock),
+        office: structuredClone(s.office),
+        fixer: structuredClone(s.fixer),
+        postedAt: Number.isFinite(s.postedAt) ? s.postedAt : null,
+        hands: s.hands,
+        rumours: [...s.rumours],
+      })),
+      shocks: structuredClone(this.shocks),
+      shockIn: this.shockIn,
+      nextContract: this.nextContract,
+    };
+  }
+
+  restore(d: EconomySnapshot): void {
+    d.ports.forEach((p, i) => {
+      const s = this.states[i];
+      if (!s) return;
+      s.market.lines.forEach((l, j) => (l.stock = p.stock[j] ?? l.stock));
+      s.market.black.forEach((l, j) => (l.stock = p.black[j] ?? l.stock));
+      s.office = structuredClone(p.office);
+      s.fixer = structuredClone(p.fixer);
+      s.postedAt = p.postedAt ?? -Infinity;
+      s.hands = p.hands;
+      s.rumours = [...p.rumours];
+    });
+    this.shocks.length = 0;
+    this.shocks.push(...structuredClone(d.shocks));
+    this.shockIn = d.shockIn;
+    this.nextContract = d.nextContract;
   }
 
   /** Hands the notices since the last call (failed jobs, news) to the presentation layer. */
@@ -343,7 +394,7 @@ export class Economy {
     const port = others[Math.floor(this.random() * others.length)];
     // The talk is of whatever's most out of the ordinary there: one of the three oddest prices.
     const oddness = (l: Line) => Math.abs(Math.log(unitPrice(l) / goodPrice(l)));
-    const lines = [...this.states[port.id].market.lines].sort((a, b) => oddness(b) - oddness(a));
+    const lines = this.states[port.id].market.lines.filter((l) => STAPLES.includes(l.good) || l.good === 'muskets').sort((a, b) => oddness(b) - oddness(a));
     const line = lines[Math.floor(this.random() * Math.min(3, lines.length))];
     this.notePrice(port, line);
     const { buy, sell } = this.quote(port, line);

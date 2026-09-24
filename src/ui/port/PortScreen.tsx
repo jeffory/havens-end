@@ -14,7 +14,7 @@ import { OFFICE_NAMES, OfficeTab } from './OfficeTab';
 import { ShipyardTab } from './ShipyardTab';
 import { TavernTab } from './TavernTab';
 
-type Tab = 'harbour' | 'market' | 'shipyard' | 'tavern' | 'office' | 'chart';
+export type Tab = 'harbour' | 'market' | 'shipyard' | 'tavern' | 'office' | 'chart';
 const TABS: readonly Tab[] = ['harbour', 'market', 'shipyard', 'tavern', 'office', 'chart'];
 
 const WELCOMES = {
@@ -29,15 +29,20 @@ export interface PortScreenProps {
   sea: Sea;
   /** What happened coming ashore (customs, jobs to hand in). */
   arrival: Notice[];
+  /** Back aboard and away. */
   leave: () => void;
+  /** Back out into the street. */
+  close: () => void;
+  /** Which place you walked into. */
+  tab: Tab;
   nav: NavHandlers;
   /** The sea chart, for planning the next run from port. */
   chart: Omit<ChartProps, 'economy' | 'sea'>;
 }
 
 /** Ashore in a port: the harbour, market, shipyard, tavern and the port's masters, as tabs. */
-export function PortScreen({ port, economy, sea, arrival, leave, nav, chart }: PortScreenProps) {
-  const [tab, setTab] = useState<Tab>('harbour');
+export function PortScreen({ port, economy, sea, arrival, leave, close, tab: initial, nav, chart }: PortScreenProps) {
+  const [tab, setTab] = useState<Tab>(initial);
   const [log, setLog] = useState<Notice[]>(arrival);
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   const body = useRef<HTMLDivElement>(null);
@@ -51,9 +56,9 @@ export function PortScreen({ port, economy, sea, arrival, leave, nav, chart }: P
 
   useEffect(() => {
     nav.tab = (step) => setTab((t) => TABS[(TABS.indexOf(t) + step + TABS.length) % TABS.length]);
-    nav.back = () => (tab === 'harbour' ? setSail.current?.focus() : setTab('harbour'));
+    nav.back = close;
     nav.chart = () => setTab((t) => (t === 'chart' ? 'harbour' : 'chart'));
-  }, [nav, tab]);
+  }, [nav, tab, close]);
 
   useEffect(() => {
     if (body.current) focusFirst(body.current);
@@ -138,7 +143,7 @@ export function PortScreen({ port, economy, sea, arrival, leave, nav, chart }: P
         <span className="port-keys">
           <kbd>Q</kbd>
           <kbd>E</kbd> / <kbd>LB</kbd>
-          <kbd>RB</kbd> places · <kbd>Esc</kbd> / <kbd>B</kbd> back · <kbd>M</kbd> chart
+          <kbd>RB</kbd> places · <kbd>Esc</kbd> / <kbd>B</kbd> back outside · <kbd>M</kbd> chart
         </span>
       </footer>
     </div>

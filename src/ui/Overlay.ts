@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { Action } from '../core/Controls';
-import { moveFocus, recoverFocus } from './menuNav';
+import { focusFirst, moveFocus, recoverFocus } from './menuNav';
 
 /** What a screen does with the controller's tab and back buttons. */
 export interface NavHandlers {
@@ -11,7 +11,7 @@ export interface NavHandlers {
   chart?: () => void;
 }
 
-export type ScreenKind = 'port' | 'chart';
+export type ScreenKind = 'port' | 'chart' | 'build' | 'store' | 'system';
 
 /**
  * The full-screen menus (port, chart), drawn with React over the 3D view. The game
@@ -48,7 +48,8 @@ export class Overlay {
   }
 
   show(kind: ScreenKind, screen: ReactNode): void {
-    if (this.kind !== kind) {
+    const fresh = this.kind !== kind;
+    if (fresh) {
       // A different screen: forget the old one's handlers (a re-render keeps them).
       this.lastFocus = undefined;
       this.handlers.tab = undefined;
@@ -58,6 +59,8 @@ export class Overlay {
     this.kind = kind;
     this.el.hidden = false;
     this.root.render(screen);
+    // A new screen starts with its first (or data-autofocus) control focused, for keys and pads.
+    if (fresh) requestAnimationFrame(() => this.el.contains(document.activeElement) || focusFirst(this.el));
   }
 
   hide(): void {

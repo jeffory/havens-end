@@ -112,6 +112,8 @@ function baseFor(world: VoxelWorld, islands: readonly IslandPlan[]) {
 
 export interface ChartProps {
   world: VoxelWorld;
+  /** Your camps, marked with a fire. */
+  camps: ReadonlyArray<{ x: number; z: number }>;
   islands: readonly IslandPlan[];
   economy: Economy;
   sea: Sea;
@@ -120,7 +122,7 @@ export interface ChartProps {
 }
 
 /** The sea chart: where everything is, who'll have you, and what your price book knows. */
-export function ChartView({ world, islands, economy, sea, course, setCourse }: ChartProps) {
+export function ChartView({ world, islands, camps, economy, sea, course, setCourse }: ChartProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [selected, setSelected] = useState<Port>(course ?? sea.docked ?? economy.ports[0]);
   const ship = sea.player.ship;
@@ -190,6 +192,22 @@ export function ChartView({ world, islands, economy, sea, course, setCourse }: C
       const label = jobs.has(port.id) ? `★ ${port.name}` : port.name;
       g.strokeText(label, x, y + 24 * px);
       g.fillText(label, x, y + 24 * px);
+    }
+
+    // Your camps.
+    for (const camp of camps) {
+      const x = toX(camp.x);
+      const y = toY(camp.z);
+      g.fillStyle = '#e8781e';
+      g.strokeStyle = '#3b2a1f';
+      g.lineWidth = 1.5 * px;
+      g.beginPath();
+      g.moveTo(x, y - 7 * px);
+      g.lineTo(x + 5 * px, y + 4 * px);
+      g.lineTo(x - 5 * px, y + 4 * px);
+      g.closePath();
+      g.fill();
+      g.stroke();
     }
 
     // The player's ship.

@@ -17,6 +17,20 @@ export interface Port {
   /** Centre of the port's island, for the chart. */
   islandX: number;
   islandZ: number;
+  /** Where the captain steps ashore: on the pier beside the berth. */
+  pier: { x: number; y: number; z: number };
+  /** Doors in town (and the shipyard at the foot of the pier): walk up to one to go in. */
+  places: PortPlace[];
+}
+
+export type PlaceKind = 'market' | 'tavern' | 'office' | 'shipyard';
+
+export interface PortPlace {
+  kind: PlaceKind;
+  /** Where you stand to go in: just outside the door, at floor level. */
+  x: number;
+  y: number;
+  z: number;
 }
 
 export const FACTION_NAMES: Record<PortFaction, string> = {

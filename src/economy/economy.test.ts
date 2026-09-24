@@ -27,7 +27,18 @@ const CLASSES = new Map(
   }),
 );
 
-const port = (id: number, name: string, faction: Port['faction'], x: number): Port => ({ id, name, faction, x, z: 0, heading: 0, islandX: x, islandZ: 100 });
+const port = (id: number, name: string, faction: Port['faction'], x: number): Port => ({
+  id,
+  name,
+  faction,
+  x,
+  z: 0,
+  heading: 0,
+  islandX: x,
+  islandZ: 100,
+  pier: { x, y: 13, z: 8 },
+  places: [],
+});
 const PORTS: Port[] = [
   port(0, 'Haven', 'merchant', 0),
   port(1, 'Port Clemency', 'merchant', 500),
@@ -192,13 +203,16 @@ describe('jobs', () => {
   });
 
   it('no more than three at once', () => {
-    const { economy } = setup();
+    const { sea, economy } = setup();
     economy.arrive(HAVEN);
     economy.arrive(CLEMENCY);
-    const jobs = [...economy.offers(HAVEN, 'office'), ...economy.offers(HAVEN, 'fixer')];
-    for (const job of jobs.slice(0, 3)) expect(economy.accept(HAVEN, job.id).ok).toBe(true);
-    const fourth = economy.offers(CLEMENCY, 'office')[0];
-    expect(economy.accept(CLEMENCY, fourth.id).ok).toBe(false);
+    const all = [HAVEN, CLEMENCY].flatMap((p) => [...economy.offers(p, 'office'), ...economy.offers(p, 'fixer')].map((c) => [p, c] as const));
+    // Bounties first: they take no hold space.
+    all.sort(([, a], [, b]) => (a.kind === 'bounty' ? -1 : 1) - (b.kind === 'bounty' ? -1 : 1));
+    for (const [p, c] of all) if (sea.captain.contracts.length < 3 && economy.canAccept(c)) economy.accept(p, c.id);
+    expect(sea.captain.contracts).toHaveLength(3);
+    const [p, rest] = all.find(([, c]) => !sea.captain.contracts.includes(c))!;
+    expect(economy.accept(p, rest.id)).toMatchObject({ ok: false, message: 'You can take on only 3 jobs at once.' });
   });
 });
 

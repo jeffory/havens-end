@@ -31,7 +31,7 @@ const CLASSES = new Map(
 const EAST = Math.PI / 2; // heading +x; port side faces north (-z)
 const HOLD: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
 
-const HOME: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 0, z: 0, heading: EAST, islandX: 0, islandZ: 300 };
+const HOME: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 0, z: 0, heading: EAST, islandX: 0, islandZ: 300, pier: { x: 0, y: 13, z: 8 }, places: [] };
 
 function newSea(world = new VoxelWorld(), spawning = false, seed = 1, ports: Port[] = [HOME]): Sea {
   return new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, ports, seed, spawning);
@@ -446,7 +446,7 @@ describe('reputation at sea', () => {
 });
 
 describe('harbours', () => {
-  const FAR: Port = { id: 1, name: 'Kingsreach', faction: 'imperial', x: 400, z: 0, heading: EAST, islandX: 400, islandZ: 300 };
+  const FAR: Port = { id: 1, name: 'Kingsreach', faction: 'imperial', x: 400, z: 0, heading: EAST, islandX: 400, islandZ: 300, pier: { x: 400, y: 13, z: 8 }, places: [] };
 
   it('take a ship that comes in slowly, and remember her captain', () => {
     const sea = newSea(new VoxelWorld(), false, 1, [HOME, FAR]);

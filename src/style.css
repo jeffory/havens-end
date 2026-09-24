@@ -893,3 +893,180 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   .standing-rank { grid-column: 2; }
   table.market .actions button { padding: 3px 5px; }
 }
+
+/* ---- Phase 5: on foot ---- */
+.foot-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 2;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(760px, calc(100% - 32px));
+  pointer-events: none;
+  color: #12324a;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+
+.foot-help {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+}
+
+.foot-help .pad {
+  display: block;
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+.foot-hud kbd,
+.world-label kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid rgb(18 50 74 / 0.25);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.75);
+  font: 600 11px/17px ui-monospace, monospace;
+  text-align: center;
+}
+
+.foot-prompt {
+  padding: 7px 16px;
+  border-radius: 8px;
+  background: rgb(20 30 40 / 0.8);
+  color: #fff4dc;
+  font: 700 15px system-ui, sans-serif;
+}
+
+.foot-hint {
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.85);
+  color: #7a2a1f;
+  font-weight: 600;
+}
+
+.foot-hint.ok { color: #255f34; }
+
+.foot-pack {
+  padding: 3px 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.foot-slots {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.foot-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 74px;
+  padding: 3px 6px 4px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.foot-slot.active {
+  border-color: #c8911c;
+  background: rgb(255 244 214 / 0.95);
+  font-weight: 700;
+}
+
+.foot-slot.empty span { opacity: 0.45; }
+
+.foot-slot b {
+  position: absolute;
+  top: 1px;
+  right: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.world-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.world-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 9px 3px;
+  border: 2px solid #6b4a2b;
+  border-radius: 5px;
+  background: #f3e2b8;
+  color: #3a2a1a;
+  font: 700 13px Georgia, serif;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+}
+
+.build-menu,
+.store-screen {
+  width: min(760px, 100%);
+}
+
+@media (max-width: 900px) {
+  .foot-slot { min-width: 0; }
+  .foot-help { font-size: 12px; }
+}
+
+/* Game menu */
+.system-menu { width: min(620px, 100%); }
+.system-menu .port-body { height: auto; max-height: min(560px, calc(100vh - 240px)); }
+
+.system-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  max-width: 420px;
+  margin: 8px auto;
+}
+
+.system-buttons button { padding: 9px 14px; font-size: 16px; }
+.system-buttons button small { display: block; font: 12px system-ui, sans-serif; opacity: 0.85; }
+
+.save-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.save-form label { flex: 1; display: flex; align-items: center; gap: 8px; }
+
+.save-form input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--wood);
+  border-radius: 6px;
+  background: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+}

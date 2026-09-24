@@ -60,6 +60,14 @@ export class SeabedMap {
     this.version++;
   }
 
+  /** Re-reads the whole window from the world (after a save is loaded). */
+  rebuild(): void {
+    for (let row = 0; row < this.size; row++) {
+      for (let col = 0; col < this.size; col++) this.heights[row * this.size + col] = this.world.surfaceHeight(this.originX + col, this.originZ + row);
+    }
+    this.version++;
+  }
+
   private refresh(x: number, z: number): void {
     const col = x - this.originX;
     const row = z - this.originZ;

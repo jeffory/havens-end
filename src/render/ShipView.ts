@@ -133,6 +133,17 @@ export class ShipView {
     return pivot;
   }
 
+  /** Fades the whole ship (1 = solid): she mustn't hide the captain working on the beach beside her. */
+  setFade(opacity: number): void {
+    const faded = opacity < 0.99;
+    if (this.material.transparent !== faded) {
+      this.material.transparent = faded;
+      this.material.depthWrite = !faded;
+      this.material.needsUpdate = true;
+    }
+    this.material.opacity = opacity;
+  }
+
   private partMesh(cells: Int32Array, palette: VoxelPalette, material: MeshLambertMaterial, ox: number, oy: number, oz: number): Mesh {
     const mesh = new Mesh(meshCells(cells, palette), material);
     mesh.position.set(-ox, -oy, -oz);

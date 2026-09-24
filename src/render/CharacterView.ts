@@ -42,7 +42,22 @@ const REST_ARM_L = new Vector3(1, 0, 0);
 const REST_LEG = new Vector3(0, -1, 0);
 const REST_BLADE = new Vector3(-1, 0, 0);
 
-/** An animated voxel captain with a cutlass, driven by a duel Fighter. */
+/** On foot: stood with arms at the sides. */
+const STAND: Pose = {
+  crouch: 0, lean: 0.03, twist: 0, head: 0,
+  armR: v(-0.14, -1, 0.06), armL: v(0.14, -1, 0.06), blade: v(0, -0.35, 1),
+  legR: v(-0.04, -1, 0), legL: v(0.04, -1, 0), flip: 0, fall: 0,
+};
+
+/** What someone on foot is doing this frame. */
+export interface Stride {
+  /** Ground speed, u/s. */
+  speed: number;
+  /** 0..1 through a swing of whatever's in hand, or null when not swinging. */
+  swing: number | null;
+}
+
+/** An animated voxel captain: a duelist with a cutlass, or on foot with a tool in hand. */
 export class CharacterView {
   readonly root = new Group();
   private readonly fallPivot = new Group();
@@ -61,6 +76,7 @@ export class CharacterView {
   private readonly hipHeight: number;
   private stride = 0;
   private lastX = 0;
+  private swordMesh: Mesh;
   private readonly q = new Quaternion();
   private readonly hand = new Vector3();
 
@@ -96,10 +112,10 @@ export class CharacterView {
     this.armLength = parts.arm_r.pivot.x - model.hand.x;
 
     const blade = cutlassCells();
-    const swordMesh = new Mesh(meshCells(blade.cells, paletteFromRgba(blade.palette)), this.material);
-    swordMesh.position.set(-0.5, -0.5, -0.5);
-    swordMesh.castShadow = true;
-    this.sword.add(swordMesh);
+    this.swordMesh = new Mesh(meshCells(blade.cells, paletteFromRgba(blade.palette)), this.material);
+    this.swordMesh.position.set(-0.5, -0.5, -0.5);
+    this.swordMesh.castShadow = true;
+    this.sword.add(this.swordMesh);
     this.torso.add(this.sword);
 
     this.root.scale.setScalar(model.scale);
@@ -118,6 +134,63 @@ export class CharacterView {
     p.head += (t.head - p.head) * k;
     p.flip = t.flip; // rolls are driven exactly, never eased
     p.fall += (t.fall - p.fall) * Math.min(1, 6 * dt);
+    for (const key of ['armR', 'armL', 'blade', 'legR', 'legL'] as const) p[key].lerp(t[key], k).normalize();
+    this.apply();
+  }
+
+  /** Lifts the darkest colours a little: dark coats read as silhouettes from the diorama camera. */
+  lift(amount: number): void {
+    this.material.emissive.setRGB(amount, amount, amount);
+  }
+
+  /**
+   * Puts something else in the right hand: voxel cells laid along −x from the grip at
+   * the origin, like the cutlass. Null leaves the hand empty.
+   */
+  hold(item: { cells: Int32Array; palette: Uint8Array } | null): void {
+    this.swordMesh.geometry.dispose();
+    this.swordMesh.visible = item !== null;
+    if (item) this.swordMesh.geometry = meshCells(item.cells, paletteFromRgba(item.palette));
+  }
+
+  /** Poses the character walking, standing, or swinging a tool, easing from the last frame. */
+  walk(stride: Stride, dt: number, time: number): void {
+    const t = this.target;
+    copyPose(t, STAND);
+    t.crouch += Math.sin(time * 2.2) * 0.01;
+    const pace = Math.min(1, stride.speed / 4.6);
+    if (pace > 0.05) {
+      this.stride += stride.speed * dt * 2.1;
+      const s = Math.sin(this.stride) * 0.55 * pace;
+      t.legR.set(-0.04, -1, s).normalize();
+      t.legL.set(0.04, -1, -s).normalize();
+      t.armR.set(-0.14, -1, -s * 0.7).normalize();
+      t.armL.set(0.14, -1, s * 0.7).normalize();
+      t.crouch += Math.abs(Math.cos(this.stride)) * 0.03 * pace;
+      t.lean += 0.06 * pace;
+    }
+    if (stride.swing !== null) {
+      // Up and back, then down and forward through the work.
+      const k = stride.swing;
+      if (k < 0.45) {
+        t.armR.set(-0.25, 0.95, -0.25).normalize();
+        t.blade.set(0, 0.6, -0.8).normalize();
+        t.lean = -0.1;
+      } else {
+        t.armR.set(-0.15, -0.35, 1).normalize();
+        t.blade.set(0, -0.85, 0.5).normalize();
+        t.lean = 0.3;
+        t.crouch = 0.12;
+      }
+    }
+    const k = 1 - Math.exp(-(stride.swing !== null ? 30 : 14) * dt);
+    const p = this.pose;
+    p.crouch += (t.crouch - p.crouch) * k;
+    p.lean += (t.lean - p.lean) * k;
+    p.twist += (t.twist - p.twist) * k;
+    p.head += (t.head - p.head) * k;
+    p.flip = 0;
+    p.fall = 0;
     for (const key of ['armR', 'armL', 'blade', 'legR', 'legL'] as const) p[key].lerp(t[key], k).normalize();
     this.apply();
   }

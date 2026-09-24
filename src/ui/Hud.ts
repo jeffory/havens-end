@@ -69,15 +69,15 @@ export class Hud {
     const help = document.createElement('div');
     help.className = 'hud';
     help.innerHTML = `
-      <div class="hud-title">Haven's End <span>phase 4 · ports &amp; trade</span></div>
+      <div class="hud-title">Haven's End <span>phase 5 · on foot &amp; camps</span></div>
       <div class="hud-help">
         <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
         <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />
-        <kbd>B</kbd> board / go ashore · <kbd>M</kbd> chart · <kbd>Z</kbd><kbd>C</kbd> turn view · wheel zoom
+        <kbd>B</kbd> board / dock / row ashore · <kbd>M</kbd> chart · <kbd>Esc</kbd> menu · <kbd>Z</kbd><kbd>C</kbd> view · wheel zoom
       </div>
       <div class="hud-help hud-pad" hidden>
         🎮 <kbd>LS</kbd> steer · <kbd>↑</kbd><kbd>↓</kbd> sails · <kbd>LT</kbd><kbd>RT</kbd> fire · <kbd>X</kbd> shot<br />
-        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
+        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>Start</kbd> menu · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
       </div>
       <div class="hud-stats"></div>`;
 
@@ -149,6 +149,15 @@ export class Hud {
         this.stats.hidden = !this.stats.hidden;
       }
     });
+  }
+
+  /** Shows or hides the sailing panels (help, compass, gunnery, prompt) but not the messages: ashore they're replaced. */
+  setPanels(visible: boolean): void {
+    for (const panel of [this.padHelp.parentElement!, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
+      (panel as HTMLElement).hidden = !visible;
+    }
+    this.combat.prompt.hidden ||= !visible;
+    this.toasts.hidden = false;
   }
 
   /** Hides the sailing and gunnery panels (during a duel, which has its own). */

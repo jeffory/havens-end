@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import { Block } from '../voxel/blocks';
+import { collides, STEP_UP, standable } from '../land/walker';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildArchipelago, planArchipelago } from './archipelago';
 
@@ -62,6 +63,13 @@ describe('buildArchipelago', () => {
         // Buildings stand behind it.
         const walls = port.faction === 'pirate' ? Block.Planks : Block.Plaster;
         expect(near(70, (x, z) => [1, 2, 3].some((dy) => world.getVoxel(x, world.surfaceHeight(x, z) - dy, z) === walls))).toBe(true);
+        // On foot: the pier and every door can be stood on, and each place is there once.
+        expect(standable(world, port.pier.x, port.pier.z, port.pier.y + 1)).toBe(port.pier.y);
+        expect(port.places.map((p) => p.kind).sort()).toEqual(['market', 'office', 'shipyard', 'tavern']);
+        for (const place of port.places) expect(standable(world, place.x, place.z, place.y + 1)).not.toBeNull();
+        // And every one of them can be walked to from the pier.
+        const reached = walkableFrom(world, port.pier.x, port.pier.y, port.pier.z, 90);
+        for (const place of port.places) expect(reached.has(`${Math.floor(place.x)},${Math.floor(place.z)}`), `${port.name} ${place.kind}`).toBe(true);
         // Leaving port, the bow points out to sea: the water ahead is open.
         const ahead = { x: port.x + Math.sin(port.heading) * 40, z: port.z + Math.cos(port.heading) * 40 };
         expect(world.surfaceHeight(Math.floor(ahead.x), Math.floor(ahead.z))).toBeLessThanOrEqual(SEA_LEVEL - 4);
@@ -69,3 +77,29 @@ describe('buildArchipelago', () => {
     }
   });
 });
+
+/**
+ * Every column someone on foot could reach from a point, by the walker's rules:
+ * scramble up to STEP_UP, drop any height, never into water over their depth.
+ */
+function walkableFrom(world: VoxelWorld, x: number, y: number, z: number, radius: number): Set<string> {
+  const seen = new Set<string>();
+  const queue: Array<[number, number, number]> = [[Math.floor(x), y, Math.floor(z)]];
+  const x0 = Math.floor(x);
+  const z0 = Math.floor(z);
+  while (queue.length > 0) {
+    const [cx, cy, cz] = queue.shift()!;
+    const key = `${cx},${cz}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (Math.abs(nx - x0) > radius || Math.abs(nz - z0) > radius || seen.has(`${nx},${nz}`)) continue;
+      const ny = standable(world, nx + 0.5, nz + 0.5, cy + STEP_UP + 0.5);
+      if (ny === null || (ny > cy && collides(world, cx + 0.5, ny, cz + 0.5))) continue;
+      queue.push([nx, ny, nz]);
+    }
+  }
+  return seen;
+}

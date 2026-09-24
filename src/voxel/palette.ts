@@ -4,6 +4,8 @@ export interface VoxelPalette {
   colors: Float32Array;
   /** 1 where the id is solid (256 entries). */
   solid: Uint8Array;
+  /** 1 where the id may be cut away to show someone on foot beneath it (trees, buildings). Terrain never is. */
+  cutaway?: Uint8Array;
 }
 
 export const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);

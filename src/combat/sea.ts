@@ -1,6 +1,9 @@
 import { type Captain, createCaptain } from '../economy/captain';
-import { creditBounties } from '../economy/contracts';
-import { cargoCount, loadCargo } from '../economy/goods';
+import { type Contract, creditBounties } from '../economy/contracts';
+import type { Logbook } from '../economy/logbook';
+import type { Standing } from '../economy/reputation';
+import { type Upgrade, withUpgrades } from '../economy/shipyard';
+import { type Cargo, cargoCount, loadCargo } from '../economy/goods';
 import type { Port, PortFaction } from '../economy/ports';
 import { applyDeed, type Deed, portOpen } from '../economy/reputation';
 import { hullContacts, type ShipSpec, stepShip } from '../sailing/ship';
@@ -48,6 +51,34 @@ export interface PlayerOrders {
 /** Why the harbour won't take you right now. */
 export type DockProblem = 'closed' | 'fast' | 'enemies';
 
+export interface SeaSnapshot {
+  time: number;
+  encounters: number;
+  docked: number | null;
+  ashore: boolean;
+  ship: {
+    design: string;
+    name: string;
+    upgrades: Upgrade[];
+    hull: number;
+    sails: number;
+    crew: number;
+    cargo: Cargo;
+    ammo: Ammo;
+    x: number;
+    z: number;
+    heading: number;
+  };
+  captain: {
+    gold: number;
+    lastPort: number;
+    standing: Standing;
+    contracts: Contract[];
+    logbook: Logbook;
+    pack: Cargo;
+  };
+}
+
 const SINK_SECONDS = 7;
 const RESPAWN_SECONDS = 5;
 /** Share of the captain's gold it costs to buy your way out of jail. */
@@ -74,14 +105,19 @@ export class Sea {
   readonly shots: Shot[] = [];
   readonly barrels: Barrel[] = [];
   nextId = 1;
-  readonly random: () => number;
+  random: () => number;
   readonly encounters = new Encounters();
   private events: SeaEvent[] = [];
   readonly captain: Captain;
   /** The ship the player is fighting their way aboard, while the captains' duel plays out. */
   boarding: number | null = null;
-  /** The port the player is ashore in. The sea waits (the game stops stepping it) until undock(). */
+  /** The port the player's ship is berthed in, if any. */
   docked: Port | null = null;
+  /**
+   * The captain is off the ship, on foot. She lies at anchor (or at her berth), nobody
+   * comes looking for a fight with an empty ship, and the encounter director waits.
+   */
+  ashore = false;
 
   constructor(
     readonly world: VoxelWorld,
@@ -105,6 +141,67 @@ export class Sea {
   /** The player's ship is always the first vessel. */
   get player(): Vessel {
     return this.vessels[0];
+  }
+
+  /** What a save keeps of the sea: the captain, their ship, and where things stand. Other ships aren't kept. */
+  snapshot(): SeaSnapshot {
+    const p = this.player;
+    const c = this.captain;
+    return {
+      time: this.time,
+      encounters: this.encounters.count,
+      docked: this.docked?.id ?? null,
+      ashore: this.ashore,
+      ship: {
+        design: p.cls.design.name,
+        name: p.name,
+        upgrades: [...p.upgrades],
+        hull: p.hull,
+        sails: p.sails,
+        crew: p.crew,
+        cargo: { ...p.cargo },
+        ammo: p.ammo,
+        x: p.ship.x,
+        z: p.ship.z,
+        heading: p.ship.heading,
+      },
+      captain: {
+        gold: c.gold,
+        lastPort: c.lastPort.id,
+        standing: { ...c.standing },
+        contracts: structuredClone(c.contracts),
+        logbook: structuredClone(c.logbook),
+        pack: { ...c.pack },
+      },
+    };
+  }
+
+  restore(s: SeaSnapshot): void {
+    this.time = s.time;
+    this.random = mulberry32(Math.floor(s.time * 1000) ^ 0x5a17);
+    this.encounters.count = s.encounters;
+    const design = [...this.classes.keys()].find((t) => t.name === s.ship.design);
+    if (!design) throw new Error(`Sea.restore: unknown ship design "${s.ship.design}"`);
+    const cls = withUpgrades(this.classFor(design), s.ship.upgrades);
+    const v = createVessel(this.player.id, s.ship.name, 'player', cls, s.ship.x, s.ship.z, s.ship.heading, 0);
+    Object.assign(v, { hull: s.ship.hull, sails: s.ship.sails, crew: s.ship.crew, cargo: { ...s.ship.cargo }, ammo: s.ship.ammo, upgrades: [...s.ship.upgrades] });
+    syncCondition(v);
+    this.vessels.length = 0;
+    this.vessels.push(v);
+    this.shots.length = 0;
+    this.barrels.length = 0;
+    this.boarding = null;
+    const c = s.captain;
+    Object.assign(this.captain, {
+      gold: c.gold,
+      lastPort: this.ports[c.lastPort] ?? this.ports[0],
+      standing: { ...c.standing },
+      contracts: structuredClone(c.contracts),
+      logbook: structuredClone(c.logbook),
+      pack: { ...c.pack },
+    });
+    this.docked = s.docked === null ? null : (this.ports[s.docked] ?? null);
+    this.ashore = s.ashore;
   }
 
   classFor(type: ShipType): ShipClass {
@@ -158,6 +255,11 @@ export class Sea {
       if (v.status === 'sinking' || v.status === 'captured') {
         v.helm.sails = 0;
         v.helm.rudder = 0;
+      }
+      if (v === this.player && this.ashore) {
+        // At anchor: she rides the swell but goes nowhere.
+        Object.assign(v.ship, { surge: 0, sway: 0, yawRate: 0, rudder: 0, sail: 0 });
+        continue;
       }
       stepShip(v.ship, v.cls.spec, v.helm, this.weather.windAt(v.ship.x, v.ship.z, this.time), this.world, dt);
     }
@@ -232,10 +334,13 @@ export class Sea {
     const p = this.player.ship;
     if (!portOpen(this.captain.standing, port.faction)) return 'closed';
     if (Math.abs(p.surge) > DOCK_SPEED) return 'fast';
-    const hunted = this.vessels.some(
-      (v) => v.ai?.mode === 'engage' && v.status === 'afloat' && Math.hypot(v.ship.x - p.x, v.ship.z - p.z) < DOCK_CLEARANCE,
-    );
-    return hunted ? 'enemies' : null;
+    return this.hunted() ? 'enemies' : null;
+  }
+
+  /** Is a ship that's fighting the player close by? (No docking or going ashore then.) */
+  hunted(): boolean {
+    const p = this.player.ship;
+    return this.vessels.some((v) => v.ai?.mode === 'engage' && v.status === 'afloat' && Math.hypot(v.ship.x - p.x, v.ship.z - p.z) < DOCK_CLEARANCE);
   }
 
   /** Where a ship of this hull lies at a port: the berth, or as near it as she fits. */
@@ -255,6 +360,7 @@ export class Sea {
   /** Back to sea from the berth. */
   undock(): void {
     this.docked = null;
+    this.ashore = false;
   }
 
   /**
@@ -279,7 +385,7 @@ export class Sea {
 
   private obey(orders: PlayerOrders): void {
     const p = this.player;
-    if (p.status !== 'afloat') return;
+    if (p.status !== 'afloat' || this.ashore) return;
     p.helm.rudder = orders.rudder;
     p.helm.sails = orders.sails;
     p.ammo = orders.ammo;
@@ -306,6 +412,7 @@ export class Sea {
     p.helm.sails = 0;
     p.helm.rudder = 0;
     this.docked = port;
+    this.ashore = true;
     this.captain.lastPort = port;
     this.emit({ kind: 'docked', port: port.id });
   }
@@ -414,6 +521,9 @@ export class Sea {
 
   /** A fresh sloop, crewed and with an empty hold, waiting at the last port. */
   private newShip(): void {
+    this.captain.pack = {};
+    this.ashore = false;
+    this.docked = null;
     const p = this.player;
     const cls = this.classFor(this.starter);
     const berth = this.berthFor(cls.spec, this.captain.lastPort);

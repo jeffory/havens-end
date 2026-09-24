@@ -14,6 +14,22 @@ export type Action =
   | 'ammoNext'
   | 'board'
   | 'chart'
+  | 'system'
+  // On foot
+  | 'interact'
+  | 'use'
+  | 'useAtCursor'
+  | 'itemPrev'
+  | 'itemNext'
+  | 'item1'
+  | 'item2'
+  | 'item3'
+  | 'item4'
+  | 'item5'
+  | 'item6'
+  | 'item7'
+  | 'build'
+  | 'cancel'
   // Menus (port screens, the chart)
   | 'navUp'
   | 'navDown'
@@ -30,7 +46,7 @@ export type Action =
   | 'kick'
   | 'roll';
 
-export type ControlMode = 'sea' | 'duel' | 'menu';
+export type ControlMode = 'sea' | 'duel' | 'menu' | 'foot';
 
 /** Button indices in the W3C "standard" gamepad layout, with Xbox names. */
 export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
@@ -55,6 +71,20 @@ const SEA_PAD: Bindings<number> = [
   [PAD.X, 'ammoNext'],
   [PAD.B, 'board'],
   [PAD.BACK, 'chart'],
+  [PAD.START, 'system'],
+];
+
+const FOOT_PAD: Bindings<number> = [
+  [PAD.A, 'interact'],
+  [PAD.X, 'use'],
+  [PAD.LB, 'itemPrev'],
+  [PAD.RB, 'itemNext'],
+  [PAD.Y, 'build'],
+  [PAD.B, 'cancel'],
+  [PAD.LEFT, 'rotateLeft'],
+  [PAD.RIGHT, 'rotateRight'],
+  [PAD.BACK, 'chart'],
+  [PAD.START, 'system'],
 ];
 
 const MENU_PAD: Bindings<number> = [
@@ -93,6 +123,26 @@ const SEA_KEYS: Bindings<string> = [
   ['KeyR', 'ammoNext'],
   ['KeyB', 'board'],
   ['KeyM', 'chart'],
+  ['Escape', 'system'],
+];
+
+const FOOT_KEYS: Bindings<string> = [
+  ['KeyE', 'interact'],
+  ['Space', 'use'],
+  ['KeyQ', 'itemPrev'],
+  ['KeyR', 'itemNext'],
+  ['Digit1', 'item1'],
+  ['Digit2', 'item2'],
+  ['Digit3', 'item3'],
+  ['Digit4', 'item4'],
+  ['Digit5', 'item5'],
+  ['Digit6', 'item6'],
+  ['Digit7', 'item7'],
+  ['KeyB', 'build'],
+  ['Escape', 'system'],
+  ['KeyZ', 'rotateLeft'],
+  ['KeyC', 'rotateRight'],
+  ['KeyM', 'chart'],
 ];
 
 /** Enter and Space aren't here: the browser already clicks the focused button. */
@@ -123,6 +173,7 @@ const BINDINGS: Record<ControlMode, { keys: Bindings<string>; pad: Bindings<numb
   sea: { keys: SEA_KEYS, pad: SEA_PAD },
   duel: { keys: DUEL_KEYS, pad: DUEL_PAD },
   menu: { keys: MENU_KEYS, pad: MENU_PAD },
+  foot: { keys: FOOT_KEYS, pad: FOOT_PAD },
 };
 
 export interface PadSnapshot {
@@ -145,8 +196,14 @@ export function readPad(pad: PadSnapshot, wasPressed: ReadonlySet<number>, mode:
   const stick = deadZone(pad.axes[AXIS.LX] ?? 0);
   const x = pad.axes[AXIS.LX] ?? 0;
   const y = pad.axes[AXIS.LY] ?? 0;
+  const tilt = Math.hypot(x, y);
+  // On foot the stick is a direction: dead-zoned by its tilt, not per axis, so diagonals stay smooth.
+  const walk = tilt < DEAD_ZONE ? 0 : Math.min(1, (tilt - DEAD_ZONE) / (1 - DEAD_ZONE)) / tilt;
   return {
     rudder: dpad !== 0 ? dpad : stick,
+    /** Left stick as a walking direction: +x right, +y up the screen. */
+    walkX: x * walk,
+    walkY: -y * walk,
     /** The left stick as a menu direction, if it's pushed far enough. */
     stickNav: (Math.max(Math.abs(x), Math.abs(y)) < STICK_NAV
       ? null
@@ -182,6 +239,9 @@ export class Controls {
   rudder = 0;
   /** Duel guard held: keyboard L, right mouse button, or a left shoulder button. */
   block = false;
+  /** On foot: which way to walk, on screen (+x right, +y up), up to length 1. */
+  walkX = 0;
+  walkY = 0;
   gamepadConnected = false;
   private mode: ControlMode = 'sea';
   private padZoom = 0;
@@ -209,6 +269,13 @@ export class Controls {
       // In a duel the mouse fights: left click cuts.
       for (const click of input.takeClicks()) if (click.button === 0) this.queue('light');
     }
+    const held = (...codes: string[]) => (codes.some((c) => input.isHeld(c)) ? 1 : 0);
+    this.walkX = this.mode === 'foot' ? held('KeyD', 'ArrowRight') - held('KeyA', 'ArrowLeft') : 0;
+    this.walkY = this.mode === 'foot' ? held('KeyW', 'ArrowUp') - held('KeyS', 'ArrowDown') : 0;
+    if (this.mode === 'foot') {
+      // On foot the mouse works: a left click uses what's in hand on the cell under the cursor.
+      for (const click of input.takeClicks()) if (click.button === 0) this.queue('useAtCursor');
+    }
 
     this.padZoom = 0;
     this.gamepadConnected = false;
@@ -220,6 +287,10 @@ export class Controls {
       const state = readPad(pad, this.padButtons.get(pad.index) ?? new Set(), this.mode);
       this.padButtons.set(pad.index, state.pressed);
       if (Math.abs(state.rudder) > Math.abs(this.rudder)) this.rudder = state.rudder;
+      if (this.mode === 'foot' && Math.hypot(state.walkX, state.walkY) > Math.hypot(this.walkX, this.walkY)) {
+        this.walkX = state.walkX;
+        this.walkY = state.walkY;
+      }
       if (this.mode === 'duel' && state.block) this.block = true;
       if (Math.abs(state.zoom) > Math.abs(this.padZoom)) this.padZoom = state.zoom;
       for (const action of state.actions) this.queue(action);

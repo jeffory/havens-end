@@ -64,7 +64,8 @@ function decide(sea: Sea, v: Vessel, ai: AiState): void {
   const dx = player.ship.x - ship.x;
   const dz = player.ship.z - ship.z;
   const distance = Math.hypot(dx, dz);
-  const playerFightable = player.status === 'afloat';
+  // Nobody picks a fight with an empty ship at anchor.
+  const playerFightable = player.status === 'afloat' && !sea.ashore;
   const leader = ai.leader !== null ? sea.vessel(ai.leader) : undefined;
   const wind = sea.weather.windAt(ship.x, ship.z, sea.time);
   const isMerchant = v.faction === 'merchant';

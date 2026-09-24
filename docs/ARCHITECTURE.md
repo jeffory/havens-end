@@ -13,10 +13,11 @@ behind the codebase and the plan for the phases still to come.
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
-| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §9. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §10. |
 | Character art | **Tripo** (text to 3D, via ComfyUI) → **voxelizer** → `.vox` | Detailed, consistent captains without hand modelling; they end up as named-part `.vox` files you can restyle. See §7. |
 | Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
-| UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
+| UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart, building, the game menu | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
+| Saves | **IndexedDB**: the seed plus what's changed | The world regenerates from its seed; a save is the sim state and the edited chunks, run-length encoded (§9). |
 | Target | Desktop browsers, including higher-end laptops | Budgets below assume a discrete or recent integrated GPU. |
 
 ### Why not React Three Fiber?
@@ -179,6 +180,11 @@ tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz 
 | Sea chart | M | View (Back) |
 | *Menus:* move / choose | arrows or WASD / Enter | d-pad or left stick / A |
 | *Menus:* switch place / back | Q / E, Esc | LB / RB, B |
+| Game menu (save, load) | Esc | Start |
+| *On foot:* walk | WASD / arrows | Left stick |
+| *On foot:* use what's in hand / interact | Space or left click / E | X / A |
+| *On foot:* tools and seed | 1–7, Q / R | LB / RB |
+| *On foot:* build (turn: Q / R, LB / RB) | B | Y |
 | *Duel:* move | A / D | Left stick |
 | *Duel:* cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
 | *Duel:* block (tap to parry) | hold L or right mouse | LB or LT |
@@ -440,7 +446,98 @@ into an offscreen canvas. Over that it draws the ports (crossed out if they're c
 to you), your ship, the danger rings and your course. Choosing a port sets the
 course: the compass shows a gold pointer, and the nav panel its distance and bearing.
 
-## 9. Ship art: MagicaVoxel authoring guide
+## 9. On foot: ports, camps and farms (Phase 5)
+
+**Going ashore.** B does the obvious thing for where you are:
+- **Alongside another ship:** you board her.
+- **In a harbour:** you go alongside the pier and step off onto it.
+- **Anywhere else near a beach:** you row ashore, if the ship is slow and nobody is
+  fighting you.
+
+While you're ashore the ship rides at anchor. Nobody attacks an empty ship, and the
+encounter director waits. Time goes on, so markets recover, crops grow and jobs run
+down. E (A on a controller) near the ship takes you back aboard, and whatever is in
+your pack is stowed in the hold.
+
+**The walker** (`land/walker.ts`, pure and tested):
+- An axis-separated box, 0.6 wide and 1.7 tall, under gravity.
+- It scrambles up ledges of up to two voxels, but not a three-voxel wall. It wades
+  into water up to a voxel deep, and no further.
+- Crops are drawn but walkable. A separate `blocksWalker` test sits alongside
+  `isSolid`.
+
+**Ports on foot.** The Phase 4 menus are unchanged; you just walk to them.
+- **Doors and signs.** Each harbour records its doors: the three houses nearest the
+  pier become the market, the tavern and the governor's office. The shipyard is at
+  the foot of the pier. Signs hang over them, and walking up to a door opens that
+  place's menu.
+- **Roads.** Gravel roads graded one voxel per step run from the pier to every door.
+- **Reachability test.** Every door can be walked to from the pier, by the walker's
+  own rules.
+
+**The view.** The camera closes in (26 units). A cutaway in the terrain shader opens
+any tree or building on the camera's side of the captain, above head height. Blocks
+opt in through a per-vertex `cutaway` flag (the ground never does, since it would
+show hollow), and your own ship fades while you work beside her.
+
+**Tools** (`land/Land.ts`) work the cell in front of you, or the one under the mouse
+if it's within reach. The target is marked, and red means it won't work:
+- **Axe:** fells a whole tree (trunk and canopy) for timber.
+- **Pickaxe:** breaks natural stone, one block at a time.
+- **Shovel:** levels the ground toward your feet, cutting or filling, and digs when
+  the ground is already level.
+- **Hoe:** tills grass or earth.
+- **Seed:** plants in tilled soil.
+
+Gathering (axe and pickaxe) works on any island outside a port's town. Shaping and
+farming need a claim.
+
+**Camps** (`land/structures.ts`):
+- **Claims.** A campfire (5 timber) claims everything within 32 voxels of it.
+  Nothing else can be built without one, and nothing at all within 80 of a port's
+  berth.
+- **Buildings** go on the grid, turned in quarter turns:
+  - a hut (rest here to save);
+  - a storehouse (150 goods);
+  - they're levelled onto ground that varies by up to two voxels, with foundations
+    filling the gaps.
+- **Free-form pieces** go down one cell at a time: fences, gravel paths and torches.
+- **Materials** come from your pack, then any storehouse nearby, then the ship's hold
+  if she's anchored within 60. So a hut can be built from timber bought in port.
+- **Taking things down.** The axe or pickaxe takes up fences, paths and torches.
+  Buildings come down from the build menu, for half their materials back.
+
+**Farms** (`land/crops.ts`):
+
+| Crop | Seed | Grows in | Yields |
+|---|---|---|---|
+| Sugar cane | cane cuttings | 3 min | 2 sugar |
+| Tobacco | tobacco seed | 4 min | 2 tobacco |
+| Pepper | pepper seed | 5 min | 1 spice |
+
+- **Growing.** Each crop sprouts, grows and ripens as voxels. Harvest it with E or
+  any tool; the soil stays tilled for the next seed.
+- **Seed and materials are goods.** Timber, stone and seed trade in every market:
+  - seed is cheapest where its crop grows;
+  - the pirate haven sells timber cheaply and the Crown's quarries sell stone;
+  - Imperial shipyards pay well for timber.
+
+**Saves** (`save/`):
+- **What's stored.** A save is the world seed, plus `snapshot()` from the `Sea`, the
+  `Economy` and the `Land`, plus the voxel chunks changed since generation. The world
+  tracks edits from the moment worldgen finishes. Chunks are run-length encoded: a
+  32 KB chunk is usually a few hundred bytes.
+- **What isn't.** Other ships aren't saved; the encounter director brings new ones.
+- **Where.** Saves go to IndexedDB: an autosave slot plus any number of named slots.
+- **When the game saves itself.** Every 3 minutes, whenever you dock, and whenever
+  you rest at a fire or in a hut.
+- **The game menu** (Esc or Start) saves to a named slot, loads, or starts a new game.
+- **Loading** reloads the page with `?load=<slot>` and applies the save to the freshly
+  generated world. That keeps restoring simple: nothing from the old session has to
+  be unwound.
+- **At startup,** if there's an autosave, the menu offers to continue it.
+
+## 10. Ship art: MagicaVoxel authoring guide
 
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
@@ -467,7 +564,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 10. Simulation, physics and time
+## 11. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -488,8 +585,8 @@ time-dependent happens until you set sail.
 ship's velocity. Each step's segment is tested against every other hull's box
 (keel to masthead), floating barrels, the voxel terrain (DDA) and the water.
 
-**Still to build:** characters on land (Phase 5), as an axis-separated swept AABB
-against the voxel grid with a one-voxel step-up.
+**On foot** (Phase 5): an axis-separated box against the voxel grid, stepping and
+scrambling up to two voxels (§9).
 
 **Entities and systems.** Plain, serialisable data (`Vessel`, `Shot`, `Barrel` in
 the `Sea`), with systems as functions called in a fixed order each tick. An ECS
@@ -501,10 +598,10 @@ coarse *ledger* simulation (rates × elapsed game time, capped by storage and
 workers) instead of simulating every NPC. On return, NPCs and crops are placed
 consistently with the ledger.
 
-**Saves (designed now, built in Phase 5).** Seeds, modified chunks (run-length
-encoded) and the `sim` state as JSON, in IndexedDB.
+**Saves** (Phase 5): the seed, the edited chunks (run-length encoded) and the sim
+state as JSON, in IndexedDB (§9).
 
-## 11. Module map
+## 12. Module map
 
 ```
 src/
@@ -533,12 +630,17 @@ src/
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
   render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
-                       Wake, WindStreaks, voxelGeometry, DuelView, CharacterView
-  tools/TerrainTool.ts dig / place dev tool
+                       Wake, WindStreaks, voxelGeometry, DuelView, CharacterView,
+                       LandView (the captain on foot, tool marker, build ghost),
+                       toolModels
+  land/                on foot: the walker, tools, camps and buildings, crops
+  save/                save format, IndexedDB slots, chunk run-length encoding
+  Shore.ts             the captain on foot: controls to land orders, the view and HUD
   ui/                  Hud (help, compass, combat panel, prompts, messages),
                        ShipLabels (name tags over ships), DuelHud; Overlay and
                        menuNav (React menus, controller focus), port/ (the port
-                       screen and its tabs), ChartView / ChartScreen
+                       screen and its tabs), ChartView / ChartScreen, FootHud,
+                       WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -547,19 +649,19 @@ scripts/               asset generators (placeholder ships, captains via Tripo,
 public/models/         ship and character .vox files
 ```
 
-`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
+`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
 next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 12. Roadmap (proposed)
+## 13. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
 3. ✅ **Naval combat:** broadsides, three shot types, damage and surrender, boarding, merchant barrels, AI captains, regional encounters and convoys.
    - ✅ **3b. Captains' duel:** side-view sword fight on deck (parries with a cue, blocks, rolls, kicks, red thrusts), Tripo-generated voxel captains, jail and plunder.
 4. ✅ **Ports & economy:** a seeded five-port archipelago with harbours and towns; supply-and-demand markets, the price book and rumours; freight, bounties and smuggling; reputation with three factions and a fixer; shipyard refits and ships; crew hiring; the chart; React menus driven by keyboard or controller.
-5. **On foot & base building:** captain controller, dig/flatten/build with inventory, claiming land, save/load.
-6. **Crew automation & farming:** job system, voxel-surface pathfinding, production chains, off-screen ledger, day/night.
+5. ✅ **On foot & camps:** walking ashore anywhere and around ports (signed doors, graded roads); axe, pickaxe, shovel and hoe; campfire claims; huts, storehouses, fences, paths, torches; sugar cane, tobacco and pepper; timber, stone and seed as trade goods; a cutaway view; autosave and named saves.
+6. **Crews & production:** hands who work your camps (job system, voxel-surface pathfinding), production chains, the off-screen ledger, day and night.
 7. **Treasure hunting:** hand-drawn-style maps of real terrain, riddles generated from landmarks, dig sites.
 8. **Story:** the opening (orphaned, adopted by a merchant captain, the Imperial attack), the black flag, the revenge arc.

@@ -9,6 +9,7 @@ export function toGeometry(data: MeshData): BufferGeometry {
   geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
   geometry.setAttribute('color', new BufferAttribute(data.colors, 3));
+  if (data.cutaway) geometry.setAttribute('cutaway', new BufferAttribute(data.cutaway, 1));
   geometry.setIndex(new BufferAttribute(data.indices, 1));
   geometry.computeBoundingSphere();
   return geometry;

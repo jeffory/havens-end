@@ -23,6 +23,8 @@ export class VoxelWorld {
   /** Chunks whose mesh is stale. A Map keeps insertion order, so remeshing is first-in, first-out. */
   private readonly dirty = new Map<number, Chunk>();
   private readonly listeners = new Set<VoxelChangeListener>();
+  /** Chunks changed since tracking began (after worldgen): all a save needs to store. */
+  private edited: Set<number> | null = null;
 
   get chunkCount(): number {
     return this.chunks.size;
@@ -69,8 +71,39 @@ export class VoxelWorld {
     if (prev === id) return false;
 
     this.markDirtyAround(cx, cy, cz, lx, ly, lz);
+    this.edited?.add(chunkKey(cx, cy, cz));
     for (const listener of this.listeners) listener(x, y, z, prev, id);
     return true;
+  }
+
+  /** From now on, remember which chunks change. Call once the world is generated. */
+  trackEdits(): void {
+    this.edited = new Set();
+  }
+
+  /** The chunks changed since trackEdits(). */
+  editedChunks(): Chunk[] {
+    return [...(this.edited ?? [])].map((key) => this.chunks.get(key)).filter((c): c is Chunk => c !== undefined);
+  }
+
+  /**
+   * Overwrites a whole chunk's voxels (loading a save). It and its neighbours are
+   * remeshed; listeners aren't told voxel by voxel, so refresh anything derived afterwards.
+   */
+  loadChunk(cx: number, cy: number, cz: number, data: Uint8Array): void {
+    const chunk = this.getOrCreateChunk(cx, cy, cz);
+    chunk.data.set(data);
+    chunk.filled = data.reduce((n, id) => n + (id === Block.Air ? 0 : 1), 0);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const key = chunkKey(cx + dx, cy + dy, cz + dz);
+          const c = this.chunks.get(key);
+          if (c) this.dirty.set(key, c);
+        }
+      }
+    }
+    this.edited?.add(chunkKey(cx, cy, cz));
   }
 
   /** Height of the first empty cell above the highest solid voxel in a column (0 if the column is empty). */

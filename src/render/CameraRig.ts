@@ -53,6 +53,13 @@ export class CameraRig {
     this.targetYaw += (direction * Math.PI) / 2;
   }
 
+  /** New zoom limits and distance: close in on foot, well back at sea. Eases there. */
+  setRange(min: number, max: number, distance: number): void {
+    this.options.minDistance = min;
+    this.options.maxDistance = max;
+    this.targetDistance = distance;
+  }
+
   /** Mouse-wheel deltas zoom exponentially, so each notch feels the same at any distance. */
   zoom(wheelDelta: number): void {
     const { minDistance, maxDistance } = this.options;

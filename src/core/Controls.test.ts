@@ -74,3 +74,15 @@ describe('readPad in menus', () => {
     expect(readPad(pad([0.2, -0.3, 0, 0]), new Set(), 'menu').stickNav).toBeNull();
   });
 });
+
+describe('readPad on foot', () => {
+  it('walks with the stick as a direction and works with the face buttons', () => {
+    const state = readPad(pad([0, -1, 0, 0], [PAD.A, PAD.X]), new Set(), 'foot');
+    expect(state.walkX).toBeCloseTo(0);
+    expect(state.walkY).toBeCloseTo(1); // stick pushed up walks up the screen
+    expect(state.actions).toEqual(['interact', 'use']);
+    const diagonal = readPad(pad([0.7, 0.7, 0, 0]), new Set(), 'foot');
+    expect(Math.hypot(diagonal.walkX, diagonal.walkY)).toBeCloseTo(1, 1);
+    expect(readPad(pad([0.1, 0.1, 0, 0]), new Set(), 'foot').walkX).toBe(0);
+  });
+});

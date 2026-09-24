@@ -11,7 +11,7 @@ import type { DuelIntent } from './duel/duel';
 import { BOUNTY_NOUNS } from './economy/contracts';
 import { Economy, type Notice } from './economy/economy';
 import { cargoCount } from './economy/goods';
-import type { Port } from './economy/ports';
+import type { Port, PortPlace } from './economy/ports';
 import { standingNews } from './economy/reputation';
 import { type Action, Controls } from './core/Controls';
 import { GameLoop } from './core/GameLoop';
@@ -33,13 +33,25 @@ import { angleOffWind, pointOfSailName } from './sailing/pointOfSail';
 import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
-import { TerrainTool } from './tools/TerrainTool';
+import { Land } from './land/Land';
+import type { Building } from './land/structures';
+import { LandView } from './render/LandView';
+import { Shore } from './Shore';
+import { BuildMenu } from './ui/BuildMenu';
 import { ChartScreen } from './ui/ChartScreen';
+import { FootHud } from './ui/FootHud';
+import { StoreScreen } from './ui/StoreScreen';
+import { WorldLabels } from './ui/WorldLabels';
+import { SystemMenu } from './ui/SystemMenu';
+import { decodeRuns, encodeRuns } from './save/rle';
+import { AUTOSAVE, deleteSave, SAVE_VERSION, type SaveData, type SaveSummary, writeSave } from './save/storage';
+import { CHUNK_VOLUME } from './voxel/Chunk';
+import { SHIP_LABELS } from './economy/shipyard';
 import type { ChartProps } from './ui/ChartView';
 import { DuelHud } from './ui/DuelHud';
 import { type CombatReadout, Hud, type NavReadout } from './ui/Hud';
 import { Overlay } from './ui/Overlay';
-import { PortScreen } from './ui/port/PortScreen';
+import { PortScreen, type Tab } from './ui/port/PortScreen';
 import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
 import { VoxelWorld } from './voxel/VoxelWorld';
@@ -68,6 +80,10 @@ const CAPTAINS = ['player', 'imperial', 'merchant', 'pirate'] as const;
 const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 /** Menu actions passed to whatever screen is open. */
 const MENU_ACTIONS: readonly Action[] = ['navUp', 'navDown', 'navLeft', 'navRight', 'confirm', 'back', 'tabPrev', 'tabNext', 'chart'];
+/** Orders for the ship while the captain's ashore: none. */
+const ANCHORED: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
+/** Sea seconds between autosaves. */
+const AUTOSAVE_SECONDS = 180;
 const REFUSALS: Record<DockProblem, (port: string) => string> = {
   closed: (port) => `${port} is closed to you. A fixer in another port might smooth things over.`,
   fast: (port) => `Take in sail: you're coming into ${port} too fast to go alongside.`,
@@ -88,6 +104,7 @@ export class Game {
   readonly ports: readonly Port[];
   readonly sea: Sea;
   readonly economy: Economy;
+  readonly land: Land;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly sky = SKY_COLOR.clone();
@@ -98,6 +115,9 @@ export class Game {
   private readonly sun: Sun;
   private readonly terrain: ChunkRenderer;
   private readonly ocean: OceanRenderer;
+  private readonly seabed: SeabedMap;
+  /** Sea seconds until the next autosave. */
+  private autosaveIn = AUTOSAVE_SECONDS;
   private readonly wakes = new WakePool();
   private readonly streaks: WindStreaks;
   private readonly effects = new Effects();
@@ -105,7 +125,10 @@ export class Game {
   private readonly shots = new ShotsView();
   private readonly barrels = new BarrelsView();
   private readonly arcs = new RangeArcs();
-  private readonly tool: TerrainTool;
+  private readonly landView: LandView;
+  private readonly footHud: FootHud;
+  private readonly signs: WorldLabels;
+  private readonly shore: Shore;
   private readonly hud: Hud;
   private readonly labels: ShipLabels;
   private readonly duelHud: DuelHud;
@@ -158,12 +181,14 @@ export class Game {
 
     this.islands = planArchipelago(WORLD_SEED);
     this.ports = buildArchipelago(this.world, this.islands);
+    this.world.trackEdits(); // from here on, changes are what a save stores
 
     const classes = new Map<ShipType, ShipClass>();
     for (const [type, model] of models) classes.set(type, shipClass(type, model.footprint, model.deck, model.top));
     this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.ports, WORLD_SEED);
     this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
-    const seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z);
+    this.land = new Land(this.world, this.sea);
+    const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
     this.input = new Input(this.renderer.domElement);
     this.controls = new Controls(this.input);
@@ -173,11 +198,22 @@ export class Game {
     this.ocean = new OceanRenderer(seabed, this.wakes);
     this.streaks = new WindStreaks(this.weather);
     this.fleet = new FleetView(models, this.wakes, this.effects, this.arcs);
-    this.tool = new TerrainTool(this.world, this.rig.camera);
     this.hud = new Hud(container);
     this.labels = new ShipLabels(container);
+    this.signs = new WorldLabels(container);
     this.duelHud = new DuelHud(container);
+    this.footHud = new FootHud(container);
     this.overlay = new Overlay(container);
+    this.landView = new LandView(captains.get('player')!);
+    this.shore = new Shore(this.land, this.landView, this.footHud, this.rig, this.input, {
+      openPort: (place) => this.openPort(place),
+      openStore: (building) => this.openStore(building),
+      openBuildMenu: () => this.openBuildMenu(),
+      openSystem: () => this.openSystem(false),
+      rest: () => this.rest(),
+      aboard: (message) => this.toSea(message),
+      toast: (text, tone) => this.hud.toast(text, tone),
+    });
     this.scene.add(
       this.terrain.group,
       this.ocean.group,
@@ -186,7 +222,7 @@ export class Game {
       this.barrels.mesh,
       this.effects.mesh,
       this.streaks.mesh,
-      this.tool.highlight,
+      this.landView.group,
     );
 
     this.loop = new GameLoop(
@@ -204,11 +240,94 @@ export class Game {
     return this.sea.player.ship;
   }
 
-  start(): void {
-    this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
-    this.terrain.update(STARTUP_CHUNKS, this.rig.focus); // the home island before the first frame
-    this.hud.toast(`Welcome to ${this.ports[0].name}. B to go ashore and trade, M for the chart, W to make sail.`);
+  /** Starts the loop. `title` opens the game menu first (to carry on from the autosave). */
+  start(title = false): void {
+    const w = this.land.walker;
+    this.rig.snapTo(this.cameraTarget.set(w?.x ?? this.ship.x, w ? w.y + 1.2 : WATER_LEVEL, w?.z ?? this.ship.z));
+    this.terrain.update(STARTUP_CHUNKS, this.rig.focus); // the island in view, before the first frame
+    if (!this.restored) this.hud.toast(`Welcome to ${this.ports[0].name}. B to go ashore and trade, M for the chart, W to make sail.`);
+    if (title) this.openSystem(true);
     this.loop.start();
+  }
+
+  private restored = false;
+
+  // ---- Saving and loading ----
+
+  /** Everything a save needs: the seed plus what's changed. */
+  snapshot(): SaveData {
+    return {
+      version: SAVE_VERSION,
+      seed: WORLD_SEED,
+      sea: this.sea.snapshot(),
+      economy: this.economy.snapshot(),
+      land: this.land.snapshot(),
+      course: this.course?.id ?? null,
+      edits: this.world.editedChunks().map((c) => ({ cx: c.cx, cy: c.cy, cz: c.cz, data: encodeRuns(c.data) })),
+    };
+  }
+
+  /** Puts a save's state onto this freshly generated world. */
+  restore(data: SaveData): void {
+    if (data.version !== SAVE_VERSION || data.seed !== WORLD_SEED) throw new Error('That save is from a different version of the game.');
+    for (const e of data.edits) this.world.loadChunk(e.cx, e.cy, e.cz, decodeRuns(e.data, CHUNK_VOLUME));
+    this.sea.restore(data.sea);
+    this.economy.restore(data.economy);
+    this.land.restore(data.land);
+    this.course = data.course === null ? null : (this.ports[data.course] ?? null);
+    this.seabed.rebuild();
+    this.restored = true;
+    if (this.land.walker) this.toFoot('');
+    this.hud.toast('Game loaded.', 'good');
+  }
+
+  summary(): SaveSummary {
+    const p = this.sea.player;
+    const x = this.land.walker?.x ?? p.ship.x;
+    const z = this.land.walker?.z ?? p.ship.z;
+    const port = this.sea.docked ?? this.ports.find((q) => Math.hypot(q.x - x, q.z - z) < 150);
+    const camp = this.land.walker && this.land.claimed(x, z);
+    return {
+      gold: this.sea.captain.gold,
+      ship: SHIP_LABELS.get(p.cls.design) ?? p.cls.design.name,
+      place: port ? port.name : camp ? 'your camp' : this.land.walker ? 'ashore' : REGION_NAMES[regionTier(x, z)].toLowerCase(),
+      time: this.sea.time,
+    };
+  }
+
+  /** Saves to a slot. A snapshot is taken now; writing it finishes in the background. */
+  save(slot: string): Promise<void> {
+    return writeSave({ slot, savedAt: Date.now(), summary: this.summary(), data: this.snapshot() });
+  }
+
+  private autosave(): void {
+    if (this.duel || this.sea.player.status !== 'afloat') return;
+    this.autosaveIn = AUTOSAVE_SECONDS;
+    this.save(AUTOSAVE).catch(() => undefined); // no storage (private window): nothing to be done
+  }
+
+  /** Resting at a fire or in a hut saves the game. */
+  private rest(): void {
+    this.autosave();
+    this.hud.toast('You rest a while. The game is saved.', 'good');
+  }
+
+  private openSystem(title: boolean): void {
+    this.openMenu(() =>
+      this.overlay.show(
+        'system',
+        createElement(SystemMenu, {
+          title,
+          summary: this.summary(),
+          resume: this.closeScreen,
+          save: (name) => this.save(name),
+          load: (slot) => location.assign(`${location.pathname}?load=${encodeURIComponent(slot)}`),
+          remove: (slot) => deleteSave(slot),
+          newGame: () => location.assign(`${location.pathname}?new`),
+          nav: this.overlay.handlers,
+        }),
+      ),
+    );
   }
 
   private update(dt: number): void {
@@ -217,8 +336,17 @@ export class Game {
       this.duel.step(dt, this.duelIntent());
       return;
     }
-    // Ashore or poring over the chart: the sea waits.
+    // In a menu or poring over the chart: the sea waits.
     if (this.overlay.kind) return;
+    this.autosaveIn -= dt;
+    if (this.autosaveIn <= 0) this.autosave();
+    if (this.land.walker) {
+      // On foot: the captain walks and works, the ship rides at anchor, and time goes on.
+      this.shore.update(dt, controls);
+      this.sea.step(dt, ANCHORED);
+      this.economy.step(dt);
+      return;
+    }
     orders.rudder = controls.rudder;
     orders.sails = Math.min(1, Math.max(0, orders.sails + (controls.take('sailUp') - controls.take('sailDown')) * 0.5));
     if (controls.take('ammoRound')) orders.ammo = 'round';
@@ -229,12 +357,19 @@ export class Game {
     if (controls.take('firePort')) fire.push('port');
     if (controls.take('fireStarboard')) fire.push('starboard');
     orders.fire = fire;
-    orders.board = controls.take('board') > 0;
+    // B boards the ship alongside, goes alongside in a harbour, or else rows ashore.
+    const board = controls.take('board') > 0;
+    orders.board = board && (this.sea.boardingTarget() !== null || this.sea.harbour() !== null);
+    if (board && !orders.board && this.sea.player.status === 'afloat') {
+      const result = this.land.goAshore();
+      if (result.ok) this.toFoot(result.message);
+      else this.hud.toast(result.message, 'bad');
+    }
 
     this.sea.step(dt, orders);
     this.economy.step(dt);
     if (this.sea.player.status !== 'afloat') orders.sails = 0;
-    if (this.sea.docked) this.goAshore(this.sea.docked);
+    if (this.sea.docked && !this.land.walker) this.stepAshore(this.sea.docked);
   }
 
   private render(alpha: number, frameSeconds: number): void {
@@ -249,6 +384,8 @@ export class Game {
       for (const action of MENU_ACTIONS) for (let n = controls.take(action); n > 0; n--) this.overlay.nav(action);
     } else if (!this.duel && controls.take('chart') > 0) {
       this.openChart();
+    } else if (!this.duel && !this.land.walker && controls.take('system') > 0) {
+      this.openSystem(false);
     }
 
     // The rendered moment trails the latest sim step by (1 - alpha) of a step. While a
@@ -272,6 +409,21 @@ export class Game {
       this.cameraTarget.add(shift.clampLength(0, FRAME_MAX_SHIFT));
     }
     let focus = rig.focus;
+    const signs = this.land.walker ? this.shore.render(paused ? 1 : alpha, frameSeconds, time, rig.camera) : [];
+    const walker = this.land.walker;
+    if (walker) this.cameraTarget.copy(this.shore.focus);
+    // Ashore, cut away what's between the camera and the captain, and fade your own ship beside you.
+    if (walker) {
+      const cam = rig.camera.position;
+      const dx = cam.x - this.shore.focus.x;
+      const dz = cam.z - this.shore.focus.z;
+      const run = Math.hypot(dx, dz) || 1;
+      this.terrain.setCutaway(this.shore.focus.x, this.shore.focus.y - 1.2, this.shore.focus.z, 4.5, dx / run, dz / run, run / Math.max(1, cam.y - this.shore.focus.y));
+    } else {
+      this.terrain.setCutaway(0, 0, 0, 0);
+    }
+    const near = walker ? Math.hypot(pose.x - walker.x, pose.z - walker.z) : Infinity;
+    this.fleet.view(player.id)?.setFade(near < 16 ? 0.3 + 0.7 * Math.max(0, (near - 10) / 6) : 1);
     if (this.duel) {
       const verdict = this.duel.render(frameSeconds, time);
       focus = this.duel.focus;
@@ -297,10 +449,11 @@ export class Game {
     this.arcs.update(player);
     this.arcs.mesh.visible &&= !this.duel;
     this.effects.update(frameSeconds);
-    if (!this.duel) this.tool.update(this.input);
+    this.handleLand(time);
 
     this.renderer.render(this.scene, rig.camera);
-    if (!paused) {
+    this.signs.update(paused ? [] : signs, rig.camera, this.container.clientWidth, this.container.clientHeight);
+    if (!paused && !this.land.walker) {
       const wind = this.weather.windAt(pose.x, pose.z, time);
       this.hud.setGamepadConnected(controls.gamepadConnected);
       this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));
@@ -408,6 +561,7 @@ export class Game {
     return {
       world: this.world,
       islands: this.islands,
+      camps: this.land.buildings.filter((b) => b.kind === 'campfire').map((b) => ({ x: b.x0 + 1.5, z: b.z0 + 1.5 })),
       course: this.course,
       setCourse: (port) => {
         this.course = port;
@@ -417,19 +571,32 @@ export class Game {
   }
 
   /** Alongside: customs, the price book, fresh jobs, then the port's menus. */
-  private goAshore(port: Port): void {
-    const arrival = this.economy.arrive(port);
+  /** Alongside in port: customs and the price book, then the captain steps off onto the pier. */
+  private stepAshore(port: Port): void {
+    this.notify(this.economy.arrive(port));
     if (this.course === port) this.course = null;
+    this.land.landAtPort();
+    this.toFoot(`Ashore at ${port.name}. Walk up to a door to go in.`);
+    this.autosave();
+  }
+
+  /** Walked up to a door in port: that place's menu. */
+  private openPort(place: PortPlace): void {
+    const port = this.sea.docked;
+    if (!port) return;
+    const tab: Tab = place.kind;
     this.openMenu(() =>
       this.overlay.show(
         'port',
         createElement(PortScreen, {
-          key: port.id,
+          key: `${port.id}-${place.kind}`,
           port,
           economy: this.economy,
           sea: this.sea,
-          arrival,
+          arrival: [],
+          tab,
           leave: this.setSail,
+          close: this.closeScreen,
           nav: this.overlay.handlers,
           chart: this.chartProps(),
         }),
@@ -437,11 +604,71 @@ export class Game {
     );
   }
 
+  /** "Set sail" from a port menu: straight back aboard. */
   private readonly setSail = () => {
     this.closeMenu();
-    this.sea.undock();
-    this.orders.sails = 0;
+    this.toSea(this.land.goAboard().message);
   };
+
+  private openBuildMenu(): void {
+    this.openMenu(() =>
+      this.overlay.show(
+        'build',
+        createElement(BuildMenu, {
+          land: this.land,
+          nav: this.overlay.handlers,
+          close: this.closeScreen,
+          choose: (kind) => {
+            this.closeMenu();
+            this.shore.place(kind);
+          },
+        }),
+      ),
+    );
+  }
+
+  private openStore(building: Building): void {
+    this.openMenu(() =>
+      this.overlay.show('store', createElement(StoreScreen, { land: this.land, building, close: this.closeScreen, nav: this.overlay.handlers })),
+    );
+  }
+
+  private readonly closeScreen = () => this.closeMenu();
+
+  /** The captain steps ashore: on-foot controls, camera and HUD. */
+  private toFoot(message: string): void {
+    this.controls.setMode('foot');
+    this.rig.setRange(12, 60, 26);
+    this.landView.setVisible(true);
+    this.showPanels();
+    if (message) this.hud.toast(message);
+  }
+
+  /** Back aboard: sailing controls, camera and HUD. */
+  private toSea(message: string): void {
+    this.controls.setMode('sea');
+    this.rig.setRange(25, 150, 90);
+    this.landView.setVisible(false);
+    this.orders.sails = 0;
+    this.showPanels();
+    if (message) this.hud.toast(message);
+  }
+
+  /** The HUD for wherever the captain is: the sailing panels, or the on-foot hotbar. */
+  private showPanels(): void {
+    const ashore = this.land.walker !== null;
+    this.hud.setPanels(!ashore);
+    this.footHud.setVisible(ashore);
+    this.labels.setVisible(!ashore);
+  }
+
+  /** Tool work and building on land, as dust and messages. */
+  private handleLand(_time: number): void {
+    for (const e of this.land.takeEvents()) {
+      if (e.kind === 'work') this.effects.emit(e.action === 'fell' ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
+      if (e.kind === 'built' || e.kind === 'razed') this.effects.emit('dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 1);
+    }
+  }
 
   private openChart(): void {
     this.openMenu(() =>
@@ -460,14 +687,15 @@ export class Game {
     this.controls.setMode('menu');
     this.hud.setVisible(false);
     this.labels.setVisible(false);
+    this.footHud.setVisible(false);
   }
 
   private closeMenu(): void {
     this.screen = null;
     this.overlay.hide();
-    this.controls.setMode('sea');
+    this.controls.setMode(this.land.walker ? 'foot' : 'sea');
     this.hud.setVisible(true);
-    this.labels.setVisible(true);
+    this.showPanels();
   }
 
   /** Boarders away: the captains meet on the prize's deck. */

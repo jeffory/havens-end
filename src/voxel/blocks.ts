@@ -17,6 +17,19 @@ export const Block = {
   RoofTile: 11,
   RoofSlate: 12,
   Thatch: 13,
+  // Camps and farms
+  Soil: 14,
+  Gravel: 15,
+  Embers: 16,
+  Fence: 17,
+  // Crops: drawn but walkable (see PASSABLE)
+  Sprout: 18,
+  Cane: 19,
+  CaneTop: 20,
+  TobaccoLeaf: 21,
+  TobaccoFlower: 22,
+  PepperBush: 23,
+  PepperRipe: 24,
 } as const;
 
 export type BlockId = number;
@@ -41,6 +54,17 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.RoofTile]: { name: 'roof tile', color: 0xb4513a },
   [Block.RoofSlate]: { name: 'slate', color: 0x50698a },
   [Block.Thatch]: { name: 'thatch', color: 0xc4a35e },
+  [Block.Soil]: { name: 'tilled soil', color: 0x5e4029 },
+  [Block.Gravel]: { name: 'gravel path', color: 0xb9ad96 },
+  [Block.Embers]: { name: 'embers', color: 0xf07a22 },
+  [Block.Fence]: { name: 'fence', color: 0x9a7247 },
+  [Block.Sprout]: { name: 'sprout', color: 0x8fd35a },
+  [Block.Cane]: { name: 'sugar cane', color: 0x6fae3e },
+  [Block.CaneTop]: { name: 'cane tops', color: 0xc5d65a },
+  [Block.TobaccoLeaf]: { name: 'tobacco leaves', color: 0x4f8f3a },
+  [Block.TobaccoFlower]: { name: 'tobacco flowers', color: 0xe59bb5 },
+  [Block.PepperBush]: { name: 'pepper bush', color: 0x356b2c },
+  [Block.PepperRipe]: { name: 'ripe peppers', color: 0xd23a26 },
 };
 
 const SOLID = new Uint8Array(256);
@@ -54,8 +78,19 @@ for (const [key, def] of Object.entries(DEFS)) {
   BLOCK_COLORS[id * 3 + 2] = srgbToLinear((def.color & 0xff) / 255);
 }
 
-/** Solid blocks occlude neighbouring faces, block movement and stop rays. */
+/** Solid blocks are drawn, occlude neighbouring faces and stop rays (tools hit them). */
 export const isSolid = (id: BlockId): boolean => SOLID[id] === 1;
 
+/** Drawn and hit by tools, but you walk through them: crops. */
+const PASSABLE = new Uint8Array(256);
+for (const id of [Block.Sprout, Block.Cane, Block.CaneTop, Block.TobaccoLeaf, Block.TobaccoFlower, Block.PepperBush, Block.PepperRipe]) PASSABLE[id] = 1;
+
+/** Does this block stop someone on foot? */
+export const blocksWalker = (id: BlockId): boolean => SOLID[id] === 1 && PASSABLE[id] === 0;
+
 /** Terrain colours and solidity, in the form the mesher takes. */
-export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID };
+/** Trees and buildings: what the on-foot cutaway may open up. Never the ground itself. */
+const CUTAWAY = new Uint8Array(256);
+for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence]) CUTAWAY[id] = 1;
+
+export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID, cutaway: CUTAWAY };

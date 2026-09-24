@@ -2,12 +2,18 @@ import type { Faction } from '../combat/vessel';
 import type { ShipType } from '../sailing/ships';
 
 /** Trade goods, cheapest first. */
-export const GOODS = ['sugar', 'rum', 'tobacco', 'cloth', 'spice', 'muskets'] as const;
+export const GOODS = ['sugar', 'rum', 'tobacco', 'cloth', 'spice', 'muskets', 'timber', 'stone', 'caneCuttings', 'tobaccoSeed', 'pepperSeed'] as const;
 export type Good = (typeof GOODS)[number];
 export type Cargo = Partial<Record<Good, number>>;
 
 /** The everyday cargoes every market deals in, and merchant holds carry. */
 export const STAPLES: readonly Good[] = ['sugar', 'rum', 'tobacco', 'cloth', 'spice'];
+/** Building materials: cut and quarried on foot, or bought in port. */
+export const MATERIALS: readonly Good[] = ['timber', 'stone'];
+/** What you plant. */
+export const SEEDS: readonly Good[] = ['caneCuttings', 'tobaccoSeed', 'pepperSeed'];
+/** What each seed grows into. */
+export const HARVEST: Partial<Record<Good, Good>> = { caneCuttings: 'sugar', tobaccoSeed: 'tobacco', pepperSeed: 'spice' };
 
 export const GOOD_INFO: Record<Good, { label: string; price: number }> = {
   sugar: { label: 'Sugar', price: 12 },
@@ -16,6 +22,11 @@ export const GOOD_INFO: Record<Good, { label: string; price: number }> = {
   cloth: { label: 'Cloth', price: 38 },
   spice: { label: 'Spice', price: 60 },
   muskets: { label: 'Muskets', price: 75 },
+  timber: { label: 'Timber', price: 6 },
+  stone: { label: 'Stone', price: 5 },
+  caneCuttings: { label: 'Cane cuttings', price: 8 },
+  tobaccoSeed: { label: 'Tobacco seed', price: 14 },
+  pepperSeed: { label: 'Pepper seed', price: 24 },
 };
 
 /**

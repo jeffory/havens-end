@@ -68,6 +68,8 @@ export class Input {
   }
 
   private readonly onKeyDown = (e: KeyboardEvent) => {
+    // Typing into a text box (naming a save) isn't playing: only Escape gets through.
+    if ((e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && e.code !== 'Escape') return;
     if (!e.repeat) this.pressed.set(e.code, this.presses(e.code) + 1);
     this.held.add(e.code);
   };

@@ -1,4 +1,4 @@
-import { GOOD_INFO, type Good, STAPLES } from './goods';
+import { GOOD_INFO, type Good, HARVEST, SEEDS, STAPLES } from './goods';
 import type { Port, PortFaction } from './ports';
 
 /** What a port does with a good: grows or makes it (cheap), wants it (dear), or just deals in it. */
@@ -60,7 +60,8 @@ export function sellValue(line: Line, amount: number, factor = 1): number {
  * Sets up every port's market. Each staple is made in two ports and wanted in two
  * others, so every cargo has somewhere to go: those pairings are the trade routes.
  * Muskets come from free ports, are wanted in pirate havens, and fetch the most on
- * Imperial black markets. Deterministic in `seed`.
+ * Imperial black markets. Every port also sells building materials and seed.
+ * Deterministic in `seed`.
  */
 export function planMarkets(ports: readonly Port[], random: () => number): Market[] {
   const goods = shuffle(STAPLES, random);
@@ -79,11 +80,17 @@ export function planMarkets(ports: readonly Port[], random: () => number): Marke
     const lines = STAPLES.map((good) => line(good, roleOf(good)));
     const arms = MUSKETS[port.faction];
     if (arms) lines.push(line('muskets', arms));
+    lines.push(line('timber', TIMBER[port.faction]), line('stone', STONE[port.faction]));
+    // Every chandler sells seed; it's cheapest where the crop grows.
+    for (const seed of SEEDS) lines.push(line(seed, roleOf(HARVEST[seed]!) === 'produces' ? 'produces' : 'trades'));
     return { lines, black: port.faction === 'imperial' ? [line('muskets', 'demands', BLACK)] : [] };
   });
 }
 
 const MUSKETS: Record<PortFaction, Role | null> = { merchant: 'produces', pirate: 'demands', imperial: null };
+/** The haven's forests are cut freely; the Crown's shipyards eat timber and its quarries sell stone. */
+const TIMBER: Record<PortFaction, Role> = { merchant: 'trades', pirate: 'produces', imperial: 'demands' };
+const STONE: Record<PortFaction, Role> = { merchant: 'trades', pirate: 'trades', imperial: 'produces' };
 
 /** Stock drifts back toward what the port's trade supports; `shock` scales that level (shortages and gluts). */
 export function stepMarket(market: Market, dt: number, shock: (good: Good) => number = () => 1): void {
