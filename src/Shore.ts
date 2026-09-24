@@ -1,27 +1,34 @@
 import { type Camera, Raycaster, Vector2, Vector3 } from 'three';
+import { partOfDay } from './core/clock';
 import type { Controls } from './core/Controls';
 import type { Input } from './core/Input';
 import { PACK_SIZE } from './economy/captain';
-import { cargoCount, GOOD_INFO, type Good, SEEDS } from './economy/goods';
+import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
-import { type Held, type Interaction, type Land, REACH, TOOL_LIST, type Tool } from './land/Land';
+import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool } from './land/Land';
+import { PLANTABLE } from './land/crops';
 import { type Building, STRUCTURES, type Structure } from './land/structures';
 import type { CameraRig } from './render/CameraRig';
 import type { LandView } from './render/LandView';
 import type { FootHud } from './ui/FootHud';
 import { OFFICE_NAMES } from './ui/port/OfficeTab';
 import type { WorldLabel } from './ui/WorldLabels';
-import { raycastVoxels } from './voxel/raycast';
+import { Block, type BlockId } from './voxel/blocks';
+import { raycastVoxels, type VoxelReader } from './voxel/raycast';
 
 /** What the shore needs from the game around it: menus, saving, and going back to sea. */
 export interface ShoreHost {
   openPort(place: PortPlace): void;
   openStore(building: Building): void;
+  /** The camp screen, from its fire (or one of its workshops). */
+  openCamp(fire: Building, building: Building): void;
   openBuildMenu(): void;
   openSystem(): void;
   rest(): void;
   aboard(message: string): void;
   toast(text: string, tone?: 'info' | 'good' | 'bad'): void;
+  /** Is this block cut away from view (a tree or roof between the camera and the captain)? */
+  hidden(x: number, y: number, z: number, id: BlockId): boolean;
 }
 
 const TOOL_LABELS: Record<Tool, string> = { axe: 'Axe', pickaxe: 'Pickaxe', shovel: 'Shovel', hoe: 'Hoe' };
@@ -40,7 +47,9 @@ export class Shore {
   private item = 0;
   placing: { kind: Structure; rot: number } | null = null;
   private swing: number | null = null;
-  private hint: { text: string; until: number; ok: boolean } | null = null;
+  private hint: { text: string; until: number; ok: boolean; tally?: boolean } | null = null;
+  /** What's been picked up lately, for the hint ("+3 timber, +1 sapling"). */
+  private gains = new Map<Good, number>();
   /** The cell under the mouse, while the mouse is being used. */
   private hover: { x: number; y: number; z: number; nx: number; ny: number; nz: number } | null = null;
   private mouseUntil = 0;
@@ -48,6 +57,13 @@ export class Shore {
   private clock = 0;
   private readonly raycaster = new Raycaster();
   private readonly ndc = new Vector2();
+  /** The world as the mouse sees it: what's cut away from view isn't there. */
+  private readonly seen: VoxelReader = {
+    getVoxel: (x, y, z) => {
+      const id = this.land.world.getVoxel(x, y, z);
+      return id !== Block.Air && this.host.hidden(x, y, z, id) ? Block.Air : id;
+    },
+  };
   readonly focus = new Vector3();
 
   constructor(
@@ -57,11 +73,27 @@ export class Shore {
     private readonly rig: CameraRig,
     private readonly input: Input,
     private readonly host: ShoreHost,
-  ) {}
+  ) {
+    hud.onSelect = (i) => this.select(i);
+  }
 
-  /** The hotbar: the four tools, then each kind of seed. */
+  /** The hotbar: the four tools, each kind of seed, and saplings. */
   items(): Held[] {
-    return [...TOOL_LIST, ...(SEEDS as Good[])];
+    return [...TOOL_LIST, ...PLANTABLE, 'sapling'];
+  }
+
+  /** Takes up the item in hotbar slot `i` (clicked, or its number key). */
+  select(i: number): void {
+    if (i >= 0 && i < this.items().length) this.item = i;
+  }
+
+  /** Something was picked up: it's added to the running tally in the hint. */
+  picked(good: Good, amount: number): void {
+    const tallying = this.hint?.tally && this.clock < this.hint.until;
+    if (!tallying) this.gains.clear();
+    this.gains.set(good, (this.gains.get(good) ?? 0) + amount);
+    const text = [...this.gains].map(([g, n]) => `+${n} ${GOOD_INFO[g].label.toLowerCase()}`).join(', ');
+    this.hint = { text, until: this.clock + HINT_SECONDS, ok: true, tally: true };
   }
 
   get held(): Held {
@@ -84,7 +116,7 @@ export class Shore {
     const mx = rightX * controls.walkX + forwardX * controls.walkY;
     const mz = rightZ * controls.walkX + forwardZ * controls.walkY;
     if (Math.hypot(mx, mz) > 0.1) this.mouseUntil = 0; // walking with keys or stick: work in front again
-    this.land.step(dt, mx, mz);
+    this.land.move(dt, mx, mz);
 
     // Esc (and Start) put down what you're placing, or else open the menu; B only puts it down.
     const cancel = controls.take('cancel');
@@ -93,7 +125,7 @@ export class Shore {
     else if (system > 0) this.host.openSystem();
 
     const items = this.items().length;
-    for (let i = 0; i < items; i++) if (controls.take(`item${i + 1}` as 'item1') > 0) this.item = i;
+    for (let i = 0; i < items; i++) if (controls.take(`item${i + 1}` as 'item1') > 0) this.select(i);
     const step = controls.take('itemNext') - controls.take('itemPrev');
     if (step !== 0) {
       if (this.placing) this.placing.rot = (this.placing.rot + step + 4) % 4;
@@ -107,6 +139,8 @@ export class Shore {
     if (controls.take('interact') > 0) this.interact();
     const atCursor = controls.take('useAtCursor') > 0;
     if (controls.take('use') > 0 || atCursor) this.use(atCursor);
+    const placeAtCursor = controls.take('placeAtCursor') > 0;
+    if (controls.take('place') > 0 || placeAtCursor) this.putDown(placeAtCursor);
   }
 
   private interact(): void {
@@ -123,6 +157,9 @@ export class Shore {
         break;
       case 'rest':
         this.host.rest();
+        break;
+      case 'camp':
+        this.host.openCamp(what.fire, what.building);
         break;
       case 'store':
         this.host.openStore(what.building);
@@ -142,26 +179,42 @@ export class Shore {
       if (result.ok && !STRUCTURES[this.placing.kind].freeform) this.placing = null;
       return;
     }
-    const target = atCursor && this.hover && this.inReach(this.hover) ? { x: this.hover.x, z: this.hover.z } : this.useCursor() ?? this.land.front();
+    const target = this.cursor(atCursor) ?? this.land.front();
     if (!target) return;
     this.swing = 0;
     this.report(this.land.use(this.held, target));
+  }
+
+  /** The shovel puts earth down: against the face under the mouse, or on the ground in front. */
+  private putDown(atCursor: boolean): void {
+    if (this.placing) return;
+    if (this.held !== 'shovel') return this.report({ ok: false, message: 'Take up the shovel to put earth down.' });
+    const target = this.cursor(atCursor, true) ?? this.land.front();
+    if (!target) return;
+    this.swing = 0;
+    this.report(this.land.place(target));
   }
 
   private report(result: { ok: boolean; message: string }): void {
     if (result.message) this.hint = { text: result.message, until: this.clock + HINT_SECONDS, ok: result.ok };
   }
 
-  /** The cell under the mouse, if the mouse is what's being used and it's within reach. */
-  private useCursor(): { x: number; z: number } | null {
-    return this.mouseActive() && this.hover && this.inReach(this.hover) ? { x: this.hover.x, z: this.hover.z } : null;
+  /**
+   * The block under the mouse, if the mouse is what's being used (or was just clicked)
+   * and the captain can reach it; for putting earth down, the cell against its face.
+   */
+  private cursor(clicked = false, against = false): Target | null {
+    const h = this.hover;
+    if (!h || !(clicked || this.mouseActive())) return null;
+    const reach = against ? this.land.reaches(h.x + h.nx, h.y + h.ny, h.z + h.nz) : this.land.reaches(h.x, h.y, h.z);
+    return reach ? { x: h.x, y: h.y, z: h.z, face: { x: h.nx, y: h.ny, z: h.nz } } : null;
   }
 
   private mouseActive(): boolean {
     return this.clock < this.mouseUntil;
   }
 
-  private inReach(cell: { x: number; z: number }, reach = REACH): boolean {
+  private inReach(cell: { x: number; z: number }, reach: number): boolean {
     const w = this.land.walker!;
     return Math.hypot(cell.x + 0.5 - w.x, cell.z + 0.5 - w.z) <= reach;
   }
@@ -202,9 +255,9 @@ export class Shore {
       }
     } else {
       this.view.showGhost(null);
-      const target = this.useCursor() ?? this.land.front();
+      const target = this.cursor() ?? this.land.front();
       // Nothing can be worked in town, so there's nothing to mark.
-      const aim = target && !this.land.inTown(target.x, target.z) ? this.land.aim(this.held, target.x, target.z) : null;
+      const aim = target && !this.land.inTown(target.x, target.z) ? this.land.aim(this.held, target) : null;
       this.view.mark(aim && aim.x !== undefined ? { x: aim.x, y: aim.y!, z: aim.z!, ok: aim.ok } : null);
     }
 
@@ -219,7 +272,7 @@ export class Shore {
       packUsed: cargoCount(pack),
       packSize: PACK_SIZE,
       packSummary: (Object.entries(pack) as Array<[Good, number]>).map(([g, n]) => `${n} ${GOOD_INFO[g].label.toLowerCase()}`).join(', '),
-      prompt: promptFor(this.land.interaction()),
+      prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase),
       hint,
       hintOk,
       placing,
@@ -251,14 +304,17 @@ export class Shore {
     if (!p.inside) return;
     this.raycaster.setFromCamera(this.ndc.set(p.x, p.y), camera);
     const { origin: o, direction: d } = this.raycaster.ray;
-    const hit = raycastVoxels(this.land.world, o.x, o.y, o.z, d.x, d.y, d.z, 400);
+    const hit = raycastVoxels(this.seen, o.x, o.y, o.z, d.x, d.y, d.z, 400);
     if (hit) this.hover = hit;
   }
 }
 
 const isTool = (held: Held): held is Tool => (TOOL_LIST as readonly string[]).includes(held);
 
-function promptFor(what: Interaction | null): string | null {
+/** Late enough to turn in: the evening, or the night. */
+export const sleepy = (phase: number): boolean => ['evening', 'night'].includes(partOfDay(phase));
+
+function promptFor(what: Interaction | null, phase: number): string | null {
   if (!what) return null;
   const key = 'E / 🎮 A';
   switch (what.kind) {
@@ -267,7 +323,9 @@ function promptFor(what: Interaction | null): string | null {
     case 'door':
       return `${key}: ${what.place.kind === 'office' ? 'the governor' : PLACE_LABELS[what.place.kind].toLowerCase()}`;
     case 'rest':
-      return `${key}: rest (saves the game)`;
+      return `${key}: ${sleepy(phase) ? 'sleep till morning' : 'rest'} (saves the game)`;
+    case 'camp':
+      return `${key}: ${what.building === what.fire ? 'the camp: settlers, workshops, stores' : `the ${STRUCTURES[what.building.kind].label.toLowerCase()}`}`;
     case 'store':
       return `${key}: the storehouse`;
     case 'harvest':

@@ -1,14 +1,26 @@
-import { GOOD_INFO, cargoCount, isContraband } from '../../economy/goods';
+import { Fragment } from 'react';
+import { GOOD_INFO, GOODS, type GoodKind, cargoCount, isContraband } from '../../economy/goods';
 import { bestSale } from '../../economy/logbook';
 import type { Line } from '../../economy/market';
 import { age, Gold, type TabProps } from './common';
 
 const ROLE_NOTES: Record<Line['role'], string> = { produces: 'local produce', demands: 'in demand', trades: '' };
+const GROUPS: Record<GoodKind, string> = {
+  cargo: 'Cargoes',
+  arms: 'Arms',
+  material: 'Building materials',
+  produce: 'Camp produce, for the mill and the forge',
+  food: 'Food',
+  seed: 'Seed',
+};
+const KIND_ORDER: readonly GoodKind[] = ['cargo', 'arms', 'material', 'produce', 'food', 'seed'];
 
 /** The goods table: buy and sell, with what the price book says you'd get elsewhere. */
 export function MarketTab({ port, economy, sea, act }: TabProps) {
   const cargo = sea.player.cargo;
-  const lines = economy.lines(port);
+  const lines = [...economy.lines(port)].sort(
+    (a, b) => KIND_ORDER.indexOf(GOOD_INFO[a.good].kind) - KIND_ORDER.indexOf(GOOD_INFO[b.good].kind) || GOODS.indexOf(a.good) - GOODS.indexOf(b.good),
+  );
   const hold = sea.player.cls.type.hold;
   return (
     <section className="tab-market">
@@ -29,14 +41,22 @@ export function MarketTab({ port, economy, sea, act }: TabProps) {
           </tr>
         </thead>
         <tbody>
-          {lines.map((line) => {
+          {lines.map((line, i) => {
+            const kind = GOOD_INFO[line.good].kind;
+            const heading = i === 0 || GOOD_INFO[lines[i - 1].good].kind !== kind;
             const { buy, sell } = economy.quote(port, line);
             const have = cargo[line.good] ?? 0;
             const max = economy.maxBuy(port, line.good);
             const best = bestSale(sea.captain.logbook, line.good, port.id);
             const profit = best ? best.price - buy : 0;
             return (
-              <tr key={line.good}>
+              <Fragment key={line.good}>
+              {heading && (
+                <tr className="group">
+                  <th colSpan={6}>{GROUPS[kind]}</th>
+                </tr>
+              )}
+              <tr>
                 <td>
                   <b>{GOOD_INFO[line.good].label}</b>
                   {ROLE_NOTES[line.role] && <small className={`role role-${line.role}`}>{ROLE_NOTES[line.role]}</small>}
@@ -72,6 +92,7 @@ export function MarketTab({ port, economy, sea, act }: TabProps) {
                   </button>
                 </td>
               </tr>
+              </Fragment>
             );
           })}
           {isContraband('muskets', port.faction) && (

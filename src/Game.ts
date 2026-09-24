@@ -5,6 +5,7 @@ import { REGION_NAMES, regionTier } from './combat/encounters';
 import { type DockProblem, type PlayerOrders, Sea, type SeaEvent } from './combat/sea';
 import { reloadTime, type ShipClass, shipClass, type Side, toLocal } from './combat/vessel';
 import { SIM_HZ } from './config';
+import { clockText, darkness, isNight, WAKE_AT, secondsUntil } from './core/clock';
 import { type DuelCast, DuelScene } from './DuelScene';
 import { buildCharacterModel, type CharacterModel } from './duel/characterModel';
 import type { DuelIntent } from './duel/duel';
@@ -34,17 +35,23 @@ import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
 import { Land } from './land/Land';
-import type { Building } from './land/structures';
+import { type Building, isWorkshop } from './land/structures';
 import { LandView } from './render/LandView';
-import { Shore } from './Shore';
+import { type LightSource, NightLights } from './render/NightLights';
+import { NightLife } from './render/NightLife';
+import { DropsView } from './render/DropsView';
+import { PeopleView } from './render/PeopleView';
+import { Shore, sleepy } from './Shore';
 import { BuildMenu } from './ui/BuildMenu';
+import { CampScreen } from './ui/CampScreen';
+import { loadSettings, saveSettings, type Settings } from './ui/settings';
 import { ChartScreen } from './ui/ChartScreen';
 import { FootHud } from './ui/FootHud';
 import { StoreScreen } from './ui/StoreScreen';
 import { WorldLabels } from './ui/WorldLabels';
 import { SystemMenu } from './ui/SystemMenu';
 import { decodeRuns, encodeRuns } from './save/rle';
-import { AUTOSAVE, deleteSave, SAVE_VERSION, type SaveData, type SaveSummary, writeSave } from './save/storage';
+import { AUTOSAVE, deleteSave, READABLE_VERSIONS, SAVE_VERSION, type SaveData, type SaveSummary, writeSave } from './save/storage';
 import { CHUNK_VOLUME } from './voxel/Chunk';
 import { SHIP_LABELS } from './economy/shipyard';
 import type { ChartProps } from './ui/ChartView';
@@ -59,7 +66,6 @@ import { buildArchipelago, type IslandPlan, planArchipelago } from './worldgen/a
 
 const WORLD_SEED = 1717;
 const SKY_COLOR = new Color(0xa9d9ea);
-const STORM_COLOR = new Color(0x74879a);
 /** Chunks remeshed per frame after startup (~2-3 ms each). */
 const REMESH_BUDGET = 2;
 /** Seconds of travel the camera looks ahead of the ship, so you see where you're going. */
@@ -67,6 +73,19 @@ const LOOK_AHEAD = 0.8;
 /** Chunks meshed before the first frame: the home island. Further islands follow, nearest first. */
 const STARTUP_CHUNKS = 64;
 const LABEL_RANGE = 220;
+/** At night you make out ships only this close. */
+const NIGHT_LABEL_RANGE = 120;
+/** A felled tree drops a flutter of leaves from one in this many of its leaf blocks. */
+const LEAF_EVERY = 2;
+/** Seconds of sim time per step while the night is slept through. */
+const SLEEP_STEP = 1;
+/** Light given off by what's built, by kind. */
+const BUILDING_LIGHT: Partial<Record<Building['kind'], { strength: number; height: number }>> = {
+  campfire: { strength: 1, height: 2 },
+  torch: { strength: 0.6, height: 3.2 },
+  forge: { strength: 0.8, height: 2.6 },
+  smokehouse: { strength: 0.4, height: 3.5 },
+};
 /**
  * In a fight the camera also frames the nearest enemy within FRAME_RANGE, shifting
  * FRAME_SHARE of the way toward her, but never more than FRAME_MAX_SHIFT so your
@@ -126,6 +145,14 @@ export class Game {
   private readonly barrels = new BarrelsView();
   private readonly arcs = new RangeArcs();
   private readonly landView: LandView;
+  private readonly people = new PeopleView();
+  private readonly drops = new DropsView();
+  private readonly nightLights = new NightLights();
+  private readonly nightLife: NightLife;
+  private readonly settings: Settings = loadSettings();
+  /** The black screen while the captain sleeps; the sim waits while it's up. */
+  private readonly sleepFade = document.createElement('div');
+  private sleeping = false;
   private readonly footHud: FootHud;
   private readonly signs: WorldLabels;
   private readonly shore: Shore;
@@ -187,7 +214,8 @@ export class Game {
     for (const [type, model] of models) classes.set(type, shipClass(type, model.footprint, model.deck, model.top));
     this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.ports, WORLD_SEED);
     this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
-    this.land = new Land(this.world, this.sea);
+    this.land = new Land(this.world, this.sea, WORLD_SEED);
+    this.sea.clock.length = this.settings.dayMinutes * 60;
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
     this.input = new Input(this.renderer.domElement);
@@ -205,14 +233,19 @@ export class Game {
     this.footHud = new FootHud(container);
     this.overlay = new Overlay(container);
     this.landView = new LandView(captains.get('player')!);
+    this.nightLife = new NightLife(this.islands);
+    this.sleepFade.className = 'sleep-fade';
+    container.append(this.sleepFade);
     this.shore = new Shore(this.land, this.landView, this.footHud, this.rig, this.input, {
       openPort: (place) => this.openPort(place),
       openStore: (building) => this.openStore(building),
+      openCamp: (fire, building) => this.openCamp(fire, building),
       openBuildMenu: () => this.openBuildMenu(),
       openSystem: () => this.openSystem(false),
       rest: () => this.rest(),
       aboard: (message) => this.toSea(message),
       toast: (text, tone) => this.hud.toast(text, tone),
+      hidden: (x, y, z, id) => this.terrain.hides(x, y, z, id),
     });
     this.scene.add(
       this.terrain.group,
@@ -223,6 +256,10 @@ export class Game {
       this.effects.mesh,
       this.streaks.mesh,
       this.landView.group,
+      this.people.group,
+      this.drops.group,
+      this.nightLights.group,
+      this.nightLife.group,
     );
 
     this.loop = new GameLoop(
@@ -269,7 +306,7 @@ export class Game {
 
   /** Puts a save's state onto this freshly generated world. */
   restore(data: SaveData): void {
-    if (data.version !== SAVE_VERSION || data.seed !== WORLD_SEED) throw new Error('That save is from a different version of the game.');
+    if (!READABLE_VERSIONS.includes(data.version) || data.seed !== WORLD_SEED) throw new Error('That save is from a different version of the game.');
     for (const e of data.edits) this.world.loadChunk(e.cx, e.cy, e.cz, decodeRuns(e.data, CHUNK_VOLUME));
     this.sea.restore(data.sea);
     this.economy.restore(data.economy);
@@ -306,10 +343,47 @@ export class Game {
     this.save(AUTOSAVE).catch(() => undefined); // no storage (private window): nothing to be done
   }
 
-  /** Resting at a fire or in a hut saves the game. */
+  /** Resting at a fire or in a hut saves the game; late in the day, you sleep the night through. */
   private rest(): void {
+    if (sleepy(this.sea.clock.phase)) {
+      this.sleep('morning');
+      return;
+    }
     this.autosave();
     this.hud.toast('You rest a while. The game is saved.', 'good');
+  }
+
+  /**
+   * Sleeps until morning (or until dusk, waiting for the dark): the screen goes black,
+   * time passes in big steps while the sea waits, and the game saves on waking.
+   */
+  private sleep(until: 'morning' | 'dusk'): void {
+    if (this.overlay.kind) this.closeMenu();
+    const seconds = secondsUntil(this.sea.clock, WAKE_AT[until]);
+    this.sleeping = true;
+    this.sleepFade.textContent = until === 'morning' ? 'You sleep through the night…' : 'You doze until dusk…';
+    this.sleepFade.classList.add('shown');
+    window.setTimeout(() => {
+      for (let t = 0; t < seconds; t += SLEEP_STEP) {
+        const dt = Math.min(SLEEP_STEP, seconds - t);
+        this.sea.pass(dt);
+        this.economy.step(dt);
+        this.land.step(dt, false);
+      }
+      this.handleLand(this.sea.time);
+      this.notify(this.economy.takeNotices());
+      this.sleepFade.classList.remove('shown');
+      this.sleeping = false;
+      this.autosave();
+      const clock = this.sea.clock;
+      this.hud.toast(until === 'morning' ? `Morning, day ${clock.day}. The game is saved.` : `Dusk falls (${clockText(clock.phase)}). The game is saved.`, 'good');
+    }, 700);
+  }
+
+  private applySettings(settings: Settings): void {
+    Object.assign(this.settings, settings);
+    saveSettings(this.settings);
+    this.sea.clock.length = this.settings.dayMinutes * 60;
   }
 
   private openSystem(title: boolean): void {
@@ -324,6 +398,8 @@ export class Game {
           load: (slot) => location.assign(`${location.pathname}?load=${encodeURIComponent(slot)}`),
           remove: (slot) => deleteSave(slot),
           newGame: () => location.assign(`${location.pathname}?new`),
+          settings: { ...this.settings },
+          changeSettings: (settings) => this.applySettings(settings),
           nav: this.overlay.handlers,
         }),
       ),
@@ -336,8 +412,8 @@ export class Game {
       this.duel.step(dt, this.duelIntent());
       return;
     }
-    // In a menu or poring over the chart: the sea waits.
-    if (this.overlay.kind) return;
+    // In a menu, poring over the chart, or asleep: the sea waits.
+    if (this.overlay.kind || this.sleeping) return;
     this.autosaveIn -= dt;
     if (this.autosaveIn <= 0) this.autosave();
     if (this.land.walker) {
@@ -345,6 +421,7 @@ export class Game {
       this.shore.update(dt, controls);
       this.sea.step(dt, ANCHORED);
       this.economy.step(dt);
+      this.land.step(dt);
       return;
     }
     orders.rudder = controls.rudder;
@@ -368,6 +445,7 @@ export class Game {
 
     this.sea.step(dt, orders);
     this.economy.step(dt);
+    this.land.step(dt);
     if (this.sea.player.status !== 'afloat') orders.sails = 0;
     if (this.sea.docked && !this.land.walker) this.stepAshore(this.sea.docked);
   }
@@ -390,13 +468,15 @@ export class Game {
 
     // The rendered moment trails the latest sim step by (1 - alpha) of a step. While a
     // duel or a menu pauses the sea, the waves keep going on their own clock.
-    const paused = this.duel !== null || this.overlay.kind !== null;
+    const paused = this.duel !== null || this.overlay.kind !== null || this.sleeping;
     if (paused) this.pausedTime += frameSeconds;
     const behind = paused ? 0 : (1 - alpha) * this.loop.step;
     const time = sea.time - behind + this.pausedTime;
+    const phase = sea.clock.phase;
+    const dark = darkness(phase);
     this.handleEvents(sea.takeEvents(), time);
     this.notify(this.economy.takeNotices());
-    this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds);
+    this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds, dark);
 
     const pose = this.fleet.pose(player.id)!;
     const fx = Math.sin(pose.heading);
@@ -409,8 +489,8 @@ export class Game {
       this.cameraTarget.add(shift.clampLength(0, FRAME_MAX_SHIFT));
     }
     let focus = rig.focus;
-    const signs = this.land.walker ? this.shore.render(paused ? 1 : alpha, frameSeconds, time, rig.camera) : [];
     const walker = this.land.walker;
+    const signs = walker ? [...this.shore.render(paused ? 1 : alpha, frameSeconds, time, rig.camera), ...this.people.labels(this.land, walker)] : [];
     if (walker) this.cameraTarget.copy(this.shore.focus);
     // Ashore, cut away what's between the camera and the captain, and fade your own ship beside you.
     if (walker) {
@@ -432,13 +512,20 @@ export class Game {
       rig.update(this.cameraTarget, frameSeconds);
     }
 
-    // Squalls darken the sky and the light.
+    // The time of day lights the scene; squalls darken it. At night you see less far.
     const overhead = this.weather.windAt(focus.x, focus.z, time);
-    this.sky.lerpColors(SKY_COLOR, STORM_COLOR, overhead.squall);
-    this.sun.setOvercast(overhead.squall);
+    this.sun.setSky(phase, overhead.squall);
+    this.sky.copy(this.sun.skyColor);
+    this.fog.color.copy(this.sky);
     this.sun.follow(focus, this.duel ? 25 : rig.distance);
-    this.fog.near = rig.distance * 1.4;
-    this.fog.far = rig.distance * 3.5;
+    this.fog.near = rig.distance * 1.4 * (1 - 0.5 * dark);
+    this.fog.far = rig.distance * 3.5 * (1 - 0.45 * dark);
+    this.terrain.setGlow(0.2 + 2.2 * dark);
+    this.nightLights.update(this.lightSources(), focus, dark, time);
+    this.people.update(this.land, paused ? 1 : alpha, paused ? 0 : frameSeconds, time, focus);
+    this.drops.update(this.land.drops, paused ? 1 : alpha, time, focus);
+    this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time);
+    this.hud.setClock(sea.clock.day, clockText(phase), isNight(phase));
 
     this.terrain.update(REMESH_BUDGET, focus);
     this.wakes.update(time);
@@ -466,6 +553,22 @@ export class Game {
       chunks: this.terrain.meshCount,
     }));
     this.input.endFrame();
+  }
+
+  /** What gives off light at night near here: fires and torches in camps, lamps in port, ships' lanterns. */
+  private lightSources(): LightSource[] {
+    const sources: LightSource[] = [];
+    for (const b of this.land.buildings) {
+      const light = BUILDING_LIGHT[b.kind];
+      if (light) sources.push({ x: b.x0 + b.w / 2, y: b.y + light.height, z: b.z0 + b.d / 2, strength: light.strength, flicker: true });
+    }
+    for (const port of this.ports) for (const lamp of port.lamps) sources.push({ ...lamp, y: lamp.y + 1.2, strength: 0.8, flicker: false });
+    const p = this.fleet.pose(this.sea.player.id);
+    if (p && !this.land.walker) sources.push({ x: p.x, y: WATER_LEVEL + this.sea.player.cls.body.top * 0.5, z: p.z, strength: 0.6, flicker: false });
+    // Ashore after dark, the captain carries a lantern.
+    const f = this.shore.focus;
+    if (this.land.walker) sources.push({ x: f.x, y: f.y + 1.4, z: f.z, strength: 0.6, flicker: false });
+    return sources;
   }
 
   /** Turns what happened in the sim into smoke, splashes and news. */
@@ -547,6 +650,9 @@ export class Game {
         case 'refused':
           this.hud.toast(REFUSALS[e.reason](this.ports[e.port].name), 'bad');
           break;
+        case 'mending':
+          this.hud.toast('Your carpenter sets to work on the hull with planks from the hold.');
+          break;
       }
     }
   }
@@ -599,6 +705,7 @@ export class Game {
           close: this.closeScreen,
           nav: this.overlay.handlers,
           chart: this.chartProps(),
+          sleep: (until) => this.sleep(until),
         }),
       ),
     );
@@ -622,6 +729,26 @@ export class Game {
             this.closeMenu();
             this.shore.place(kind);
           },
+        }),
+      ),
+    );
+  }
+
+  private openCamp(fire: Building, building: Building): void {
+    this.openMenu(() =>
+      this.overlay.show(
+        'camp',
+        createElement(CampScreen, {
+          land: this.land,
+          fire,
+          tab: isWorkshop(building.kind) ? 'workshops' : 'settlers',
+          sleepy: sleepy(this.sea.clock.phase),
+          rest: () => {
+            this.closeMenu();
+            this.rest();
+          },
+          close: this.closeScreen,
+          nav: this.overlay.handlers,
         }),
       ),
     );
@@ -662,11 +789,21 @@ export class Game {
     this.labels.setVisible(!ashore);
   }
 
-  /** Tool work and building on land, as dust and messages. */
+  /** Work and building on land as dust and smoke; settlers' news as messages. */
   private handleLand(_time: number): void {
+    const focus = this.rig.focus;
+    const near = (x: number, z: number) => Math.hypot(x - focus.x, z - focus.z) < 120;
     for (const e of this.land.takeEvents()) {
-      if (e.kind === 'work') this.effects.emit(e.action === 'fell' ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
+      if (e.kind === 'work' && near(e.x, e.z)) {
+        this.effects.emit(e.action === 'fell' ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
+        // A felled tree's leaves come down about it.
+        const leaves = e.leaves ?? [];
+        for (let i = 0; i < leaves.length; i += 3 * LEAF_EVERY) this.effects.emit('leaves', leaves[i] + 0.5, leaves[i + 1] + 0.5, leaves[i + 2] + 0.5);
+      }
+      if (e.kind === 'pickup') this.shore.picked(e.good, e.amount);
       if (e.kind === 'built' || e.kind === 'razed') this.effects.emit('dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 1);
+      if (e.kind === 'made' && near(e.x, e.z)) this.effects.emit('smoke', e.x, e.y + 2, e.z, 0, 0);
+      if (e.kind === 'notice') this.hud.toast(e.text, e.tone);
     }
   }
 
@@ -792,7 +929,8 @@ export class Game {
     for (const v of this.sea.vessels) {
       if (v.faction === 'player' || v.status === 'captured') continue;
       const pose = this.fleet.pose(v.id);
-      if (!pose || Math.hypot(pose.x - player.x, pose.z - player.z) > LABEL_RANGE) continue;
+      const range = isNight(this.sea.clock.phase) ? NIGHT_LABEL_RANGE : LABEL_RANGE;
+      if (!pose || Math.hypot(pose.x - player.x, pose.z - player.z) > range) continue;
       const mode = v.status === 'struck' ? 'struck her colours' : v.status === 'sinking' ? 'sinking' : v.ai?.mode;
       const note = { flee: 'fleeing', engage: 'engaging', escort: 'escorting', cruise: 'under way' }[mode as string] ?? mode ?? '';
       labels.push({

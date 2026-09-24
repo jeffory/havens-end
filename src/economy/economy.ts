@@ -1,9 +1,10 @@
 import { regionTier } from '../combat/encounters';
+import { isNight } from '../core/clock';
 import type { Sea } from '../combat/sea';
 import { syncCondition } from '../combat/vessel';
 import type { ShipType } from '../sailing/ships';
 import { mulberry32 } from '../worldgen/noise';
-import type { Captain } from './captain';
+import { type Captain, PASSENGER_BERTHS } from './captain';
 import { type Bounty, type Contract, contractTitle, type Delivery, FAILURE_PENALTY, MAX_CONTRACTS, turnInPort } from './contracts';
 import { cargoCount, GOOD_INFO, type Good, isContraband, STAPLES, unload } from './goods';
 import { note } from './logbook';
@@ -39,6 +40,7 @@ export interface EconomySnapshot {
     fixer: Contract[];
     postedAt: number | null;
     hands: number;
+    settlers?: number;
     rumours: string[];
   }>;
   shocks: Shock[];
@@ -54,6 +56,8 @@ export interface PortState {
   postedAt: number;
   /** Sailors in the tavern looking for a berth (fractional: they drift in over time). */
   hands: number;
+  /** Folk in the tavern who'd go out to a camp and work it. */
+  settlers: number;
   /** Rumours heard this visit. */
   rumours: string[];
 }
@@ -63,9 +67,23 @@ const HANDS: Record<PortFaction, { max: number; wage: number; every: number }> =
   merchant: { max: 20, wage: 10, every: 20 },
   pirate: { max: 32, wage: 7, every: 12 },
 };
-/** A round for the house buys the tavern's gossip. */
+/**
+ * Settlers looking for work: how many a port's tavern holds at most, what each asks to
+ * go out to a camp, and seconds between new arrivals. Free ports have the most.
+ */
+const SETTLERS: Record<PortFaction, { max: number; fee: number; every: number }> = {
+  imperial: { max: 3, fee: 70, every: 150 },
+  merchant: { max: 6, fee: 50, every: 90 },
+  pirate: { max: 4, fee: 40, every: 120 },
+};
+/** A round for the house buys the tavern's gossip; after dark the place is livelier. */
 export const ROUND_COST = 10;
 const RUMOURS_PER_ROUND = 2;
+const NIGHT_RUMOURS = 3;
+/** Customs officers on the night watch search less often. */
+const NIGHT_CUSTOMS = -0.2;
+/** A room above the tavern for the night (or the day). */
+export const ROOM_COST = 5;
 /** Seconds before a port's jobs are taken down and new ones posted. */
 const REPOST_AFTER = 300;
 const SHOCK_EVERY = 150;
@@ -98,8 +116,16 @@ export class Economy {
     seed: number,
   ) {
     this.random = mulberry32(seed ^ 0xec0c);
-    const markets = planMarkets(ports, this.random);
-    this.states = ports.map((port, i) => ({ market: markets[i], office: [], fixer: [], postedAt: -Infinity, hands: HANDS[port.faction].max, rumours: [] }));
+    const markets = planMarkets(ports, this.random, seed ^ 0x6c0d);
+    this.states = ports.map((port, i) => ({
+      market: markets[i],
+      office: [],
+      fixer: [],
+      postedAt: -Infinity,
+      hands: HANDS[port.faction].max,
+      settlers: SETTLERS[port.faction].max,
+      rumours: [],
+    }));
     const names = [...FIXERS];
     this.fixers = ports.map(() => names.splice(Math.floor(this.random() * names.length), 1)[0]);
   }
@@ -118,6 +144,7 @@ export class Economy {
         fixer: structuredClone(s.fixer),
         postedAt: Number.isFinite(s.postedAt) ? s.postedAt : null,
         hands: s.hands,
+        settlers: s.settlers,
         rumours: [...s.rumours],
       })),
       shocks: structuredClone(this.shocks),
@@ -136,6 +163,7 @@ export class Economy {
       s.fixer = structuredClone(p.fixer);
       s.postedAt = p.postedAt ?? -Infinity;
       s.hands = p.hands;
+      s.settlers = p.settlers ?? s.settlers;
       s.rumours = [...p.rumours];
     });
     this.shocks.length = 0;
@@ -158,6 +186,8 @@ export class Economy {
       stepMarket(state.market, dt, (good) => this.shockFactor(i, good, time));
       const hands = HANDS[this.ports[i].faction];
       state.hands = Math.min(hands.max, state.hands + dt / hands.every);
+      const settlers = SETTLERS[this.ports[i].faction];
+      state.settlers = Math.min(settlers.max, state.settlers + dt / settlers.every);
     });
 
     this.shockIn -= dt;
@@ -195,7 +225,8 @@ export class Economy {
     const standing = this.captain.standing;
     const muskets = cargo.muskets ?? 0;
     if (port.faction === 'imperial' && muskets > 0) {
-      const chance = CUSTOMS_CHANCE + (standing.imperial < 0 ? 0.2 : 0) - (standing.imperial >= 50 ? 0.2 : 0);
+      const night = isNight(this.sea.clock.phase) ? NIGHT_CUSTOMS : 0;
+      const chance = CUSTOMS_CHANCE + (standing.imperial < 0 ? 0.2 : 0) - (standing.imperial >= 50 ? 0.2 : 0) + night;
       if (this.random() < chance) {
         unload(cargo, 'muskets', muskets);
         const fine = Math.min(this.captain.gold, muskets * CUSTOMS_FINE);
@@ -248,6 +279,7 @@ export class Economy {
 
   buy(port: Port, good: Good, amount: number, black = false): Outcome {
     const label = GOOD_INFO[good].label.toLowerCase();
+    if (black && !this.afterDark()) return fail(BACK_ROOM_SHUT);
     const line = findLine(this.lines(port, black), good);
     if (!line) return fail(`No one here sells ${label}.`);
     if (this.holdSpace() <= 0) return fail('Your hold is full.');
@@ -265,6 +297,7 @@ export class Economy {
 
   sell(port: Port, good: Good, amount: number, black = false): Outcome {
     const label = GOOD_INFO[good].label.toLowerCase();
+    if (black && !this.afterDark()) return fail(BACK_ROOM_SHUT);
     if (!black && isContraband(good, port.faction)) return fail(`Only the black market will touch ${label} here.`);
     const line = findLine(this.lines(port, black), good);
     if (!line) return fail(`No one here buys ${label}.`);
@@ -364,13 +397,48 @@ export class Economy {
     return done(`${n} hand${n > 1 ? 's' : ''} sign${n > 1 ? '' : 's'} on for ${n * wage} gold.`);
   }
 
+  /** Settlers in this tavern who'd go out to a camp, what each asks, and berths aboard for them. */
+  settlersFor(port: Port): { available: number; fee: number; room: number } {
+    return {
+      available: Math.floor(this.states[port.id].settlers),
+      fee: Math.round(SETTLERS[port.faction].fee * this.factor(port)),
+      room: Math.max(0, PASSENGER_BERTHS - this.captain.passengers),
+    };
+  }
+
+  /** Signs settlers on: they come aboard as passengers until they're settled at a camp. */
+  hireSettlers(port: Port, amount: number): Outcome {
+    const { available, fee, room } = this.settlersFor(port);
+    if (room <= 0) return fail(`Your ship has berths for only ${PASSENGER_BERTHS} settlers.`);
+    if (available <= 0) return fail('Nobody here wants to try their luck on an island just now.');
+    const n = Math.min(amount, available, room, Math.floor(this.captain.gold / fee));
+    if (n <= 0) return fail(`Each settler wants ${fee} gold to go out to a camp.`);
+    this.captain.passengers += n;
+    this.states[port.id].settlers -= n;
+    this.captain.gold -= n * fee;
+    return done(`${n} settler${n > 1 ? 's' : ''} come${n > 1 ? '' : 's'} aboard for ${n * fee} gold. Take them to a camp with a hut to sleep in.`);
+  }
+
+  /** A room above the tavern, to sleep in. */
+  takeRoom(): Outcome {
+    if (this.captain.gold < ROOM_COST) return fail(`A room is ${ROOM_COST} gold.`);
+    this.captain.gold -= ROOM_COST;
+    return done('You take a room upstairs.');
+  }
+
+  /** The fixer and the back room only do business after dark. */
+  afterDark(): boolean {
+    return isNight(this.sea.clock.phase);
+  }
+
   /** Stands the house a round; loosened tongues give up news of prices elsewhere. */
   buyRound(port: Port): Outcome {
     if (this.captain.gold < ROUND_COST) return fail('Not even the price of a round.');
     this.captain.gold -= ROUND_COST;
     const state = this.states[port.id];
     const heard: string[] = [];
-    for (let tries = 0; tries < 8 && heard.length < RUMOURS_PER_ROUND; tries++) {
+    const want = this.afterDark() ? NIGHT_RUMOURS : RUMOURS_PER_ROUND;
+    for (let tries = 0; tries < 8 && heard.length < want; tries++) {
       const rumour = this.rumour(port);
       if (rumour && !state.rumours.includes(rumour) && !heard.includes(rumour)) heard.push(rumour);
     }
@@ -412,6 +480,7 @@ export class Economy {
   bribe(port: Port, faction: PortFaction): Outcome {
     const cost = this.bribeCost(faction);
     const fixer = this.fixers[port.id];
+    if (!this.afterDark()) return fail(`${fixer} only does business after dark.`);
     if (cost === null) return fail(`"Your name's as good with ${FACTION_NAMES[faction]} as gold can make it," says ${fixer}.`);
     if (cost > this.captain.gold) return fail(`"That'll be ${cost} gold, and I don't give credit," says ${fixer}.`);
     this.captain.gold -= cost;
@@ -431,6 +500,7 @@ export class Economy {
     const board = state.office.some((c) => c.id === id) ? state.office : state.fixer;
     const c = board.find((o) => o.id === id);
     if (!c) return fail('That job has gone.');
+    if (board === state.fixer && !this.afterDark()) return fail(`${this.fixers[port.id]} only does business after dark.`);
     if (this.captain.contracts.length >= MAX_CONTRACTS) return fail(`You can take on only ${MAX_CONTRACTS} jobs at once.`);
     if (c.kind === 'delivery') {
       if (this.holdSpace() < c.amount) return fail(`You need room for ${c.amount} in the hold.`);
@@ -456,6 +526,7 @@ export class Economy {
     const c = this.captain.contracts.find((o) => o.id === id);
     if (!c) return fail('No such job.');
     if (turnInPort(c) !== port.id) return fail(`That's to be handed in at ${this.ports[turnInPort(c)].name}.`);
+    if (c.kind === 'delivery' && c.black && !this.afterDark()) return fail(BACK_ROOM_SHUT);
     if (!this.ready(port, c)) {
       return fail(c.kind === 'bounty' ? `${c.progress} of ${c.count} done so far.` : `You need ${c.amount} ${GOOD_INFO[c.good].label.toLowerCase()} in the hold.`);
     }
@@ -575,6 +646,7 @@ export class Economy {
   }
 }
 
+const BACK_ROOM_SHUT = 'The back room opens after dark.';
 const done = (message: string): Outcome => ({ ok: true, message });
 const fail = (message: string): Outcome => ({ ok: false, message });
 const roundTo = (value: number, step: number) => Math.round(value / step) * step;

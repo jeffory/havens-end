@@ -42,7 +42,8 @@ export class FleetView {
     return this.poses.get(id);
   }
 
-  update(sea: Sea, alpha: number, time: number, frameSeconds: number): void {
+  /** `dark` (0 by day, 1 at night) lights the stern lanterns. */
+  update(sea: Sea, alpha: number, time: number, frameSeconds: number, dark = 0): void {
     const alive = new Set<number>();
     for (const v of sea.vessels) {
       alive.add(v.id);
@@ -66,6 +67,7 @@ export class FleetView {
       pose.z = v.prev.z + (v.ship.z - v.prev.z) * alpha;
       pose.heading = v.prev.heading + wrapAngle(v.ship.heading - v.prev.heading) * alpha;
       view.update(pose, v.ship, sea.weather.windAt(pose.x, pose.z, time), time, frameSeconds, v.status, v.fate);
+      view.setLantern(v.status === 'sinking' ? 0 : dark);
 
       const fx = Math.sin(pose.heading);
       const fz = Math.cos(pose.heading);

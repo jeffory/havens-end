@@ -51,7 +51,8 @@ export function BuildMenu({ land, choose, close, nav }: { land: Land; choose: (k
         </div>
         <p className="hint">
           Buildings sit on the grid (turn them with Q / R or LB / RB); fences, paths and torches go down one at a time until you press Esc. Take a
-          fence, path or torch up with the axe or pickaxe; farm plots are tilled with the hoe anywhere in your camp.
+          fence, path or torch up with the axe or pickaxe; farm plots are tilled with the hoe anywhere in your camp. Workshops need a settler to work
+          them: give one the job at the campfire.
         </p>
       </div>
     </div>

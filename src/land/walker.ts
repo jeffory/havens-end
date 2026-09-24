@@ -40,26 +40,27 @@ export function createWalker(x: number, y: number, z: number, facing = 0): Walke
 /**
  * One fixed step on foot. `moveX, moveZ` is the wanted direction in world space, of
  * length up to 1 (an analogue stick's tilt). Movement is axis by axis against the
- * voxels, climbing any one-voxel step it walks into, and it stops at water too deep to
- * wade. Deterministic: same inputs, same result.
+ * voxels, climbing any ledge up to `stepUp` it walks into, and it stops at water too
+ * deep to wade. Deterministic: same inputs, same result. Animals pass their own pace
+ * and a lower climb.
  */
-export function stepWalker(w: Walker, moveX: number, moveZ: number, world: VoxelReader, dt: number): void {
+export function stepWalker(w: Walker, moveX: number, moveZ: number, world: VoxelReader, dt: number, speed = WALK_SPEED, stepUp = STEP_UP): void {
   w.prev.x = w.x;
   w.prev.y = w.y;
   w.prev.z = w.z;
   const length = Math.hypot(moveX, moveZ);
   const scale = length > 1 ? 1 / length : 1;
   const k = 1 - Math.exp(-RESPONSE * dt);
-  w.vx += (moveX * scale * WALK_SPEED - w.vx) * k;
-  w.vz += (moveZ * scale * WALK_SPEED - w.vz) * k;
+  w.vx += (moveX * scale * speed - w.vx) * k;
+  w.vz += (moveZ * scale * speed - w.vz) * k;
   if (length > 0.1) {
     const target = Math.atan2(moveX, moveZ);
     const turn = Math.atan2(Math.sin(target - w.facing), Math.cos(target - w.facing));
     w.facing += turn * Math.min(1, TURN_RATE * dt);
   }
 
-  moveAxis(w, world, w.vx * dt, 0);
-  moveAxis(w, world, 0, w.vz * dt);
+  moveAxis(w, world, w.vx * dt, 0, stepUp);
+  moveAxis(w, world, 0, w.vz * dt, stepUp);
 
   w.vy = Math.max(-MAX_FALL, w.vy - GRAVITY * dt);
   const y = w.y + w.vy * dt;
@@ -77,7 +78,7 @@ export function stepWalker(w: Walker, moveX: number, moveZ: number, world: Voxel
   for (let i = 0; i < 4 && collides(world, w.x, w.y, w.z); i++) w.y = Math.floor(w.y) + 1;
 }
 
-function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number): void {
+function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp: number): void {
   if (dx === 0 && dz === 0) return;
   const x = w.x + dx;
   const z = w.z + dz;
@@ -87,9 +88,9 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number): void {
     w.z = z;
     return;
   }
-  // A step, or a scramble up a ledge of up to STEP_UP voxels, if there's headroom.
+  // A step, or a scramble up a ledge of up to `stepUp` voxels, if there's headroom.
   if (w.onGround) {
-    for (let rise = 1; rise <= STEP_UP; rise++) {
+    for (let rise = 1; rise <= stepUp; rise++) {
       const up = Math.floor(w.y + EPSILON) + rise;
       if (collides(world, w.x, up, w.z)) break; // no headroom to climb higher
       if (!collides(world, x, up, z)) {

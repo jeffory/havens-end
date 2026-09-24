@@ -1,10 +1,13 @@
 import type { Held } from '../land/Land';
 
+/** What someone on foot can have in hand: the captain's tools and seed, and a settler's rod or hammer. */
+export type HeldModel = Held | 'rod' | 'hammer';
+
 /**
  * Voxel tools for the captain's hand, in character voxels, laid along −x from the
  * grip at the origin (the same convention as the cutlass): a handle, then the head.
  */
-export function heldCells(held: Held): { cells: Int32Array; palette: Uint8Array } {
+export function heldCells(held: HeldModel): { cells: Int32Array; palette: Uint8Array } {
   const palette = new Uint8Array(256 * 4);
   palette.set([118, 82, 48, 255], 1 * 4); // haft
   palette.set([150, 156, 162, 255], 2 * 4); // iron
@@ -14,7 +17,14 @@ export function heldCells(held: Held): { cells: Int32Array; palette: Uint8Array 
   const cells: number[] = [];
   const put = (x: number, y: number, z: number, c: number) => cells.push(x, y, z, c);
 
-  if (held === 'axe' || held === 'pickaxe' || held === 'shovel' || held === 'hoe') {
+  if (held === 'rod') {
+    // A long thin rod, with the line hanging from its tip.
+    for (let x = 2; x >= -22; x--) put(x, Math.floor((-x * x) / 160), 0, 1);
+    for (let y = -4; y >= -14; y--) put(-22, y, 0, 3);
+  } else if (held === 'hammer') {
+    for (let x = 2; x >= -8; x--) put(x, 0, 0, 1);
+    for (let y = -2; y <= 2; y++) for (let z = -1; z <= 1; z++) put(-9, y, z, 2);
+  } else if (held === 'axe' || held === 'pickaxe' || held === 'shovel' || held === 'hoe') {
     for (let x = 2; x >= -11; x--) put(x, 0, 0, 1);
     switch (held) {
       case 'axe':

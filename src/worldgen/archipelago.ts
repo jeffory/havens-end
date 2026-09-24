@@ -2,6 +2,7 @@ import type { Port, PortFaction } from '../economy/ports';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildHarbour } from './harbour';
 import { generateIsland, type IslandParams } from './island';
+import { hash2 } from '../util/hash';
 import { mulberry32 } from './noise';
 
 export interface PortPlan {
@@ -12,7 +13,12 @@ export interface PortPlan {
 export interface IslandPlan extends IslandParams {
   /** The port on this island, if it has one. */
   port: PortPlan | null;
+  /** An islet sailors won't go near: ghost lights hang over it at night. */
+  cursed?: boolean;
 }
+
+/** How many of the islets are cursed. */
+const CURSED = 3;
 
 /**
  * The ports, from home outward. Rings are distances from Haven; they line up with the
@@ -80,6 +86,9 @@ export function planArchipelago(seed: number): IslandPlan[] {
     if (!spot) continue;
     islands.push({ seed: Math.floor(random() * 2 ** 31), centerX: spot.x, centerZ: spot.z, radius, peak: Math.round(4 + random() * 8), port: null });
   }
+  // A few islets are shunned. Chosen by their own seeds, so the rest of the plan is as it was.
+  const islets = islands.filter((i) => !i.port).sort((a, b) => hash2(a.seed, 7, seed) - hash2(b.seed, 7, seed));
+  for (const islet of islets.slice(0, CURSED)) islet.cursed = true;
   return islands;
 }
 

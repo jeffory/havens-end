@@ -1,3 +1,4 @@
+import { isNight } from '../core/clock';
 import { huntsPlayer, merchantsWary } from '../economy/reputation';
 import { WATER_LEVEL } from '../ocean/waves';
 import { angleOffWind } from '../sailing/pointOfSail';
@@ -32,6 +33,8 @@ export interface AiState {
 const THINK_INTERVAL = 0.25;
 const MERCHANT_SIGHT = 110;
 const WARSHIP_SIGHT = 140;
+/** Sighting ranges shrink to this share of the day's at night. */
+const NIGHT_SIGHT = 0.55;
 /** Closest a captain will point to the wind. */
 const NO_GO = (50 * Math.PI) / 180;
 const FIRING_ARC = (14 * Math.PI) / 180;
@@ -69,11 +72,13 @@ function decide(sea: Sea, v: Vessel, ai: AiState): void {
   const leader = ai.leader !== null ? sea.vessel(ai.leader) : undefined;
   const wind = sea.weather.windAt(ship.x, ship.z, sea.time);
   const isMerchant = v.faction === 'merchant';
+  // Lookouts see less by night.
+  const sight = isNight(sea.clock.phase) ? NIGHT_SIGHT : 1;
 
   // Who comes for the player unprovoked depends on the captain's name among each flag.
   const standing = sea.captain.standing;
   let course = ai.course;
-  if (playerFightable && isMerchant && (ai.alerted || (distance < MERCHANT_SIGHT && merchantsWary(standing)))) {
+  if (playerFightable && isMerchant && (ai.alerted || (distance < MERCHANT_SIGHT * sight && merchantsWary(standing)))) {
     ai.mode = 'flee';
     course = Math.atan2(-dx, -dz);
     v.helm.sails = 1;
@@ -83,7 +88,7 @@ function decide(sea: Sea, v: Vessel, ai: AiState): void {
   } else if (
     playerFightable &&
     !isMerchant &&
-    (ai.alerted || (distance < WARSHIP_SIGHT && huntsPlayer(standing, v.faction)) || (leader?.ai?.alerted ?? false))
+    (ai.alerted || (distance < WARSHIP_SIGHT * sight && huntsPlayer(standing, v.faction)) || (leader?.ai?.alerted ?? false))
   ) {
     ai.mode = 'engage';
     course = engage(sea, v, dx, dz, distance);

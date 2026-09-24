@@ -14,6 +14,7 @@ export interface Harbour {
   heading: number;
   pier: { x: number; y: number; z: number };
   places: PortPlace[];
+  lamps: Array<{ x: number; y: number; z: number }>;
 }
 
 /** Columns this low leave room under any keel (surface ≤ 8 means 3.6+ units of water). */
@@ -56,10 +57,14 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
   const at = (t: number, w = 0) => ({ x: island.centerX + dx * t - dz * w, z: island.centerZ + dz * t + dx * w });
 
   const landing = at(site.landing);
-  const { doors, plots } = buildTown(world, landing.x, landing.z, dx, dz, STYLES[faction], random);
+  const { doors, plots, beacon } = buildTown(world, landing.x, landing.z, dx, dz, STYLES[faction], random);
   const foot = at(site.landing - 2);
   for (const door of doors) buildRoad(world, foot.x, foot.z, door, plots);
-  buildPier(world, island, dx, dz, site.landing, site.deep + PIER_REACH);
+  const end = site.deep + PIER_REACH;
+  buildPier(world, island, dx, dz, site.landing, end);
+  // Lamps at the pier head, to find the berth by after dark.
+  const lamps = [-1, 1].map((w) => lampPost(world, at(end - 0.5, w)));
+  if (beacon) lamps.push(beacon);
 
   // Moored alongside, bow out to sea.
   const berth = at(site.deep + BERTH_ALONG, random() < 0.5 ? BERTH_SIDE : -BERTH_SIDE);
@@ -69,7 +74,17 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
   const yardY = groundHeight(world, Math.floor(yard.x), Math.floor(yard.z));
   const places: PortPlace[] = [{ kind: 'shipyard', x: yard.x, y: yardY, z: yard.z }];
   ROLES.forEach((kind, i) => places.push(doors[i] ? { kind, x: doors[i].outX + 0.5, y: doors[i].y, z: doors[i].outZ + 0.5 } : { ...places[0], kind }));
-  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places };
+  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps };
+}
+
+/** A post on the pier deck with a lantern on top; returns where the light is. */
+function lampPost(world: VoxelWorld, at: { x: number; z: number }): { x: number; y: number; z: number } {
+  const x = Math.floor(at.x);
+  const z = Math.floor(at.z);
+  world.setVoxel(x, PIER_Y + 1, z, Block.Wood);
+  world.setVoxel(x, PIER_Y + 2, z, Block.Wood);
+  world.setVoxel(x, PIER_Y + 3, z, Block.Lantern);
+  return { x: x + 0.5, y: PIER_Y + 3.5, z: z + 0.5 };
 }
 
 interface Site {
@@ -156,6 +171,7 @@ function buildPier(world: VoxelWorld, island: IslandParams, dx: number, dz: numb
 function buildTown(world: VoxelWorld, lx: number, lz: number, dx: number, dz: number, style: Style, random: () => number) {
   const doors: Door[] = [];
   const placed: Footprint[] = [];
+  let beacon: { x: number; y: number; z: number } | null = null;
   const candidates: Array<{ x: number; z: number }> = [];
   for (let back = 6; back <= 40; back += 4) {
     for (let side = -32; side <= 32; side += 4) {
@@ -176,10 +192,10 @@ function buildTown(world: VoxelWorld, lx: number, lz: number, dx: number, dz: nu
     if (base === null || base > SEA_LEVEL + 14) continue;
     placed.push(fp);
     clearSite(world, fp, base, 4);
-    if (tower) buildTower(world, fp, base);
+    if (tower) beacon = buildTower(world, fp, base);
     else doors.push(buildHouse(world, fp, base, style, lx, lz));
   }
-  return { doors, plots: placed };
+  return { doors, plots: placed, beacon };
 }
 
 /**

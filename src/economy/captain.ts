@@ -14,12 +14,16 @@ export interface Captain {
   logbook: Logbook;
   /** What the captain carries on foot: timber and stone gathered, seed, the harvest. */
   pack: Cargo;
+  /** Settlers hired in a tavern, aboard until they're settled at a camp. */
+  passengers: number;
 }
 
 export const STARTING_GOLD = 200;
 /** How much the captain can carry ashore. */
 export const PACK_SIZE = 40;
+/** Settlers a ship will carry, over and above her crew. */
+export const PASSENGER_BERTHS = 8;
 
 export function createCaptain(home: Port): Captain {
-  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {} };
+  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {}, passengers: 0 };
 }

@@ -11,7 +11,7 @@ export interface NavHandlers {
   chart?: () => void;
 }
 
-export type ScreenKind = 'port' | 'chart' | 'build' | 'store' | 'system';
+export type ScreenKind = 'port' | 'chart' | 'build' | 'store' | 'system' | 'camp';
 
 /**
  * The full-screen menus (port, chart), drawn with React over the 3D view. The game

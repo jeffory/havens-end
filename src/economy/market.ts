@@ -1,3 +1,4 @@
+import { mulberry32 } from '../worldgen/noise';
 import { GOOD_INFO, type Good, HARVEST, SEEDS, STAPLES } from './goods';
 import type { Port, PortFaction } from './ports';
 
@@ -60,10 +61,10 @@ export function sellValue(line: Line, amount: number, factor = 1): number {
  * Sets up every port's market. Each staple is made in two ports and wanted in two
  * others, so every cargo has somewhere to go: those pairings are the trade routes.
  * Muskets come from free ports, are wanted in pirate havens, and fetch the most on
- * Imperial black markets. Every port also sells building materials and seed.
- * Deterministic in `seed`.
+ * Imperial black markets. Every port also sells building materials and seed, and deals
+ * in what camps grow and make (`CAMP_GOODS`). Deterministic in `random` and `campSeed`.
  */
-export function planMarkets(ports: readonly Port[], random: () => number): Market[] {
+export function planMarkets(ports: readonly Port[], random: () => number, campSeed = 0x6c0d): Market[] {
   const goods = shuffle(STAPLES, random);
   const order = shuffle(ports.map((p) => p.id), random);
   const jitter = () => 0.92 + random() * 0.16;
@@ -71,7 +72,7 @@ export function planMarkets(ports: readonly Port[], random: () => number): Marke
     const target = Math.round(shape.stock * jitter());
     return { good, role, base: GOOD_INFO[good].price * shape.price * jitter(), target, stock: Math.round(target * (0.8 + random() * 0.4)) };
   };
-  return ports.map((port) => {
+  const markets = ports.map((port) => {
     const slot = order.indexOf(port.id);
     const roleOf = (good: Good): Role => {
       const k = (goods.indexOf(good) - slot + goods.length * 2) % goods.length;
@@ -85,7 +86,36 @@ export function planMarkets(ports: readonly Port[], random: () => number): Marke
     for (const seed of SEEDS) lines.push(line(seed, roleOf(HARVEST[seed]!) === 'produces' ? 'produces' : 'trades'));
     return { lines, black: port.faction === 'imperial' ? [line('muskets', 'demands', BLACK)] : [] };
   });
+  // Camp goods come last, from their own numbers, so the older lines (and saves of them) stay as they were.
+  const camp = mulberry32(campSeed);
+  for (const [i, port] of ports.entries()) {
+    for (const [good, roles] of Object.entries(CAMP_GOODS) as Array<[Good, Record<PortFaction, Role | null>]>) {
+      const role = roles[port.faction];
+      if (!role) continue;
+      const shape = ROLES[role];
+      const target = Math.round(shape.stock * (0.92 + camp() * 0.16));
+      markets[i].lines.push({ good, role, base: GOOD_INFO[good].price * shape.price * (0.92 + camp() * 0.16), target, stock: Math.round(target * (0.8 + camp() * 0.4)) });
+    }
+  }
+  return markets;
 }
+
+/**
+ * What camps make, and who deals in it. Pirate havens want arms, rum-makings and
+ * provisions; the Crown's yards want planks and its mines sell iron; the free ports
+ * grow maize and buy a little of everything. Null: not dealt in there.
+ */
+const CAMP_GOODS: Partial<Record<Good, Record<PortFaction, Role | null>>> = {
+  cutlasses: { merchant: 'trades', pirate: 'demands', imperial: 'trades' },
+  planks: { merchant: 'trades', pirate: 'trades', imperial: 'demands' },
+  iron: { merchant: 'trades', pirate: 'demands', imperial: 'produces' },
+  cane: { merchant: 'trades', pirate: 'trades', imperial: 'trades' },
+  leaf: { merchant: 'trades', pirate: null, imperial: 'trades' },
+  molasses: { merchant: 'trades', pirate: 'demands', imperial: null },
+  ore: { merchant: 'trades', pirate: null, imperial: 'trades' },
+  maize: { merchant: 'produces', pirate: 'trades', imperial: 'trades' },
+  provisions: { merchant: 'trades', pirate: 'demands', imperial: 'demands' },
+};
 
 const MUSKETS: Record<PortFaction, Role | null> = { merchant: 'produces', pirate: 'demands', imperial: null };
 /** The haven's forests are cut freely; the Crown's shipyards eat timber and its quarries sell stone. */

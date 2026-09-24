@@ -31,6 +31,7 @@ const BURSTS = {
   parrySparks: { count: 22, color: 0xffe066, alt: 0xffffff, size: [0.07, 0.14], speed: [4, 9], lift: 2, life: [0.2, 0.45], gravity: 10, drag: 0.4, grow: 1 },
   wound: { count: 8, color: 0xd9412f, alt: 0xff8a5c, size: [0.05, 0.1], speed: [2, 5], lift: 1.5, life: [0.2, 0.4], gravity: 14, drag: 0.6, grow: 1 },
   bubbles: { count: 3, color: 0xe8f7fb, size: [0.2, 0.45], speed: [0.2, 1], lift: 1.5, life: [0.5, 1], gravity: -1, drag: 0.8, grow: 1 },
+  leaves: { count: 2, color: 0x4f8a36, alt: 0x7cb44e, size: [0.07, 0.15], speed: [0.4, 1.4], lift: 0.8, life: [1.3, 2.4], gravity: 2.5, drag: 0.5, grow: 1 },
 } satisfies Record<string, Burst>;
 
 export type BurstKind = keyof typeof BURSTS;

@@ -23,6 +23,13 @@ describe('planArchipelago', () => {
     }
   });
 
+  it('curses three islets, and never a port', () => {
+    const islands = planArchipelago(1717);
+    const cursed = islands.filter((i) => i.cursed);
+    expect(cursed).toHaveLength(3);
+    expect(cursed.every((i) => !i.port)).toBe(true);
+  });
+
   it('keeps islands apart, and islets well clear of harbours', () => {
     const islands = planArchipelago(1717);
     expect(islands.length).toBeGreaterThan(12);

@@ -35,6 +35,15 @@ export function buildCharacterModel(file: VoxFile): CharacterModel {
     const voxels = instanceVoxels(file, instance);
     for (let i = 0; i < voxels.length; i += 4) list.push(...mvToGame(voxels[i], voxels[i + 1], voxels[i + 2]), voxels[i + 3]);
   }
+  return characterFromParts(cells, file.palette);
+}
+
+/**
+ * Joints and scale for a character given as named parts (x, y, z, colour quads in game
+ * axes, T-pose, facing +z). `height` is how many voxels tall the figure stands, if not
+ * all of it (a hat shouldn't make its wearer shorter).
+ */
+export function characterFromParts(cells: Partial<Record<PartName, number[]>>, palette: Uint8Array, height?: number): CharacterModel {
   const missing = PART_NAMES.filter((n) => !cells[n]?.length);
   if (missing.length) throw new Error(`buildCharacterModel: missing parts ${missing.join(', ')}`);
 
@@ -59,10 +68,10 @@ export function buildCharacterModel(file: VoxFile): CharacterModel {
   const legs = { minX: box.leg_r.minX, maxX: box.leg_l.maxX, minZ: Math.min(box.leg_r.minZ, box.leg_l.minZ), maxZ: Math.max(box.leg_r.maxZ, box.leg_l.maxZ) };
   return {
     parts,
-    palette: file.palette,
+    palette,
     feet: { x: (legs.minX + legs.maxX + 1) / 2, y: minY, z: (legs.minZ + legs.maxZ + 1) / 2 },
     hand: { x: box.arm_r.minX + 0.5, y: centre(box.arm_r).y, z: centre(box.arm_r).z },
-    scale: CHARACTER_HEIGHT / (maxY - minY + 1),
+    scale: CHARACTER_HEIGHT / (height ?? maxY - minY + 1),
   };
 }
 

@@ -1,29 +1,38 @@
 import { DOCK_SPEED, type Sea } from '../combat/sea';
 import { distanceToBody } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
-import { PACK_SIZE } from '../economy/captain';
+import { isNight } from '../core/clock';
+import { PACK_SIZE, PASSENGER_BERTHS } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, type Good, loadCargo, unload } from '../economy/goods';
 import type { PortPlace } from '../economy/ports';
-import { Block } from '../voxel/blocks';
+import { Block, blocksWalker } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight, levelGround, clearSite, overlaps, TREE_BLOCKS, type Footprint } from '../worldgen/buildings';
-import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, showCrop, type Stage, stageOf } from './crops';
-import { type Building, doorOf, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
-import { createWalker, standable, stepWalker, type Walker } from './walker';
+import { mulberry32 } from '../worldgen/noise';
+import { WATER_LEVEL } from '../ocean/waves';
+import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
+import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
+import { type Creature, CREATURES, stepCreatures, strike } from './creatures';
+import { type Drop, dropItem, stepDrops } from './drops';
+import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
+import { type Building, doorOf, isWorkshop, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
+import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, type Walker } from './walker';
 
 export type Tool = 'axe' | 'pickaxe' | 'shovel' | 'hoe';
 export const TOOL_LIST: readonly Tool[] = ['axe', 'pickaxe', 'shovel', 'hoe'];
 /** What's in the captain's hands: a tool, or a seed to plant. */
 export type Held = Tool | Good;
 
-/** A campfire claims the land this far around it. */
-export const CLAIM_RADIUS = 32;
+export { CLAIM_RADIUS } from './camps';
 /** A port's town and harbour: nobody digs, fells or builds within this of the berth. */
 export const TOWN_RADIUS = 80;
 /** How far in front of their feet the captain works. */
 const WORK_DISTANCE = 1.25;
-/** Reach for a picked cell (the mouse). */
+/** How far across the captain can reach to work a cell (picked with the mouse). */
 export const REACH = 3.6;
+/** And how far above and below their feet, in voxels. */
+export const REACH_UP = 2;
+export const REACH_DOWN = 2;
 /** How far the ship's side can be from where you land: the boat rows you that far, and back. */
 const LANDING_RANGE = 12;
 const BOARD_RANGE = LANDING_RANGE + 1;
@@ -31,15 +40,48 @@ const BOARD_RANGE = LANDING_RANGE + 1;
 export const SUPPLY_RANGE = 60;
 const INTERACT_RANGE = 2.2;
 const TREE_LIMIT = 300;
+/** A tree's leaves hang within this many voxels of its trunk (each way). */
+const CANOPY_REACH = 4;
+/** Camps within this of the captain (or their ship) are lived in step by step; further off, walks are just timed. */
+const LIVE_RANGE = 160;
+/** Woodcutters look this far past the edge of the claim for trees, and fishers for the shore. */
+const WORK_MARGIN = 6;
+const SHORE_MARGIN = 14;
+/** Seconds a camp's list of trees (or fishing spots) is trusted before it's looked over again. */
+const SURVEY_SECONDS = 20;
 
 export type LandEvent =
   | { kind: 'ashore'; x: number; y: number; z: number }
   | { kind: 'aboard'; stowed: number; left: number }
-  | { kind: 'work'; action: Action; x: number; y: number; z: number; good?: Good; amount?: number }
+  | { kind: 'work'; action: Action; x: number; y: number; z: number; good?: Good; amount?: number; settler?: number; leaves?: number[] }
+  | { kind: 'pickup'; good: Good; amount: number }
   | { kind: 'built'; structure: Structure; x: number; y: number; z: number }
-  | { kind: 'razed'; structure: Structure; x: number; y: number; z: number };
+  | { kind: 'razed'; structure: Structure; x: number; y: number; z: number }
+  | { kind: 'made'; building: number; x: number; y: number; z: number }
+  | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' };
 
-export type Action = 'fell' | 'mine' | 'dig' | 'fill' | 'till' | 'plant' | 'harvest' | 'unbuild';
+export type Action = 'fell' | 'mine' | 'dig' | 'place' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
+
+/**
+ * What a tool is pointed at: a column (the one in front of the captain), or a block
+ * picked with the mouse and the face it was picked by.
+ */
+export interface Target {
+  x: number;
+  z: number;
+  /** The block picked with the mouse, if it was. */
+  y?: number;
+  /** The face it was picked by (a unit normal), to put earth against. */
+  face?: { x: number; y: number; z: number };
+}
+
+/** What the shovel shifts, and the pickaxe breaks. */
+const DIGGABLE: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand, Block.Soil, Block.Stone, Block.Gravel];
+const ROCK: readonly number[] = [Block.Stone, Block.IronOre];
+/** Where saplings take root. */
+const ROOTING: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand];
+
+type Cell = [number, number, number];
 
 /** What a tool would do if used now: the cell it would work, or why it can't. */
 export type Aim = { ok: true; action: Action; x: number; y: number; z: number } | { ok: false; reason: string; x?: number; y?: number; z?: number };
@@ -52,6 +94,7 @@ export interface Outcome {
 export type Interaction =
   | { kind: 'board' }
   | { kind: 'door'; place: PortPlace }
+  | { kind: 'camp'; fire: Building; building: Building }
   | { kind: 'rest'; building: Building }
   | { kind: 'store'; building: Building }
   | { kind: 'harvest'; crop: Crop };
@@ -61,6 +104,25 @@ export interface LandSnapshot {
   buildings: Building[];
   crops: Crop[];
   nextId: number;
+  settlers?: Settler[];
+  fallow?: Fallow[];
+  saplings?: Sapling[];
+  drops?: Array<{ good: Good; amount: number; x: number; y: number; z: number; age: number }>;
+}
+
+/** A tree a woodcutter could fell: the bottom of its trunk. */
+export interface TreeSpot {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Somewhere to fish from: dry ground at the water's edge, and which way the water is. */
+export interface ShoreSpot {
+  x: number;
+  y: number;
+  z: number;
+  toward: number;
 }
 
 export interface Placement {
@@ -79,16 +141,41 @@ export class Land {
   walker: Walker | null = null;
   buildings: Building[] = [];
   crops: Crop[] = [];
+  /** The people living and working at the camps. */
+  settlers: Settler[] = [];
+  /** Plots a farmer will sow as soon as there's seed. */
+  fallow: Fallow[] = [];
+  saplings: Sapling[] = [];
+  /** Night creatures about the captain: not saved (they're gone by morning anyway). */
+  creatures: Creature[] = [];
+  nextCreature = 1;
+  spawnIn = 0;
+  /** What's lying about to be picked up. */
+  drops: Drop[] = [];
+  nextDrop = 1;
+  /** When the captain was last told their pack is full. */
+  fullToldAt = -Infinity;
   nextId = 1;
   private events: LandEvent[] = [];
+  private readonly random: () => number;
   private growIn = 0;
   /** The stage each crop is drawn at (redrawn when it grows; everything is redrawn after a load). */
-  private readonly shown = new WeakMap<Crop, Stage>();
+  private readonly shown = new WeakMap<Crop | Sapling, Stage>();
+  /** The day it was when the camps last had breakfast. */
+  private fedOn: number;
+  /** What each workshop was doing at the last step, for the camp screen. */
+  private readonly workshopStates = new Map<number, WorkshopState>();
+  private readonly surveys = new Map<string, { at: number; spots: TreeSpot[] | ShoreSpot[] }>();
 
   constructor(
     readonly world: VoxelWorld,
     readonly sea: Sea,
-  ) {}
+    /** Names and faces for settlers. */
+    private readonly seed = 1,
+  ) {
+    this.fedOn = sea.clock.day;
+    this.random = mulberry32(seed ^ 0xc4ab);
+  }
 
   /** The camps, fields and the captain on foot, for a save. The voxels themselves are saved with the world. */
   snapshot(): LandSnapshot {
@@ -98,15 +185,26 @@ export class Land {
       buildings: structuredClone(this.buildings),
       crops: structuredClone(this.crops),
       nextId: this.nextId,
+      settlers: structuredClone(this.settlers),
+      fallow: structuredClone(this.fallow),
+      saplings: structuredClone(this.saplings),
+      drops: this.drops.map(({ good, amount, x, y, z, age }) => ({ good, amount, x, y, z, age })),
     };
   }
 
   restore(s: LandSnapshot): void {
     this.walker = s.walker ? createWalker(s.walker.x, s.walker.y, s.walker.z, s.walker.facing) : null;
     this.buildings = structuredClone(s.buildings);
+    for (const b of this.buildings) if (isWorkshop(b.kind)) b.work ??= { recipe: 0, progress: 0 };
     this.crops = structuredClone(s.crops);
     this.nextId = s.nextId;
+    this.settlers = structuredClone(s.settlers ?? []);
+    this.fallow = structuredClone(s.fallow ?? []);
+    this.saplings = structuredClone(s.saplings ?? []);
+    this.drops = (s.drops ?? []).map((d) => ({ ...d, id: this.nextDrop++, vx: 0, vy: 0, vz: 0, prev: { x: d.x, y: d.y, z: d.z }, still: false }));
     this.growIn = 0;
+    this.fedOn = this.sea.clock.day;
+    this.surveys.clear();
   }
 
   takeEvents(): LandEvent[] {
@@ -119,13 +217,242 @@ export class Land {
     return this.sea.captain.pack;
   }
 
-  step(dt: number, moveX: number, moveZ: number): void {
+  /** The captain on foot takes a step. */
+  move(dt: number, moveX: number, moveZ: number): void {
     if (this.walker) stepWalker(this.walker, moveX, moveZ, this.world, dt);
+  }
+
+  /**
+   * One fixed step of life on land, ashore or not: crops and saplings grow, settlers go
+   * about their day, workshops work, and at sunrise the camps eat. `watched` false
+   * treats every camp as out of sight (while the captain sleeps).
+   */
+  step(dt: number, watched = true): void {
     this.growIn -= dt;
     if (this.growIn <= 0) {
       this.growIn = 1;
       this.grow();
     }
+    if (this.sea.clock.day !== this.fedOn) {
+      this.fedOn = this.sea.clock.day;
+      this.dawn();
+    }
+    const focus = this.walker ?? this.sea.player.ship;
+    for (const s of this.settlers) {
+      const fire = this.building(s.camp);
+      const live = watched && !!fire && Math.hypot(fireCentre(fire).x - focus.x, fireCentre(fire).z - focus.z) < LIVE_RANGE;
+      stepSettler(this, s, dt, live);
+    }
+    this.work(dt);
+    stepDrops(this, dt);
+    if (watched) stepCreatures(this, dt, this.random);
+    else this.creatures.length = 0;
+  }
+
+  /** Torches and fires: night creatures keep out of their light. */
+  lights(): Array<{ x: number; z: number }> {
+    const lit: Array<{ x: number; z: number }> = [];
+    for (const b of this.buildings) {
+      if (b.kind === 'torch' || b.kind === 'campfire' || b.kind === 'forge' || b.kind === 'smokehouse') lit.push({ x: b.x0 + b.w / 2, z: b.z0 + b.d / 2 });
+    }
+    return lit;
+  }
+
+  /** A creature got at a crop: a crab nibbles it back to a shoot, a boar tramples it flat. */
+  spoilCrop(crop: Crop, by: Creature): void {
+    const label = CROPS[crop.kind].label.toLowerCase();
+    const tell = (text: string) => {
+      if (!by.told) this.events.push({ kind: 'notice', text, tone: 'bad' });
+      by.told = true;
+    };
+    if (by.kind === 'crab') {
+      crop.planted = this.sea.time;
+      tell(`A land crab is nibbling your ${label}! Torches keep them off.`);
+    } else {
+      this.removeCrop(crop);
+      if (this.fireAt(crop.x + 0.5, crop.z + 0.5)) this.fallow.push({ x: crop.x, y: crop.y, z: crop.z, kind: crop.kind });
+      tell(`A wild boar has trampled your ${label}! Fence your fields.`);
+    }
+  }
+
+  emit(e: LandEvent): void {
+    this.events.push(e);
+  }
+
+  building(id: number): Building | undefined {
+    return this.buildings.find((b) => b.id === id);
+  }
+
+  // ---- Camps: settlers and workshops ----
+
+  /** The camp fire whose claim a point is in. */
+  fireAt(x: number, z: number): Building | undefined {
+    return fireAt(this.buildings, x, z);
+  }
+
+  settlersAt(fire: Building): Settler[] {
+    return this.settlers.filter((s) => s.camp === fire.id);
+  }
+
+  freeBeds(fire: Building): number {
+    return beds(this.buildings, fire) - this.settlersAt(fire).length;
+  }
+
+  /** Brings settlers ashore from the ship to live at a camp, as many as there are beds for. */
+  settle(fire: Building, count: number): Outcome {
+    const aboard = this.sea.captain.passengers;
+    if (aboard <= 0) return fail('You have no settlers aboard: hire them in a tavern.');
+    const free = this.freeBeds(fire);
+    if (free <= 0) return fail(beds(this.buildings, fire) === 0 ? 'Settlers need a hut to sleep in. Build one first.' : 'Every bed is taken: build another hut.');
+    const n = Math.min(count, aboard, free);
+    const c = fireCentre(fire);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
+      const x = c.x + Math.sin(angle) * 2.5;
+      const z = c.z + Math.cos(angle) * 2.5;
+      const s = createSettler(this.nextId++, this.seed, fire, { x, y: standable(this.world, x, z, fire.y + 4) ?? fire.y, z });
+      this.settlers.push(s);
+    }
+    this.sea.captain.passengers -= n;
+    return done(`${n} settler${n > 1 ? 's' : ''} come${n > 1 ? '' : 's'} ashore to live here. Give them work at the campfire.`);
+  }
+
+  /** A settler goes back aboard, to be settled somewhere else. */
+  sendAboard(id: number): Outcome {
+    const s = this.settlers.find((o) => o.id === id);
+    if (!s) return fail('No such settler.');
+    if (this.sea.captain.passengers >= PASSENGER_BERTHS) return fail(`There are berths aboard for only ${PASSENGER_BERTHS} settlers.`);
+    this.settlers.splice(this.settlers.indexOf(s), 1);
+    this.sea.captain.passengers++;
+    return done(`${s.name} goes back aboard.`);
+  }
+
+  /** Gives a settler a job (a workshop hand works at `post`). */
+  assign(id: number, job: Job, post: number | null = null): Outcome {
+    const s = this.settlers.find((o) => o.id === id);
+    if (!s) return fail('No such settler.');
+    if (job === 'worker') {
+      const b = post === null ? undefined : this.building(post);
+      if (!b || !isWorkshop(b.kind)) return fail('That’s not a workshop.');
+      for (const o of this.settlers) if (o !== s && o.post === b.id) Object.assign(o, { job: 'idle', post: null });
+    }
+    s.job = job;
+    s.post = job === 'worker' ? post : null;
+    think(this, s);
+    return done('');
+  }
+
+  /** What a workshop's doing, for the camp screen. */
+  workshopState(b: Building): WorkshopState {
+    const hand = this.settlers.find((s) => s.post === b.id);
+    if (!hand) return 'no-worker';
+    if (!atWork(hand, b)) return isNight(this.sea.clock.phase) ? 'off-duty' : 'coming';
+    return this.workshopStates.get(b.id) ?? 'working';
+  }
+
+  /** Workshops with their hand at the bench make things, drawing on and filling their camp's storehouses. */
+  private work(dt: number): void {
+    for (const b of this.buildings) {
+      if (!b.work) continue;
+      if (!this.settlers.some((s) => atWork(s, b))) continue;
+      const fire = this.fireAt(b.x0 + b.w / 2, b.z0 + b.d / 2);
+      const before = b.work.progress;
+      const state = stepWorkshop(b, fire ? campStores(this.buildings, fire) : [], dt);
+      this.workshopStates.set(b.id, state);
+      if (before > 0 && b.work.progress === 0) this.events.push({ kind: 'made', building: b.id, x: b.x0 + b.w / 2, y: b.y + 2, z: b.z0 + b.d / 2 });
+    }
+  }
+
+  /** Sunrise: every settler eats, and any who've gone hungry too long leave. */
+  private dawn(): void {
+    for (const s of breakfast(this)) {
+      this.settlers.splice(this.settlers.indexOf(s), 1);
+      this.events.push({ kind: 'notice', text: `${s.name} has left your camp: there's been nothing to eat.`, tone: 'bad' });
+    }
+    const hungry = this.settlers.filter((s) => s.hungry > 0).length;
+    if (hungry > 0) this.events.push({ kind: 'notice', text: `${hungry} of your settlers went without breakfast. Stock the storehouse with food.`, tone: 'bad' });
+  }
+
+  /** Trees a woodcutter from this camp could fell, from a survey taken now and then. */
+  trees(fire: Building): TreeSpot[] {
+    return this.survey(`trees-${fire.id}`, () => {
+      const c = fireCentre(fire);
+      const r = CLAIM_RADIUS + WORK_MARGIN;
+      const spots: TreeSpot[] = [];
+      for (let x = Math.floor(c.x - r); x <= c.x + r; x++) {
+        for (let z = Math.floor(c.z - r); z <= c.z + r; z++) {
+          if (Math.hypot(x + 0.5 - c.x, z + 0.5 - c.z) > r) continue;
+          const y = groundHeight(this.world, x, z);
+          if (this.world.getVoxel(x, y, z) === Block.Wood && !TREE_BLOCKS.has(this.world.getVoxel(x, y - 1, z)) && !this.buildingAt(x, y, z)) spots.push({ x, y, z });
+        }
+      }
+      return spots;
+    }) as TreeSpot[];
+  }
+
+  /** Places at the water's edge near a camp to fish from. */
+  shore(fire: Building): ShoreSpot[] {
+    return this.survey(`shore-${fire.id}`, () => {
+      const c = fireCentre(fire);
+      const r = CLAIM_RADIUS + SHORE_MARGIN;
+      const spots: ShoreSpot[] = [];
+      const wet = (x: number, z: number) => groundBelow(this.world, x + 0.5, z + 0.5, SEA_LEVEL + 2) < WATER_LEVEL - 1;
+      for (let x = Math.floor(c.x - r); x <= c.x + r; x++) {
+        for (let z = Math.floor(c.z - r); z <= c.z + r; z++) {
+          if (Math.hypot(x + 0.5 - c.x, z + 0.5 - c.z) > r || wet(x, z)) continue;
+          const y = standable(this.world, x + 0.5, z + 0.5, SEA_LEVEL + 3);
+          if (y === null || y < SEA_LEVEL) continue;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (!wet(x + dx, z + dz) || !wet(x + dx * 2, z + dz * 2)) continue;
+            spots.push({ x: x + 0.5, y, z: z + 0.5, toward: Math.atan2(dx, dz) });
+            break;
+          }
+        }
+      }
+      return spots;
+    }) as ShoreSpot[];
+  }
+
+  private survey(key: string, look: () => TreeSpot[] | ShoreSpot[]): TreeSpot[] | ShoreSpot[] {
+    const cached = this.surveys.get(key);
+    if (cached && this.sea.time - cached.at < SURVEY_SECONDS) return cached.spots;
+    const spots = look();
+    this.surveys.set(key, { at: this.sea.time, spots });
+    return spots;
+  }
+
+  /** A woodcutter's felling: the whole tree, as timber (and where its leaves were, to see them fall). Null if it's gone. */
+  fellTreeAt(x: number, y: number, z: number): { timber: number; leaves: number[] } | null {
+    if (this.world.getVoxel(x, y, z) !== Block.Wood) return null;
+    const { wood, leaves } = this.fellTree(x, y, z);
+    return { timber: wood.length + Math.floor(leaves.length / 12), leaves: leaves.flat() };
+  }
+
+  /** A sapling where a tree came down, to grow into the next one. */
+  plantSapling(x: number, y: number, z: number): void {
+    const ground = this.world.getVoxel(x, y - 1, z);
+    if (![Block.Grass, Block.Dirt, Block.Sand].includes(ground as never) || this.world.getVoxel(x, y, z) !== Block.Air) return;
+    const sapling: Sapling = { x, y, z, planted: this.sea.time };
+    this.saplings.push(sapling);
+    this.shown.set(sapling, 0);
+    showSapling(this.world, sapling, 0);
+  }
+
+  plantCrop(x: number, y: number, z: number, kind: CropKind): void {
+    const crop: Crop = { x, y, z, kind, planted: this.sea.time };
+    this.crops.push(crop);
+    this.shown.set(crop, 0);
+    showCrop(this.world, crop, 0);
+  }
+
+  removeCrop(crop: Crop): void {
+    clearCrop(this.world, crop);
+    this.crops.splice(this.crops.indexOf(crop), 1);
+  }
+
+  /** Is this still tilled soil, ready to sow? */
+  tilled(plot: { x: number; y: number; z: number }): boolean {
+    return this.world.getVoxel(plot.x, plot.y - 1, plot.z) === Block.Soil && this.world.getVoxel(plot.x, plot.y, plot.z) === Block.Air;
   }
 
   // ---- Going ashore and back aboard ----
@@ -196,143 +523,313 @@ export class Land {
   // ---- Working the land ----
 
   /** The column in front of the captain's feet. */
-  front(): { x: number; z: number } | null {
+  front(): Target | null {
     const w = this.walker;
     if (!w) return null;
     return { x: Math.floor(w.x + Math.sin(w.facing) * WORK_DISTANCE), z: Math.floor(w.z + Math.cos(w.facing) * WORK_DISTANCE) };
   }
 
-  /** What using `held` on the column (x, z) would do. */
-  aim(held: Held, x: number, z: number): Aim {
+  /** Can the captain reach this cell from where they stand? */
+  reaches(x: number, y: number, z: number): boolean {
     const w = this.walker;
-    if (!w) return { ok: false, reason: 'You’re aboard ship.' };
+    if (!w) return false;
     const feet = Math.round(w.y);
-    const top = groundHeight(this.world, x, z); // first empty cell above the ground (trees aside)
-    const ground = this.world.getVoxel(x, top - 1, z);
-    const cell = (reason: string, y = top - 1): Aim => ({ ok: false, reason, x, y, z });
-    if (this.inTown(x, z)) return cell('This is the town’s land: work it in your own camp.');
-
-    const crop = this.cropAt(x, z);
-    if (crop && stageOf(crop, this.sea.time) === 2) return { ok: true, action: 'harvest', x, y: crop.y, z };
-
-    if (held === 'axe' || held === 'pickaxe') {
-      // A tree or rock in front, from the feet up.
-      for (let y = feet - 1; y <= feet + 3; y++) {
-        const id = this.world.getVoxel(x, y, z);
-        const mine = this.buildingAt(x, y, z);
-        if (mine) return STRUCTURES[mine.kind].freeform ? { ok: true, action: 'unbuild', x, y, z } : cell('Take buildings down from the build menu (B).', y);
-        if (held === 'axe' && TREE_BLOCKS.has(id)) return { ok: true, action: 'fell', x, y, z };
-        if (held === 'pickaxe' && id === Block.Stone && y >= feet - 1) return { ok: true, action: 'mine', x, y, z };
-      }
-      return cell(held === 'axe' ? 'No tree there to fell.' : 'No rock there to break.');
-    }
-
-    if (!this.claimed(x, z)) return cell('Build a campfire first: it claims the land around it.');
-    if (this.buildingAt(x, top - 1, z) || this.buildingAt(x, top, z)) return cell('A building stands there.');
-    if (crop) return cell('Something’s growing there.', crop.y);
-
-    if (held === 'shovel') {
-      // Level the ground toward your feet; on level ground, dig.
-      if (top < SEA_LEVEL) return cell('Too wet to dig.');
-      if (top < feet) return { ok: true, action: 'fill', x, y: top, z };
-      if (top - 1 <= 0) return cell('Bedrock.');
-      if (![Block.Grass, Block.Dirt, Block.Sand, Block.Soil, Block.Stone, Block.Gravel].includes(ground as never)) return cell('The shovel won’t shift that.');
-      return { ok: true, action: 'dig', x, y: top - 1, z };
-    }
-    if (held === 'hoe') {
-      if (ground === Block.Soil) return cell('Already tilled.');
-      if (ground !== Block.Grass && ground !== Block.Dirt) return cell('Only grass or earth can be tilled.');
-      if (top < SEA_LEVEL + 1) return cell('Too close to the sea to farm.');
-      return { ok: true, action: 'till', x, y: top - 1, z };
-    }
-    // A seed.
-    if (!CROP_FOR_SEED[held]) return cell('That won’t grow.');
-    if (ground !== Block.Soil) return cell('Till the ground with the hoe first.');
-    if (this.world.getVoxel(x, top, z) !== Block.Air) return cell('No room to plant.');
-    if (this.available(held) < 1) return cell(`You have no ${GOOD_INFO[held].label.toLowerCase()}.`);
-    return { ok: true, action: 'plant', x, y: top, z };
+    return y >= feet - REACH_DOWN && y <= feet + REACH_UP && Math.hypot(x + 0.5 - w.x, z + 0.5 - w.z) <= REACH;
   }
 
-  /** Uses what's in hand on a column (the one in front, by default). */
-  use(held: Held, target = this.front()): Outcome {
+  /** Ground, as a tool sees it: not a tree, a crop or thin air. */
+  private isGround(x: number, y: number, z: number): boolean {
+    const id = this.world.getVoxel(x, y, z);
+    return blocksWalker(id) && !TREE_BLOCKS.has(id);
+  }
+
+  /**
+   * The ground a tool works in a column: the block picked, if that's ground within
+   * reach, or else the top of the ground within reach. Trees, and the air under their
+   * leaves, don't count. `wall`: the ground rises on above it, out of reach. `deeper`
+   * looks that much further down (for earth, which goes on top of what's found).
+   */
+  private groundAt(t: Target, deeper = 0): { y: number; wall: boolean } | null {
+    const feet = Math.round(this.walker!.y);
+    const at = (y: number) => ({ y, wall: this.isGround(t.x, y + 1, t.z) });
+    if (t.y !== undefined && this.isGround(t.x, t.y, t.z) && this.reaches(t.x, t.y, t.z)) return at(t.y);
+    for (let y = feet + REACH_UP; y >= feet - REACH_DOWN - deeper; y--) if (this.isGround(t.x, y, t.z)) return at(y);
+    return null;
+  }
+
+  /** Why the ground at (x, y, z) can't be dug, tilled or planted, if it can't. */
+  private occupied(x: number, y: number, z: number): string | null {
+    if (this.buildingAt(x, y, z) || this.buildingAt(x, y + 1, z)) return 'A building stands there.';
+    const above = this.world.getVoxel(x, y + 1, z);
+    if (TREE_BLOCKS.has(above)) return 'A tree stands there: fell it first.';
+    if (above !== Block.Air && !blocksWalker(above)) return 'Something’s growing there.';
+    return null;
+  }
+
+  /** What using `held` on a target (a column, or a block picked with the mouse) would do. */
+  aim(held: Held, t: Target): Aim {
+    const w = this.walker;
+    if (!w) return { ok: false, reason: 'You’re aboard ship.' };
+    const { x, z } = t;
+    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land: work it in your own camp.' };
+
+    const crop = this.cropAt(x, z);
+    if (crop && stageOf(crop, this.sea.time) === 2 && this.reaches(x, crop.y, z)) return { ok: true, action: 'harvest', x, y: crop.y, z };
+    const ground = this.groundAt(t);
+    const cell = (reason: string, y = ground?.y): Aim => (y === undefined ? { ok: false, reason } : { ok: false, reason, x, y, z });
+    const block = ground ? this.world.getVoxel(x, ground.y, z) : Block.Air;
+
+    if (held === 'axe' || held === 'pickaxe') {
+      // A tree or a fence: the block picked, or the first in the column from the ground in front up.
+      const feet = Math.round(w.y);
+      const column = t.y !== undefined && this.reaches(x, t.y, z) ? [t.y] : Array.from({ length: REACH_UP + 2 }, (_, i) => feet - 1 + i);
+      for (const y of column) {
+        const mine = this.buildingAt(x, y, z);
+        if (mine) return STRUCTURES[mine.kind].freeform ? { ok: true, action: 'unbuild', x, y, z } : cell('Take buildings down from the build menu (B).', y);
+        if (held === 'axe' && TREE_BLOCKS.has(this.world.getVoxel(x, y, z))) return { ok: true, action: 'fell', x, y, z };
+      }
+      if (held === 'axe') return cell('No tree there to fell.');
+      if (!ground) return cell('Nothing within reach to break.');
+      if (!ROCK.includes(block)) return cell('No rock there to break.');
+      return { ok: true, action: 'mine', x, y: ground.y, z };
+    }
+
+    if (held === 'shovel') {
+      if (!ground) return cell('Nothing within reach to dig.');
+      const why = this.occupied(x, ground.y, z);
+      if (why) return cell(why);
+      if (ground.y + 1 < SEA_LEVEL) return cell('Too wet to dig.');
+      if (ground.y <= 0) return cell('Bedrock.');
+      if (!DIGGABLE.includes(block)) return cell('The shovel won’t shift that.');
+      return { ok: true, action: 'dig', x, y: ground.y, z };
+    }
+
+    const sapling = held === 'sapling';
+    if (held !== 'hoe' && !sapling && !CROP_FOR_SEED[held]) return cell('That won’t grow.');
+    if (!sapling && !this.claimed(x, z)) return cell('Build a campfire first: it claims the land around it.');
+    if (!ground) return cell(`Nothing within reach to ${held === 'hoe' ? 'till' : 'plant in'}.`);
+    const why = this.occupied(x, ground.y, z);
+    if (why) return cell(why);
+    if (ground.wall) return cell(held === 'hoe' ? 'Only open ground can be tilled.' : 'No room to plant.');
+
+    if (held === 'hoe') {
+      if (block === Block.Soil) return cell('Already tilled.');
+      if (block !== Block.Grass && block !== Block.Dirt) return cell('Only grass or earth can be tilled.');
+      if (ground.y < SEA_LEVEL) return cell('Too close to the sea to farm.');
+      return { ok: true, action: 'till', x, y: ground.y, z };
+    }
+    // Seed or a sapling.
+    if (sapling ? !ROOTING.includes(block) : block !== Block.Soil) return cell(sapling ? 'Saplings take root in grass, earth or sand.' : 'Till the ground with the hoe first.');
+    if (ground.y + 1 < SEA_LEVEL) return cell('Too wet to plant.');
+    if (this.available(held) < 1) return cell(sapling ? 'You have no saplings: fell a tree for some.' : `You have no ${GOOD_INFO[held].label.toLowerCase()}.`);
+    return { ok: true, action: 'plant', x, y: ground.y + 1, z };
+  }
+
+  /** Uses what's in hand on a target (the column in front, by default). */
+  use(held: Held, target: Target | null = this.front()): Outcome {
     if (!target) return fail('You’re aboard ship.');
-    const aim = this.aim(held, target.x, target.z);
+    const beast = this.creatureAt(target.x + 0.5, target.z + 0.5);
+    if (beast && (TOOL_LIST as readonly Held[]).includes(held)) return this.hit(beast, held as Tool);
+    const aim = this.aim(held, target);
     if (!aim.ok) return fail(aim.reason);
     const { x, y, z } = aim;
     const world = this.world;
     switch (aim.action) {
       case 'harvest':
         return this.harvest(this.cropAt(x, z)!);
-      case 'fell': {
-        if (this.packRoom() < 1) return fail('Your pack is full.');
-        const { wood, leaves } = this.fellTree(x, y, z);
-        const timber = Math.min(this.packRoom(), wood + Math.floor(leaves / 12));
-        this.stow('timber', timber);
-        this.events.push({ kind: 'work', action: 'fell', x, y, z, good: 'timber', amount: timber });
-        return done(`Felled: ${timber} timber.`);
-      }
+      case 'fell':
+        this.fell(x, y, z);
+        return done('');
+      case 'unbuild':
+        return this.demolish(this.buildingAt(x, y, z)!.id);
       case 'mine':
-        if (this.packRoom() < 1) return fail('Your pack is full.');
+        this.drop(world.getVoxel(x, y, z) === Block.IronOre ? 'ore' : 'stone', x + 0.5, y + 0.5, z + 0.5);
         world.setVoxel(x, y, z, Block.Air);
-        this.stow('stone', 1);
-        this.events.push({ kind: 'work', action: 'mine', x, y, z, good: 'stone', amount: 1 });
-        return done('Broke off 1 stone.');
-      case 'unbuild': {
-        const b = this.buildingAt(x, y, z)!;
-        return this.demolish(b.id);
+        break;
+      case 'dig': {
+        const id = world.getVoxel(x, y, z);
+        this.drop(id === Block.Sand ? 'sand' : id === Block.Stone ? 'stone' : 'earth', x + 0.5, y + 0.5, z + 0.5);
+        world.setVoxel(x, y, z, Block.Air);
+        break;
       }
-      case 'dig':
-        world.setVoxel(x, y, z, Block.Air);
-        break;
-      case 'fill':
-        world.setVoxel(x, y, z, Block.Dirt);
-        break;
       case 'till':
         world.setVoxel(x, y, z, Block.Soil);
         break;
-      case 'plant': {
-        const kind = CROP_FOR_SEED[held as Good]!;
+      case 'plant':
         this.spend({ [held]: 1 });
-        const crop: Crop = { x, y, z, kind, planted: this.sea.time };
-        this.crops.push(crop);
-        this.shown.set(crop, 0);
-        showCrop(world, crop, 0);
+        if (held === 'sapling') {
+          this.plantSapling(x, y, z);
+          break;
+        }
+        this.fallow = this.fallow.filter((f) => f.x !== x || f.z !== z);
+        this.plantCrop(x, y, z, CROP_FOR_SEED[held as Good]!);
         break;
-      }
     }
     this.events.push({ kind: 'work', action: aim.action, x, y, z });
     return done('');
   }
 
+  /** Where earth (or sand) from the pack would go: against the face picked, or on the ground in front. */
+  placeAim(t: Target | null = this.front()): Aim {
+    if (!this.walker || !t) return { ok: false, reason: 'You’re aboard ship.' };
+    let x = t.x;
+    let y: number;
+    let z = t.z;
+    if (t.y !== undefined && t.face) {
+      x += t.face.x;
+      y = t.y + t.face.y;
+      z += t.face.z;
+    } else {
+      const ground = this.groundAt(t, 1);
+      if (!ground) return { ok: false, reason: 'Nothing within reach to put it on.' };
+      y = ground.y + 1;
+    }
+    const no = (reason: string): Aim => ({ ok: false, reason, x, y, z });
+    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land: work it in your own camp.' };
+    if (!this.reaches(x, y, z)) return { ok: false, reason: 'Out of reach.' };
+    if (this.world.getVoxel(x, y, z) !== Block.Air) return no('There’s no room there.');
+    // Holes can be filled as deep as the shovel digs; any deeper is the sea.
+    if (y < SEA_LEVEL - 1) return no('Earth won’t stay put in the sea.');
+    if (this.buildingAt(x, y, z)) return no('A building stands there.');
+    if (this.bodyIn(x, y, z)) return no('Someone’s standing there.');
+    if (this.available('earth') + this.available('sand') < 1) return no('You have no earth: dig some with the shovel.');
+    return { ok: true, action: 'place', x, y, z };
+  }
+
+  /** Puts down a block of earth from the pack (or sand, once the earth runs out). */
+  place(t: Target | null = this.front()): Outcome {
+    const aim = this.placeAim(t);
+    if (!aim.ok) return fail(aim.reason);
+    const good = this.available('earth') > 0 ? 'earth' : 'sand';
+    this.spend({ [good]: 1 });
+    this.world.setVoxel(aim.x, aim.y, aim.z, good === 'earth' ? Block.Dirt : Block.Sand);
+    this.events.push({ kind: 'work', action: 'place', x: aim.x, y: aim.y, z: aim.z });
+    return done('');
+  }
+
+  /** Is anyone (the captain, a settler, a beast) in the way of this cell? */
+  private bodyIn(x: number, y: number, z: number): boolean {
+    const walkers = [this.walker, ...this.settlers.map((s) => s.walker), ...this.creatures.map((c) => c.walker)];
+    return walkers.some(
+      (w) => !!w && w.x + HALF_WIDTH > x && w.x - HALF_WIDTH < x + 1 && w.z + HALF_WIDTH > z && w.z - HALF_WIDTH < z + 1 && w.y + HEIGHT > y && w.y < y + 1,
+    );
+  }
+
+  /** Something comes loose here, to be picked up. */
+  drop(good: Good, x: number, y: number, z: number, amount = 1): void {
+    dropItem(this, good, amount, x, y, z, this.random);
+  }
+
+  /** Puts what's picked up in the pack, as much as there's room for; returns how much went in. */
+  pocket(good: Good, amount: number): number {
+    const n = Math.min(amount, this.packRoom());
+    this.stow(good, n);
+    return n;
+  }
+
+  /** A night creature within reach of this point, if there's one. */
+  creatureAt(x: number, z: number): Creature | undefined {
+    return this.creatures.find((c) => Math.hypot(c.walker.x - x, c.walker.z - z) < 1.3);
+  }
+
+  private hit(c: Creature, tool: Tool): Outcome {
+    const w = this.walker!;
+    const caught = strike(c, tool, w.x, w.z);
+    const label = CREATURES[c.kind].label;
+    if (!caught) return done(`The ${label} bolts!`);
+    this.creatures.splice(this.creatures.indexOf(c), 1);
+    const { x, y, z } = c.walker;
+    for (let i = 0; i < caught.amount; i++) this.drop(caught.good, x, y + 0.3, z);
+    this.events.push({ kind: 'work', action: 'catch', x, y, z, good: caught.good, amount: caught.amount });
+    return done(`Caught a ${label}!`);
+  }
+
+  /** Picks a ripe crop: what it yields falls at your feet, and the camp's farmers will sow it again. */
   harvest(crop: Crop): Outcome {
     if (stageOf(crop, this.sea.time) < 2) return fail('Not ripe yet.');
     const spec = CROPS[crop.kind];
-    if (this.packRoom() < spec.amount) return fail('Your pack is full.');
-    clearCrop(this.world, crop);
-    this.crops.splice(this.crops.indexOf(crop), 1);
-    this.stow(spec.harvest, spec.amount);
+    this.removeCrop(crop);
+    if (this.fireAt(crop.x + 0.5, crop.z + 0.5)) this.fallow.push({ x: crop.x, y: crop.y, z: crop.z, kind: crop.kind });
+    for (let i = 0; i < spec.amount; i++) this.drop(spec.harvest, crop.x + 0.5, crop.y + 0.3, crop.z + 0.5);
     this.events.push({ kind: 'work', action: 'harvest', x: crop.x, y: crop.y, z: crop.z, good: spec.harvest, amount: spec.amount });
-    return done(`Harvested ${spec.amount} ${GOOD_INFO[spec.harvest].label.toLowerCase()}.`);
+    return done('');
   }
 
-  /** Cuts down a whole tree (trunk and canopy) from any part of it. */
-  private fellTree(x: number, y: number, z: number): { wood: number; leaves: number } {
-    const seen = new Set<string>();
-    const queue: Array<[number, number, number]> = [[x, y, z]];
-    let wood = 0;
-    let leaves = 0;
-    while (queue.length > 0 && seen.size < TREE_LIMIT) {
-      const [cx, cy, cz] = queue.pop()!;
-      const key = `${cx},${cy},${cz}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const id = this.world.getVoxel(cx, cy, cz);
-      if (!TREE_BLOCKS.has(id) || this.buildingAt(cx, cy, cz)) continue;
-      if (id === Block.Wood) wood++;
-      else leaves++;
-      this.world.setVoxel(cx, cy, cz, Block.Air);
-      queue.push([cx + 1, cy, cz], [cx - 1, cy, cz], [cx, cy + 1, cz], [cx, cy - 1, cz], [cx, cy, cz + 1], [cx, cy, cz - 1]);
+  /** The captain fells a tree: it comes apart into timber, and a sapling or two from its leaves. */
+  private fell(x: number, y: number, z: number): void {
+    const { wood, leaves } = this.fellTree(x, y, z);
+    const drop = (good: Good, [cx, cy, cz]: Cell) => this.drop(good, cx + 0.5, cy + 0.5, cz + 0.5);
+    for (const cell of wood) drop('timber', cell);
+    const somewhere = () => leaves[Math.floor(this.random() * leaves.length)];
+    if (leaves.length > 0) {
+      for (let i = Math.floor(leaves.length / 12); i > 0; i--) drop('timber', somewhere());
+      for (let i = this.random() < 0.5 ? 2 : 1; i > 0; i--) drop('sapling', somewhere());
     }
+    this.events.push({ kind: 'work', action: 'fell', x, y, z, leaves: leaves.flat() });
+  }
+
+  /**
+   * Cuts down a whole tree from any part of it: its trunk, then the leaves that hang
+   * from it (closer to it than to any other tree's trunk). Blocks touching at an edge or
+   * a corner count, as a palm's trunk leans and its fronds droop that way. Returns
+   * where its wood and leaves were.
+   */
+  private fellTree(x: number, y: number, z: number): { wood: Cell[]; leaves: Cell[] } {
+    const world = this.world;
+    const key = ([cx, cy, cz]: Cell) => `${cx},${cy},${cz}`;
+    const is = (c: Cell, ids: (id: number) => boolean) => ids(world.getVoxel(c[0], c[1], c[2])) && !this.buildingAt(c[0], c[1], c[2]);
+    const wooden = (id: number) => id === Block.Wood;
+    const leafy = (id: number) => TREE_BLOCKS.has(id) && id !== Block.Wood;
+    /** Everything reachable from `from` through blocks that `take` accepts, `from` included. */
+    const spread = (from: Cell[], take: (c: Cell) => boolean): Cell[] => {
+      const seen = new Set(from.map(key));
+      const found = [...from];
+      for (let i = 0; i < found.length && found.length < TREE_LIMIT; i++) {
+        const [cx, cy, cz] = found[i];
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const n: Cell = [cx + dx, cy + dy, cz + dz];
+              if (seen.has(key(n))) continue;
+              seen.add(key(n));
+              if (take(n)) found.push(n);
+            }
+          }
+        }
+      }
+      return found;
+    };
+
+    // The trunk: from the block hit, or the nearest wood to the leaves hit.
+    let start: Cell = [x, y, z];
+    if (!is(start, wooden)) {
+      const nearest = spread([start], (c) => is(c, (id) => TREE_BLOCKS.has(id))).find((c) => is(c, wooden));
+      if (nearest) start = nearest;
+    }
+    const wood = is(start, wooden) ? spread([start], (c) => is(c, wooden)) : [];
+    const ours = new Set(wood.map(key));
+    // Its leaves: those nearer its trunk than any other.
+    const hangsHere = ([lx, ly, lz]: Cell): boolean => {
+      let mine = Infinity;
+      let theirs = Infinity;
+      for (let dx = -CANOPY_REACH; dx <= CANOPY_REACH; dx++) {
+        for (let dy = -CANOPY_REACH; dy <= CANOPY_REACH; dy++) {
+          for (let dz = -CANOPY_REACH; dz <= CANOPY_REACH; dz++) {
+            const c: Cell = [lx + dx, ly + dy, lz + dz];
+            if (world.getVoxel(c[0], c[1], c[2]) !== Block.Wood) continue;
+            const d = dx * dx + dy * dy + dz * dz;
+            if (ours.has(key(c))) mine = Math.min(mine, d);
+            else theirs = Math.min(theirs, d);
+          }
+        }
+      }
+      return mine <= theirs;
+    };
+    const seeds = wood.length > 0 ? wood : [start];
+    const leaves = spread(seeds, (c) => is(c, leafy) && hangsHere(c)).slice(seeds.length);
+    if (wood.length === 0 && is(start, leafy)) leaves.unshift(start); // a bush of leaves with no trunk left
+    for (const [cx, cy, cz] of [...wood, ...leaves]) world.setVoxel(cx, cy, cz, Block.Air);
+    this.surveys.delete(`trees-${this.fireAt(x, z)?.id}`);
     return { wood, leaves };
   }
 
@@ -351,11 +848,14 @@ export class Land {
     const near = (x: number, z: number) => Math.hypot(x - w.x, z - w.z) < INTERACT_RANGE;
     for (const place of this.sea.docked?.places ?? []) if (near(place.x, place.z)) return { kind: 'door', place };
     for (const b of this.buildings) {
+      if (STRUCTURES[b.kind].freeform) continue;
       const door = doorOf(b);
       const range = b.kind === 'campfire' ? 1 : 0;
       if (Math.hypot(door.x - w.x, door.z - w.z) > INTERACT_RANGE + range) continue;
       if (b.kind === 'storehouse') return { kind: 'store', building: b };
-      if (b.kind === 'hut' || b.kind === 'campfire') return { kind: 'rest', building: b };
+      if (b.kind === 'hut') return { kind: 'rest', building: b };
+      const fire = b.kind === 'campfire' ? b : this.fireAt(b.x0 + b.w / 2, b.z0 + b.d / 2);
+      if (fire) return { kind: 'camp', fire, building: b };
     }
     const front = this.front();
     const crop = front && this.cropAt(front.x, front.z);
@@ -364,7 +864,7 @@ export class Land {
   }
 
   claimed(x: number, z: number): boolean {
-    return this.buildings.some((b) => b.kind === 'campfire' && Math.hypot(b.x0 + 1.5 - x, b.z0 + 1.5 - z) <= CLAIM_RADIUS);
+    return this.fireAt(x, z) !== undefined;
   }
 
   inTown(x: number, z: number): boolean {
@@ -378,8 +878,7 @@ export class Land {
   /** The building standing on this cell, if any (roof overhangs included). */
   buildingAt(x: number, y: number, z: number): Building | undefined {
     return this.buildings.find((b) => {
-      const pad = b.kind === 'hut' || b.kind === 'storehouse' ? 1 : 0;
-      const top = b.kind === 'hut' || b.kind === 'storehouse' ? 8 : b.kind === 'torch' ? 2 : 1;
+      const { pad, height: top } = STRUCTURES[b.kind];
       const bottom = b.kind === 'path' ? b.y - 1 : b.y;
       return x >= b.x0 - pad && x < b.x0 + b.w + pad && z >= b.z0 - pad && z < b.z0 + b.d + pad && y >= bottom && y < b.y + top;
     });
@@ -422,6 +921,7 @@ export class Land {
     this.spend(spec.cost);
     const b: Building = { id: this.nextId++, kind, ...where.plot, y: where.y, rot };
     if (kind === 'storehouse') b.store = {};
+    if (isWorkshop(kind)) b.work = { recipe: 0, progress: 0 };
     if (!spec.freeform) clearSite(this.world, b, b.y, 1);
     raise(this.world, b);
     this.buildings.push(b);
@@ -437,6 +937,8 @@ export class Land {
     if (b.kind === 'campfire' && this.buildings.some((o) => o !== b && o.kind !== 'campfire' && this.claimedBy(o, b))) {
       return fail('Other buildings stand on this claim: take them down first.');
     }
+    if (b.kind === 'campfire' && this.settlersAt(b).length > 0) return fail('Your settlers live here: send them aboard first.');
+    for (const s of this.settlers) if (s.post === b.id) Object.assign(s, { job: 'idle', post: null });
     if (b.store && cargoCount(b.store) > 0) return fail('Empty the storehouse first.');
     raze(this.world, b);
     this.buildings.splice(this.buildings.indexOf(b), 1);
@@ -509,6 +1011,16 @@ export class Land {
       if (this.shown.get(crop) === stage) continue;
       this.shown.set(crop, stage);
       showCrop(this.world, crop, stage);
+    }
+    for (const sapling of [...this.saplings]) {
+      const stage = saplingStage(sapling, this.sea.time);
+      if (this.shown.get(sapling) === stage) continue;
+      this.shown.set(sapling, stage);
+      showSapling(this.world, sapling, stage);
+      if (stage === 2) {
+        this.saplings.splice(this.saplings.indexOf(sapling), 1);
+        this.surveys.delete(`trees-${this.fireAt(sapling.x, sapling.z)?.id}`);
+      }
     }
   }
 }

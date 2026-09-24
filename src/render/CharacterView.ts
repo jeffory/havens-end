@@ -55,6 +55,10 @@ export interface Stride {
   speed: number;
   /** 0..1 through a swing of whatever's in hand, or null when not swinging. */
   swing: number | null;
+  /** Asleep on the ground. */
+  lying?: boolean;
+  /** Holding a rod out over the water. */
+  fishing?: boolean;
 }
 
 /** An animated voxel captain: a duelist with a cutlass, or on foot with a tool in hand. */
@@ -169,6 +173,10 @@ export class CharacterView {
       t.crouch += Math.abs(Math.cos(this.stride)) * 0.03 * pace;
       t.lean += 0.06 * pace;
     }
+    if (stride.fishing) {
+      t.armR.set(-0.2, -0.15, 1).normalize();
+      t.blade.set(0, 0.35, 1).normalize();
+    }
     if (stride.swing !== null) {
       // Up and back, then down and forward through the work.
       const k = stride.swing;
@@ -190,7 +198,7 @@ export class CharacterView {
     p.twist += (t.twist - p.twist) * k;
     p.head += (t.head - p.head) * k;
     p.flip = 0;
-    p.fall = 0;
+    p.fall += ((stride.lying ? 1 : 0) - p.fall) * Math.min(1, 4 * dt);
     for (const key of ['armR', 'armL', 'blade', 'legR', 'legL'] as const) p[key].lerp(t[key], k).normalize();
     this.apply();
   }

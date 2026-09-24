@@ -19,7 +19,7 @@ npm run characters:generate    # Tripo via ComfyUI -> art-source/characters/*.gl
 npm run characters:voxelize    # -> public/models/characters/*.vox
 ```
 
-## Controls (Phase 5: on foot and camps)
+## Controls (Phase 6: crews, production and night)
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
@@ -34,7 +34,8 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | Game menu: save, load, new game | Esc | Start |
 | **On foot:** walk | WASD / arrows | Left stick |
 | **On foot:** use what's in hand / interact | Space or left click / E | X / A |
-| **On foot:** axe, pickaxe, shovel, hoe, seed | 1–7, or Q / R to cycle | LB / RB |
+| **On foot:** put earth down (with the shovel) | F or right click | LT |
+| **On foot:** axe, pickaxe, shovel, hoe, seed, maize and saplings | 1–9, click a slot, or Q / R to cycle | LB / RB |
 | **On foot:** build (Q / R turns a building) | B | Y |
 | **Duel:** move | A / D | Left stick |
 | **Duel:** cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
@@ -76,13 +77,33 @@ but customs officers search holds.
 **On foot.** Dock in a port and you step off onto the pier: walk up to a door (the
 signs say which is the market, tavern, governor and shipyard) to go in. Anywhere else,
 bring the ship close to a beach, slow down and press B to row ashore; she waits at
-anchor. The axe fells trees for timber and the pickaxe breaks stone, on any island.
+anchor. On any island, the axe fells trees, the pickaxe breaks stone and the shovel
+digs. What comes loose drops at your feet and is picked up when you walk over it:
+timber and saplings from a tree, stone, earth. F (or right click) puts earth back
+down, to fill holes or raise the ground. Saplings grow into new trees.
 **Build a campfire** (5 timber) to claim the land around it; then you can build huts,
-storehouses, fences, paths and torches, reshape the ground with the shovel, and farm:
+storehouses, fences, paths and torches, and farm:
 till with the hoe and plant cane cuttings, tobacco or pepper seed (sold in every port)
 for sugar, tobacco and spice to sell. Building draws on your pack, storehouses nearby
 and the ship's hold. Rest at a fire or in a hut to save; the game also autosaves every
 few minutes and when you dock, and Esc opens the menu for named saves.
+
+**Crews and production.** Hire settlers in a tavern; they sail as passengers until
+you bring them ashore at a camp with a hut for them (two to a hut). At the campfire
+(E) give each a job: **farmers** harvest and resow your fields, **woodcutters** fell
+trees and plant saplings, **fishers** work the shore, and **workshop hands** run the
+sawpit (planks), sugar mill (sugar and molasses), distillery (rum), curing shed
+(tobacco), smokehouse (provisions) and forge (iron, cutlasses, muskets). Workshops
+draw on the camp's storehouses and fill them. Settlers eat one food each at sunrise
+(provisions, fish, meat or maize) and leave if they go hungry too long. Planks in the
+hold let your carpenter mend the hull at sea.
+
+**Day and night.** A day lasts 12 minutes (change it in the game menu's settings); a
+third of it is night. After dark you see less, pirates are out in force and merchants
+keep to port, customs officers are slack, and the fixer and the back room open for
+business. Ashore, crabs and boar come for your crops: fence your fields and light
+torches, or catch them for the pot. Sleep through the night in a hut, or take a room
+at a tavern. Something glows over a few islets after dark...
 
 Board a ship that hasn't struck and her captain fights you on deck. Watch the ring on
 their blade: white can be blocked, and tapped block **as it turns gold** is a parry;
@@ -97,7 +118,7 @@ e.g. `game.ship`, `game.sea.vessels` or `game.weather.windAt(0, 0, 0)`.
 
 Ships are MagicaVoxel `.vox` files in `public/models/ships/`. The authoring
 conventions (axes, naming the `hull` / `sail` / `flag` objects) are in
-[docs/ARCHITECTURE.md §10](docs/ARCHITECTURE.md#10-ship-art-magicavoxel-authoring-guide).
+[docs/ARCHITECTURE.md §11](docs/ARCHITECTURE.md#11-ship-art-magicavoxel-authoring-guide).
 
 ## Generated art
 
@@ -109,4 +130,4 @@ icons, HD materials and `.vox` props through the ComfyUI server. It needs
 ## Docs
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
-model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, the character art pipeline, simulation rules and roadmap.
+model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, settlers, workshops and the night, the character art pipeline, simulation rules and roadmap.

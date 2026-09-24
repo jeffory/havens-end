@@ -1,32 +1,76 @@
 import type { Faction } from '../combat/vessel';
 import type { ShipType } from '../sailing/ships';
 
-/** Trade goods, cheapest first. */
-export const GOODS = ['sugar', 'rum', 'tobacco', 'cloth', 'spice', 'muskets', 'timber', 'stone', 'caneCuttings', 'tobaccoSeed', 'pepperSeed'] as const;
+/** Trade goods, in the order the markets list them. */
+export const GOODS = [
+  'sugar',
+  'rum',
+  'tobacco',
+  'cloth',
+  'spice',
+  'muskets',
+  'cutlasses',
+  'timber',
+  'stone',
+  'planks',
+  'iron',
+  'cane',
+  'leaf',
+  'molasses',
+  'ore',
+  'maize',
+  'fish',
+  'meat',
+  'provisions',
+  'caneCuttings',
+  'tobaccoSeed',
+  'pepperSeed',
+  'earth',
+  'sand',
+  'sapling',
+] as const;
 export type Good = (typeof GOODS)[number];
 export type Cargo = Partial<Record<Good, number>>;
 
+/** What a good is for: how markets group it and who deals in it. */
+export type GoodKind = 'cargo' | 'arms' | 'material' | 'produce' | 'food' | 'seed';
+
 /** The everyday cargoes every market deals in, and merchant holds carry. */
 export const STAPLES: readonly Good[] = ['sugar', 'rum', 'tobacco', 'cloth', 'spice'];
-/** Building materials: cut and quarried on foot, or bought in port. */
-export const MATERIALS: readonly Good[] = ['timber', 'stone'];
 /** What you plant. */
 export const SEEDS: readonly Good[] = ['caneCuttings', 'tobaccoSeed', 'pepperSeed'];
-/** What each seed grows into. */
+/** The staple each seed's crop ends up as: seed is cheap where that's made. */
 export const HARVEST: Partial<Record<Good, Good>> = { caneCuttings: 'sugar', tobaccoSeed: 'tobacco', pepperSeed: 'spice' };
+/** What settlers eat, the most filling first. */
+export const FOOD: readonly Good[] = ['provisions', 'fish', 'meat', 'maize'];
 
-export const GOOD_INFO: Record<Good, { label: string; price: number }> = {
-  sugar: { label: 'Sugar', price: 12 },
-  rum: { label: 'Rum', price: 22 },
-  tobacco: { label: 'Tobacco', price: 30 },
-  cloth: { label: 'Cloth', price: 38 },
-  spice: { label: 'Spice', price: 60 },
-  muskets: { label: 'Muskets', price: 75 },
-  timber: { label: 'Timber', price: 6 },
-  stone: { label: 'Stone', price: 5 },
-  caneCuttings: { label: 'Cane cuttings', price: 8 },
-  tobaccoSeed: { label: 'Tobacco seed', price: 14 },
-  pepperSeed: { label: 'Pepper seed', price: 24 },
+export const GOOD_INFO: Record<Good, { label: string; price: number; kind: GoodKind }> = {
+  sugar: { label: 'Sugar', price: 12, kind: 'cargo' },
+  rum: { label: 'Rum', price: 22, kind: 'cargo' },
+  tobacco: { label: 'Tobacco', price: 30, kind: 'cargo' },
+  cloth: { label: 'Cloth', price: 38, kind: 'cargo' },
+  spice: { label: 'Spice', price: 60, kind: 'cargo' },
+  muskets: { label: 'Muskets', price: 75, kind: 'arms' },
+  cutlasses: { label: 'Cutlasses', price: 45, kind: 'arms' },
+  timber: { label: 'Timber', price: 6, kind: 'material' },
+  stone: { label: 'Stone', price: 5, kind: 'material' },
+  planks: { label: 'Planks', price: 14, kind: 'material' },
+  iron: { label: 'Iron', price: 22, kind: 'material' },
+  cane: { label: 'Cane', price: 5, kind: 'produce' },
+  leaf: { label: 'Tobacco leaf', price: 9, kind: 'produce' },
+  molasses: { label: 'Molasses', price: 8, kind: 'produce' },
+  ore: { label: 'Iron ore', price: 6, kind: 'produce' },
+  maize: { label: 'Maize', price: 3, kind: 'food' },
+  fish: { label: 'Fish', price: 4, kind: 'food' },
+  meat: { label: 'Meat', price: 6, kind: 'food' },
+  provisions: { label: 'Provisions', price: 10, kind: 'food' },
+  caneCuttings: { label: 'Cane cuttings', price: 8, kind: 'seed' },
+  tobaccoSeed: { label: 'Tobacco seed', price: 14, kind: 'seed' },
+  pepperSeed: { label: 'Pepper seed', price: 24, kind: 'seed' },
+  // Dug and felled on your own land: no market deals in them.
+  earth: { label: 'Earth', price: 1, kind: 'material' },
+  sand: { label: 'Sand', price: 1, kind: 'material' },
+  sapling: { label: 'Sapling', price: 2, kind: 'seed' },
 };
 
 /**

@@ -18,8 +18,8 @@ export interface MeshData {
   /** Linear RGB, ambient occlusion and colour jitter already applied. */
   colors: Float32Array;
   indices: Uint32Array;
-  /** Per vertex, 1 where the face may be cut away (only when the palette says which blocks can be). */
-  cutaway?: Float32Array;
+  /** Per vertex, the block's palette flags (cutaway, glow), when the palette has them. */
+  flags?: Float32Array;
 }
 
 /**
@@ -129,8 +129,8 @@ export function meshPaddedVolume(
   originZ: number,
   palette: VoxelPalette = BLOCK_PALETTE,
 ): MeshData | null {
-  const { colors: rgb, solid, cutaway } = palette;
-  const cuts: number[] = [];
+  const { colors: rgb, solid, flags } = palette;
+  const marks: number[] = [];
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -166,7 +166,7 @@ export function meshPaddedVolume(
             positions.push(x + corner.x, y + corner.y, z + corner.z);
             normals.push(face.normal[0], face.normal[1], face.normal[2]);
             colors.push(r * light, g * light, b * light);
-            if (cutaway) cuts.push(cutaway[id]);
+            if (flags) marks.push(flags[id]);
           }
           // Split the quad along the diagonal with the brighter ends, so occlusion
           // shades one corner instead of smearing across the whole face.
@@ -186,6 +186,6 @@ export function meshPaddedVolume(
     normals: new Float32Array(normals),
     colors: new Float32Array(colors),
     indices: new Uint32Array(indices),
-    ...(cutaway ? { cutaway: new Float32Array(cuts) } : {}),
+    ...(flags ? { flags: new Float32Array(marks) } : {}),
   };
 }

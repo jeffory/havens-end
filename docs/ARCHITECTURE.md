@@ -13,7 +13,7 @@ behind the codebase and the plan for the phases still to come.
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
-| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §10. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §11. |
 | Character art | **Tripo** (text to 3D, via ComfyUI) → **voxelizer** → `.vox` | Detailed, consistent captains without hand modelling; they end up as named-part `.vox` files you can restyle. See §7. |
 | Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
 | UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart, building, the game menu | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
@@ -183,7 +183,7 @@ tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz 
 | Game menu (save, load) | Esc | Start |
 | *On foot:* walk | WASD / arrows | Left stick |
 | *On foot:* use what's in hand / interact | Space or left click / E | X / A |
-| *On foot:* tools and seed | 1–7, Q / R | LB / RB |
+| *On foot:* tools, seed and maize | 1–8, Q / R | LB / RB |
 | *On foot:* build (turn: Q / R, LB / RB) | B | Y |
 | *Duel:* move | A / D | Left stick |
 | *Duel:* cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
@@ -480,17 +480,47 @@ any tree or building on the camera's side of the captain, above head height. Blo
 opt in through a per-vertex `cutaway` flag (the ground never does, since it would
 show hollow), and your own ship fades while you work beside her.
 
-**Tools** (`land/Land.ts`) work the cell in front of you, or the one under the mouse
-if it's within reach. The target is marked, and red means it won't work:
-- **Axe:** fells a whole tree (trunk and canopy) for timber.
-- **Pickaxe:** breaks natural stone, one block at a time.
-- **Shovel:** levels the ground toward your feet, cutting or filling, and digs when
-  the ground is already level.
+**Tools** (`land/Land.ts`) work the block in front of you, or the one under the mouse
+if the captain can reach it. Reach is 3.6 across, and from two blocks below the feet
+to two above. The mouse picks through whatever the cutaway hides
+(`ChunkRenderer.hides`, the shader's own test). The target is marked, and red means it
+won't work; nothing out of reach is marked. Click a hotbar slot, or press 1–9, to take
+it up.
+- **Axe:** fells a whole tree, first the trunk and then the leaves hanging from it.
+  - "Hanging from it" means the leaves nearer that trunk than to any other, so two
+    canopies that touch come down one at a time.
+  - Blocks touching at an edge or a corner count, so a leaning palm comes down whole.
+- **Pickaxe:** breaks natural stone and iron ore, one block at a time.
+- **Shovel:** digs the top of the ground within reach, for earth, sand or stone. Into
+  a wall, it starts as high as you can reach.
+  - F, right click or LT puts earth back down (sand once the earth runs out). It goes
+    against the face under the mouse, or on the ground in front. That fills holes,
+    raises ground and builds walls.
+  - Earth goes as deep as the shovel digs, and no deeper into the sea.
 - **Hoe:** tills grass or earth.
-- **Seed:** plants in tilled soil.
+- **Seed:** plants in tilled soil. **Saplings** (from felled trees) plant in grass,
+  earth or sand, and grow into a tree.
 
-Gathering (axe and pickaxe) works on any island outside a port's town. Shaping and
-farming need a claim.
+**Finding the ground.** Tools look down the column from the top of reach. Trees
+don't count as ground, and neither does the air under their canopies. (Once, a canopy
+over a gap made the tools aim at the empty air beneath it.)
+
+**Where tools work.** Felling, mining and digging work on any island outside a port's
+town. Tilling and sowing need a claim.
+
+**Dropped items** (`land/drops.ts`, drawn by `render/DropsView.ts`). What the tools
+break off doesn't go straight into the pack. Felled trees, stone, ore, earth and sand,
+harvested crops and caught beasts all drop this way. Settlers still put their work
+straight into the storehouses.
+- **How they look.** Each item is a 12-pixel picture cut out one voxel deep
+  (`render/itemIcons.ts`). It pops out, falls, and lies there turning and bobbing.
+- **Picking up.** Once an item has landed, walk within about two blocks and it flies
+  to hand. The hint keeps a running count of what you've picked up ("+3 timber, +1
+  sapling").
+- **A full pack.** Items stay on the ground, and the game tells you so now and then.
+- **Piles.** Items of the same kind lying together become one pile.
+- **The sea.** Items that land in the sea float.
+- **How long they last.** Anything left lying goes after ten minutes. They're saved.
 
 **Camps** (`land/structures.ts`):
 - **Claims.** A campfire (5 timber) claims everything within 32 voxels of it.
@@ -511,9 +541,10 @@ farming need a claim.
 
 | Crop | Seed | Grows in | Yields |
 |---|---|---|---|
-| Sugar cane | cane cuttings | 3 min | 2 sugar |
-| Tobacco | tobacco seed | 4 min | 2 tobacco |
+| Sugar cane | cane cuttings | 3 min | 3 cane (a sugar mill makes it sugar and molasses) |
+| Tobacco | tobacco seed | 4 min | 3 tobacco leaf (a curing shed makes it tobacco) |
 | Pepper | pepper seed | 5 min | 1 spice |
+| Maize (Phase 6) | maize | 2.5 min | 3 maize: food for settlers, and its own seed |
 
 - **Growing.** Each crop sprouts, grows and ripens as voxels. Harvest it with E or
   any tool; the soil stays tilled for the next seed.
@@ -537,7 +568,136 @@ farming need a claim.
   be unwound.
 - **At startup,** if there's an autosave, the menu offers to continue it.
 
-## 10. Ship art: MagicaVoxel authoring guide
+## 10. Crews, production and night (Phase 6)
+
+**The clock** (`core/clock.ts`). A day runs from sunrise to sunrise:
+- **Length.** 12 minutes by default. The game menu's settings offer 6, 12, 20, 30 or 60
+  minutes; the choice is kept in the browser and applies to every save.
+- **Night** is about a third of it. The clock reads 06:00 at sunrise and 19:00 at
+  sunset, so night hours pass faster than daylight ones.
+- **State.** The clock lives on the `Sea` and moves with the fixed step, so it pauses
+  with menus and duels, and it's saved.
+- **Sleeping.** Late in the day, a hut or the camp's rest button sleeps you until
+  07:00. A room above a tavern (5 gold) sleeps until morning, or until dusk if it's
+  day. Time then passes in one-second steps while the sea waits; crops grow, markets
+  recover, jobs run down, and the game saves on waking.
+
+**Night** changes what you see and what's about:
+- **Light** (`render/Sun.ts`, `render/NightLights.ts`):
+  - The sun rises in the east and sets in the west, warm and low at either end; by
+    night the moon's cold light comes from the north-west.
+  - The sky and fog darken, and the fog closes in by about half.
+  - Blocks can glow: embers, lanterns and the new glass windows carry a flag in the
+    mesh, alongside the cutaway flag.
+  - Six point lights, a fixed pool so shaders never recompile, go to the nearest
+    campfires, torches, forges, pier lamps, Imperial beacons, your ship, and the
+    lantern the captain carries ashore.
+  - Every ship shows a stern lantern with a halo, which is how you spot her in the dark.
+- **At sea:**
+  - Lookouts see 55% as far.
+  - Ships come by every 26 s instead of 35.
+  - 45% of groups are raiders, and a merchant never sails alone: she's replaced by
+    raiders (`planNightGroup`).
+  - Name tags show within 120, not 220.
+- **In port:**
+  - The fixer, and the back room of an Imperial tavern, only do business after dark.
+  - A round buys three rumours instead of two.
+  - Customs search 20% less often.
+- **Creatures** (`land/creatures.ts`) come out around the captain on foot:
+  - land crabs off the beaches, and wild boar from the grass;
+  - they go for any crop that isn't in torchlight: a crab nibbles it back to a shoot,
+    a boar tramples it flat;
+  - they keep 6 away from torches, fires, forges and smokehouses, and can't climb a
+    fence (a beast climbs one voxel, and a fence counts as two high);
+  - a tool swing sends them running, and enough of them catches one: a crab for 1
+    fish, a boar (3 blows, or 2 with the axe or pickaxe) for 3 meat;
+  - they're gone by dawn, and they aren't saved.
+- **For the look of it** (`render/NightLife.ts`):
+  - Bats flit over the captain's head.
+  - Ghost lights hang over three cursed islets, visible from 700 away through the fog.
+    They're a lure for Phase 7's treasure hunting.
+
+**Settlers** (`land/settlers.ts`):
+- **Hiring.** Taverns have people who'd go out to a camp:
+
+  | Port | Up to | Fee | A new one every |
+  |---|---|---|---|
+  | Free port | 6 | 50 g | 90 s |
+  | Pirate haven | 4 | 40 g | 120 s |
+  | Imperial port | 3 | 70 g | 150 s |
+
+- **Aboard.** They sail as passengers, 8 at most, over and above the crew.
+- **The camp screen.** E at the campfire (or a workshop's door) opens it:
+  - bring settlers ashore, as many as there are beds (a hut has two);
+  - give each a job, or send them back aboard to settle somewhere else;
+  - a Workshops tab and a Stores tab.
+- **Jobs:**
+
+  | Job | What they do |
+  |---|---|
+  | Farmer | Harvests ripe crops in the camp into the storehouse and sows them again with seed from it. With no seed, the plot waits until there is some. Plots the captain harvests are resown too. |
+  | Woodcutter | Fells the nearest tree within the claim (plus 6) for timber, and plants a sapling in its place; it's a full tree again in 7 minutes. |
+  | Fisher | Fishes from the shore near the camp: 1 to 3 fish every 24 s. |
+  | Workshop hand | Works one workshop; nothing is made without them. |
+
+- **The day.** They work by day and go home to their hut at night (by the fire if
+  there's no bed).
+- **Food.** At sunrise each eats one food from the camp's storehouses: provisions,
+  fish, meat or maize. A settler who finds none won't work, and leaves after a third
+  hungry morning.
+- **Walking.** `land/paths.ts` is an A* search over the surface by the walker's own
+  rules:
+  - scramble up two, drop up to four, wade but never swim;
+  - diagonals only where both cells beside them are passable;
+  - a search gives up after 3,000 cells.
+  - Anyone held up for 1.5 s is helped on to the next cell.
+- **Unwatched camps.** Camps more than 160 from the captain (or their ship) aren't
+  walked step by step; each walk just takes as long as it would. Everything else
+  runs exactly the same: crops grow by the clock, workshops run their batches, and
+  breakfast comes at sunrise. The whole thing is cheap enough to run for every camp
+  all the time, so it replaced the coarse ledger the plan had proposed.
+- **Storage.** A camp's storehouses (those within its fire's claim) are pooled:
+  workshops draw from them and fill them, and settlers eat from them.
+
+**Production** (`land/structures.ts`, `land/camps.ts`). A workshop makes nothing
+until its hand is at the bench:
+- **Batches.** A batch takes its inputs from the storehouses when it starts, and puts
+  its goods back when it's done. A finished batch waits if there's no room.
+- **Several recipes.** A workshop with more than one switches between them on the
+  camp screen, between batches.
+
+| Workshop | Cost | Makes | Batch |
+|---|---|---|---|
+| Sawpit | 20 timber, 5 stone | 3 timber → 2 planks | 12 s |
+| Sugar mill | 30 timber, 25 stone | 3 cane → 2 sugar + 1 molasses | 15 s |
+| Distillery | 25 timber, 20 stone, 4 iron | 2 molasses + 1 timber → 2 rum | 20 s |
+| Curing shed | 25 timber, 5 stone | 3 leaf → 2 tobacco | 30 s |
+| Smokehouse | 15 timber, 15 stone | 3 fish + 1 timber, or 2 meat + 1 timber → 3 provisions | 15 s |
+| Forge | 30 timber, 30 stone | 2 ore + 2 timber → 1 iron; 1 iron + 1 timber → 1 cutlass; 2 iron + 1 planks → 1 musket | 20–30 s |
+
+**New goods.**
+- **Where they come from:**
+  - planks, iron, cutlasses, molasses and provisions are made in workshops;
+  - cane, tobacco leaf and maize come off your fields;
+  - iron ore comes from veins in the bare rock of the hills, broken with the pickaxe;
+  - fish and meat come from the shore and the night's creatures.
+- **Where they sell.** They're appended to every market, so older saves' stocks still
+  line up. Each is drawn from its own seeded numbers:
+  - pirate havens want cutlasses, iron, molasses and provisions;
+  - the Crown's yards want planks, and its mines sell iron;
+  - free ports grow maize.
+  - Fish and meat aren't traded.
+- **The market** lists goods in groups: cargoes, arms, building materials, camp
+  produce, food and seed.
+
+**The carpenter.** Out of a fight, with planks in the hold, the ship's carpenter mends
+the hull at 1.5 points a second, using a plank for every 4 points.
+
+**Saves** are version 2 (the clock, passengers, settlers, fallow plots, saplings and
+workshop batches). Version 1 saves still load: the clock is worked out from the sea's
+time, and there are no settlers yet.
+
+## 11. Ship art: MagicaVoxel authoring guide
 
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
@@ -564,7 +724,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 11. Simulation, physics and time
+## 12. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -589,26 +749,26 @@ ship's velocity. Each step's segment is tested against every other hull's box
 scrambling up to two voxels (§9).
 
 **Entities and systems.** Plain, serialisable data (`Vessel`, `Shot`, `Barrel` in
-the `Sea`), with systems as functions called in a fixed order each tick. An ECS
-library is only worth adopting once NPC automation (Phase 6) brings many
-cross-cutting queries.
+the `Sea`; `Settler`, `Building`, `Crop` in the `Land`), with systems as functions
+called in a fixed order each tick. Settlers' tasks are plain data too, so they save
+as they are. Phase 6 didn't need an ECS: a camp has tens of entities, not thousands.
 
-**Off-screen islands.** Bases keep producing while you sail. Distant islands run a
-coarse *ledger* simulation (rates × elapsed game time, capped by storage and
-workers) instead of simulating every NPC. On return, NPCs and crops are placed
-consistently with the ledger.
+**Off-screen islands.** Camps keep working while you sail. The same settler and
+workshop simulation runs everywhere; camps nobody is near just time their settlers'
+walks instead of stepping them (§10). The coarse ledger planned here wasn't needed.
 
 **Saves** (Phase 5): the seed, the edited chunks (run-length encoded) and the sim
 state as JSON, in IndexedDB (§9).
 
-## 12. Module map
+## 13. Module map
 
 ```
 src/
   config.ts            world constants (SEA_LEVEL, SIM_HZ, …)
   Game.ts              composition root: sim state, update(), render()
   main.ts              entry: loads the ship, starts the game; `game` on window in dev
-  core/                FixedStep, GameLoop, Input, Controls (keyboard + gamepad)
+  core/                FixedStep, GameLoop, Input, Controls (keyboard + gamepad),
+                       clock (time of day)
   voxel/               engine-agnostic voxel core, no three.js imports
     blocks.ts          block ids, colours, solidity
     palette.ts         colour + solidity tables for the mesher
@@ -622,7 +782,8 @@ src/
   combat/              Sea (the combat sim), vessels, ammo, gunnery, barrels,
                        AI captains, encounters
   duel/                captains' duel: moves, fighters, AI swordsmen, character
-                       models (.vox parts → joints), cutlass
+                       models (.vox parts → joints), cutlass; settlerModel
+                       (settlers built from code, same joints)
   economy/             goods and cargo, markets, reputation, contracts, the price
                        book, the shipyard, the captain; Economy ties them together
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
@@ -632,15 +793,18 @@ src/
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
                        Wake, WindStreaks, voxelGeometry, DuelView, CharacterView,
                        LandView (the captain on foot, tool marker, build ghost),
-                       toolModels
-  land/                on foot: the walker, tools, camps and buildings, crops
+                       toolModels, PeopleView (settlers, creatures), NightLights,
+                       NightLife (bats, ghost lights), glow
+  land/                on foot: the walker, tools, camps and buildings, crops,
+                       settlers and their paths, workshops, night creatures
   save/                save format, IndexedDB slots, chunk run-length encoding
   Shore.ts             the captain on foot: controls to land orders, the view and HUD
   ui/                  Hud (help, compass, combat panel, prompts, messages),
                        ShipLabels (name tags over ships), DuelHud; Overlay and
                        menuNav (React menus, controller focus), port/ (the port
                        screen and its tabs), ChartView / ChartScreen, FootHud,
-                       WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu
+                       WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu,
+                       CampScreen, settings
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -654,7 +818,7 @@ next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 13. Roadmap (proposed)
+## 14. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
@@ -662,6 +826,10 @@ verified in the running game. None of those directories import from `render`,
    - ✅ **3b. Captains' duel:** side-view sword fight on deck (parries with a cue, blocks, rolls, kicks, red thrusts), Tripo-generated voxel captains, jail and plunder.
 4. ✅ **Ports & economy:** a seeded five-port archipelago with harbours and towns; supply-and-demand markets, the price book and rumours; freight, bounties and smuggling; reputation with three factions and a fixer; shipyard refits and ships; crew hiring; the chart; React menus driven by keyboard or controller.
 5. ✅ **On foot & camps:** walking ashore anywhere and around ports (signed doors, graded roads); axe, pickaxe, shovel and hoe; campfire claims; huts, storehouses, fences, paths, torches; sugar cane, tobacco and pepper; timber, stone and seed as trade goods; a cutaway view; autosave and named saves.
-6. **Crews & production:** hands who work your camps (job system, voxel-surface pathfinding), production chains, the off-screen ledger, day and night.
-7. **Treasure hunting:** hand-drawn-style maps of real terrain, riddles generated from landmarks, dig sites.
+6. ✅ **Crews, production & night:** settlers hired in taverns who farm, cut wood, fish and work six workshops (sawpit, sugar mill, distillery, curing shed, smokehouse, forge), fed each morning and housed in huts; voxel-surface pathfinding; maize, iron ore, planks and a carpenter; a configurable day and night with moonlight, lanterns and glowing windows, night raiders, slack customs, a fixer who works after dark, crabs and boar after your crops, bats and ghost lights; sleeping through the night.
+7. **Treasure hunting:** hand-drawn-style maps of real terrain, riddles generated from landmarks, dig sites. Hooks in place and open questions: [phase-7-treasure.md](phase-7-treasure.md).
 8. **Story:** the opening (orphaned, adopted by a merchant captain, the Imperial attack), the black flag, the revenge arc.
+
+**Later:** docks and building over water. Jetties from your camps where the ship can
+moor, and walkways or huts on stilts. Notes and open questions:
+[later-docks-and-water.md](later-docks-and-water.md).

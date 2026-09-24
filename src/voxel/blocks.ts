@@ -1,4 +1,4 @@
-import { srgbToLinear, type VoxelPalette } from './palette';
+import { FLAG_CUTAWAY, FLAG_GLOW, srgbToLinear, type VoxelPalette } from './palette';
 
 /** Block ids stored in chunk voxel arrays (one byte each, so up to 256 kinds). */
 export const Block = {
@@ -30,6 +30,15 @@ export const Block = {
   TobaccoFlower: 22,
   PepperBush: 23,
   PepperRipe: 24,
+  // Phase 6: night lights, workshops, maize and saplings, ore in the hills
+  Window: 25,
+  Lantern: 26,
+  IronOre: 27,
+  Copper: 28,
+  Barrel: 29,
+  MaizeStalk: 30,
+  MaizeCob: 31,
+  Sapling: 32,
 } as const;
 
 export type BlockId = number;
@@ -65,6 +74,14 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.TobaccoFlower]: { name: 'tobacco flowers', color: 0xe59bb5 },
   [Block.PepperBush]: { name: 'pepper bush', color: 0x356b2c },
   [Block.PepperRipe]: { name: 'ripe peppers', color: 0xd23a26 },
+  [Block.Window]: { name: 'window', color: 0xd8c48e },
+  [Block.Lantern]: { name: 'lantern', color: 0xffd27a },
+  [Block.IronOre]: { name: 'iron ore', color: 0x9b6a50 },
+  [Block.Copper]: { name: 'copper still', color: 0xc07a42 },
+  [Block.Barrel]: { name: 'barrel', color: 0x7a5530 },
+  [Block.MaizeStalk]: { name: 'maize', color: 0x86b847 },
+  [Block.MaizeCob]: { name: 'maize cobs', color: 0xe9c85a },
+  [Block.Sapling]: { name: 'sapling', color: 0x5f9e3a },
 };
 
 const SOLID = new Uint8Array(256);
@@ -83,14 +100,31 @@ export const isSolid = (id: BlockId): boolean => SOLID[id] === 1;
 
 /** Drawn and hit by tools, but you walk through them: crops. */
 const PASSABLE = new Uint8Array(256);
-for (const id of [Block.Sprout, Block.Cane, Block.CaneTop, Block.TobaccoLeaf, Block.TobaccoFlower, Block.PepperBush, Block.PepperRipe]) PASSABLE[id] = 1;
+for (const id of [
+  Block.Sprout,
+  Block.Cane,
+  Block.CaneTop,
+  Block.TobaccoLeaf,
+  Block.TobaccoFlower,
+  Block.PepperBush,
+  Block.PepperRipe,
+  Block.MaizeStalk,
+  Block.MaizeCob,
+  Block.Sapling,
+]) {
+  PASSABLE[id] = 1;
+}
 
 /** Does this block stop someone on foot? */
 export const blocksWalker = (id: BlockId): boolean => SOLID[id] === 1 && PASSABLE[id] === 0;
 
-/** Terrain colours and solidity, in the form the mesher takes. */
-/** Trees and buildings: what the on-foot cutaway may open up. Never the ground itself. */
-const CUTAWAY = new Uint8Array(256);
-for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence]) CUTAWAY[id] = 1;
+const FLAGS = new Uint8Array(256);
+// Trees and buildings: what the on-foot cutaway may open up. Never the ground itself.
+for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence, Block.Window, Block.Copper, Block.Barrel]) {
+  FLAGS[id] |= FLAG_CUTAWAY;
+}
+// What glows after dark.
+for (const id of [Block.Embers, Block.Window, Block.Lantern]) FLAGS[id] |= FLAG_GLOW;
 
-export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID, cutaway: CUTAWAY };
+/** Terrain colours, solidity and flags, in the form the mesher takes. */
+export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID, flags: FLAGS };

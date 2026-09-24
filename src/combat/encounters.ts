@@ -1,3 +1,4 @@
+import { isNight } from '../core/clock';
 import { SEA_LEVEL } from '../config';
 import { plunder } from '../economy/goods';
 import { hullContacts } from '../sailing/ship';
@@ -49,10 +50,23 @@ export function planGroup(tier: Tier, roll: number, local: PortFaction | null = 
   return [imperial(BRIG), imperial(SLOOP)];
 }
 
+/**
+ * After dark merchants keep to port and the Brethren go hunting: a merchant sailing
+ * alone is replaced by raiders, and pirates are likelier whatever the roll.
+ */
+export function planNightGroup(tier: Tier, roll: number, local: PortFaction | null = null, localRoll = 1): GroupPlan {
+  const raiders = tier === 0 ? [pirate(SLOOP)] : tier === 1 ? [pirate(SLOOP), pirate(SLOOP)] : [pirate(BRIG), pirate(SLOOP)];
+  if (roll < 0.45) return raiders;
+  const plan = planGroup(tier, (roll - 0.45) / 0.55, local, localRoll);
+  return plan[0].faction === 'merchant' && plan.length === 1 ? raiders : plan;
+}
+
 /** The first encounters are fixed, so a new captain meets a prize and then a fight. */
 const OPENING: GroupPlan[] = [[merchant(MERCHANT_SLOOP)], [pirate(SLOOP)]];
 const FIRST_SPAWN = 4;
 const SPAWN_INTERVAL = 35;
+/** Ships come by more often at night: the raiders are out. */
+const NIGHT_SPAWN_INTERVAL = 26;
 const SPAWN_DISTANCE = [230, 300] as const;
 const DESPAWN_DISTANCE = 520;
 /** Escort stations in the leader's frame (x port, z forward): off either quarter. */
@@ -101,12 +115,13 @@ export class Encounters {
     }
 
     if (this.timer > 0 || player.status !== 'afloat' || sea.ashore) return;
-    this.timer = SPAWN_INTERVAL;
+    const night = isNight(sea.clock.phase);
+    this.timer = night ? NIGHT_SPAWN_INTERVAL : SPAWN_INTERVAL;
     const tier = regionTier(player.ship.x, player.ship.z);
     const groups = new Set(sea.vessels.filter((v) => v.faction !== 'player').map((v) => v.group)).size;
     if (groups >= 2 + tier) return;
     const local = sea.ports.find((p) => Math.hypot(p.x - player.ship.x, p.z - player.ship.z) < PORT_WATERS)?.faction ?? null;
-    const plan = this.spawned < OPENING.length ? OPENING[this.spawned] : planGroup(tier, sea.random(), local, sea.random());
+    const plan = this.spawned < OPENING.length ? OPENING[this.spawned] : (night ? planNightGroup : planGroup)(tier, sea.random(), local, sea.random());
     if (this.spawnGroup(sea, plan)) this.spawned++;
   }
 

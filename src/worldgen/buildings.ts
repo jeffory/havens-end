@@ -108,7 +108,11 @@ export function buildHouse(world: VoxelWorld, fp: Footprint, base: number, style
         const isDoor = x === door.x && z === door.z && y < base + 2;
         const corner = (x === x0 || x === x0 + w - 1) && (z === z0 || z === z0 + d - 1);
         const isWindow = !corner && !gable && y === base + 1 && (ridgeAlongX ? x - x0 === 1 || x0 + w - 1 - x === 1 : z - z0 === 1 || z0 + d - 1 - z === 1);
-        if (isDoor || isWindow) continue;
+        if (isDoor) continue;
+        if (isWindow) {
+          world.setVoxel(x, y, z, Block.Window);
+          continue;
+        }
         world.setVoxel(x, y, z, corner && style.walls === Block.Plaster ? Block.Wood : style.walls);
       }
     }
@@ -132,8 +136,8 @@ export function clearHouse(world: VoxelWorld, fp: Footprint, base: number): void
   }
 }
 
-/** A stone watchtower with crenellations: the Crown's mark on a harbour. */
-export function buildTower(world: VoxelWorld, fp: Footprint, base: number): void {
+/** A stone watchtower with crenellations and a beacon fire: the Crown's mark on a harbour. Returns where the fire is. */
+export function buildTower(world: VoxelWorld, fp: Footprint, base: number): { x: number; y: number; z: number } {
   const height = 9;
   for (let x = fp.x0; x < fp.x0 + fp.w; x++) {
     for (let z = fp.z0; z < fp.z0 + fp.d; z++) {
@@ -146,4 +150,8 @@ export function buildTower(world: VoxelWorld, fp: Footprint, base: number): void
       if ((x + z) % 2 === 0 && (x < fp.x0 || x >= fp.x0 + fp.w || z < fp.z0 || z >= fp.z0 + fp.d)) world.setVoxel(x, base + height + 1, z, Block.Stone);
     }
   }
+  const cx = fp.x0 + Math.floor(fp.w / 2);
+  const cz = fp.z0 + Math.floor(fp.d / 2);
+  world.setVoxel(cx, base + height + 1, cz, Block.Embers);
+  return { x: cx + 0.5, y: base + height + 2, z: cz + 0.5 };
 }

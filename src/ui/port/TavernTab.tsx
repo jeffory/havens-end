@@ -1,4 +1,5 @@
-import { ROUND_COST } from '../../economy/economy';
+import { clockText } from '../../core/clock';
+import { ROOM_COST, ROUND_COST } from '../../economy/economy';
 import { GOOD_INFO } from '../../economy/goods';
 import { PORT_FACTIONS } from '../../economy/ports';
 import { rankName } from '../../economy/reputation';
@@ -11,8 +12,10 @@ const FAVOURS = {
 };
 
 /** Sailors for hire, gossip for the price of a round, and the fixer in the corner. */
-export function TavernTab({ port, economy, sea, act }: TabProps) {
+export function TavernTab({ port, economy, sea, act, sleep }: TabProps) {
   const hands = economy.handsFor(port);
+  const settlers = economy.settlersFor(port);
+  const night = economy.afterDark();
   const gold = sea.captain.gold;
   const state = economy.states[port.id];
   const fixer = economy.fixers[port.id];
@@ -39,9 +42,51 @@ export function TavernTab({ port, economy, sea, act }: TabProps) {
         </span>
       </div>
 
+      <h3>Settlers looking for work</h3>
+      <div className="yard-row">
+        <span>
+          {settlers.available} would go out to a camp, <Gold amount={settlers.fee} /> each. They sail as passengers until you settle them.
+        </span>
+        <b className="num">aboard {sea.captain.passengers}</b>
+        <span className="buttons">
+          <button
+            type="button"
+            disabled={settlers.room < 1 || settlers.available < 1 || gold < settlers.fee}
+            onClick={() => act(economy.hireSettlers(port, 1))}
+          >
+            Hire 1
+          </button>
+          <button
+            type="button"
+            disabled={settlers.room < 1 || settlers.available < 1 || gold < settlers.fee}
+            onClick={() => act(economy.hireSettlers(port, settlers.available))}
+          >
+            Hire all
+          </button>
+        </span>
+      </div>
+
+      <h3>A room for the night</h3>
+      <div className="yard-row">
+        <span>
+          It’s {clockText(sea.clock.phase)}. {night ? 'Sleep till morning' : 'Sleep the day away till dusk, when the fixer comes in'}, for <Gold amount={ROOM_COST} />.
+        </span>
+        <button
+          type="button"
+          disabled={gold < ROOM_COST || !sleep}
+          onClick={() => {
+            const room = economy.takeRoom();
+            act(room);
+            if (room.ok) sleep?.(night ? 'morning' : 'dusk');
+          }}
+        >
+          Take a room
+        </button>
+      </div>
+
       <h3>Gossip</h3>
       <div className="yard-row">
-        <span>Sailors talk, given a drink: news of prices and shortages across the islands.</span>
+        <span>Sailors talk, given a drink: news of prices and shortages across the islands{night ? ', and there’s more of it after dark' : ''}.</span>
         <button type="button" disabled={gold < ROUND_COST} onClick={() => act(economy.buyRound(port))}>
           Buy a round · <Gold amount={ROUND_COST} />
         </button>
@@ -54,7 +99,10 @@ export function TavernTab({ port, economy, sea, act }: TabProps) {
         </ul>
       )}
 
-      <h3>{fixer}, in the corner</h3>
+      <h3>{night ? `${fixer}, in the corner` : 'The corner table'}</h3>
+      {!night && <p className="lede">Empty. {fixer} only does business after dark; so does the back room.</p>}
+      {night && (
+        <>
       <p className="lede">
         “Trouble with the authorities, captain? Everyone’s trouble has a price.”
       </p>
@@ -77,8 +125,10 @@ export function TavernTab({ port, economy, sea, act }: TabProps) {
           );
         })}
       </div>
+        </>
+      )}
 
-      {runs.length > 0 && (
+      {night && runs.length > 0 && (
         <>
           <h4>{port.faction === 'pirate' ? 'A job for the Brethren' : 'A quiet job'}</h4>
           {runs.map((c) => (
@@ -93,7 +143,7 @@ export function TavernTab({ port, economy, sea, act }: TabProps) {
         </>
       )}
 
-      {black.length > 0 && (
+      {night && black.length > 0 && (
         <>
           <h4>The back room</h4>
           {blackJobs.map((c) => (

@@ -12,6 +12,8 @@ export interface TabProps {
   sea: Sea;
   /** Runs an order and reports how it went. */
   act: (outcome: Outcome) => void;
+  /** A room above the tavern: sleep until morning, or until dusk. */
+  sleep?: (until: 'morning' | 'dusk') => void;
 }
 
 export const Gold = ({ amount }: { amount: number }) => (

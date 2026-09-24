@@ -8,7 +8,7 @@ import { VoxelWorld } from '../voxel/VoxelWorld';
 import { createAi } from './ai';
 import { AMMO, type Ammo, landingDistance } from './ammo';
 import { dropBarrel } from './barrels';
-import { planGroup, regionTier } from './encounters';
+import { planGroup, planNightGroup, regionTier } from './encounters';
 import { fireBroadside } from './gunnery';
 import { cargoCount, plunder } from '../economy/goods';
 import type { Port } from '../economy/ports';
@@ -31,7 +31,7 @@ const CLASSES = new Map(
 const EAST = Math.PI / 2; // heading +x; port side faces north (-z)
 const HOLD: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
 
-const HOME: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 0, z: 0, heading: EAST, islandX: 0, islandZ: 300, pier: { x: 0, y: 13, z: 8 }, places: [] };
+const HOME: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 0, z: 0, heading: EAST, islandX: 0, islandZ: 300, pier: { x: 0, y: 13, z: 8 }, places: [], lamps: [] };
 
 function newSea(world = new VoxelWorld(), spawning = false, seed = 1, ports: Port[] = [HOME]): Sea {
   return new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, ports, seed, spawning);
@@ -278,6 +278,18 @@ describe('encounters', () => {
     expect(planGroup(0, 0.1, 'imperial', 0.9)[0].faction).toBe('merchant');
   });
 
+  it('at night, bring raiders rather than lone merchants', () => {
+    for (const tier of [0, 1, 2] as const) {
+      for (let roll = 0; roll < 1; roll += 0.05) {
+        const plan = planNightGroup(tier, roll);
+        expect(plan.length === 1 && plan[0].faction === 'merchant').toBe(false);
+      }
+      const pirates = Array.from({ length: 20 }, (_, i) => planNightGroup(tier, i / 20)).filter((p) => p[0].faction === 'pirate').length;
+      const byDay = Array.from({ length: 20 }, (_, i) => planGroup(tier, i / 20)).filter((p) => p[0].faction === 'pirate').length;
+      expect(pirates).toBeGreaterThan(byDay);
+    }
+  });
+
   it('bring a merchant first, out of sight and in open water', () => {
     const sea = newSea(new VoxelWorld(), true);
     run(sea, 5);
@@ -446,7 +458,7 @@ describe('reputation at sea', () => {
 });
 
 describe('harbours', () => {
-  const FAR: Port = { id: 1, name: 'Kingsreach', faction: 'imperial', x: 400, z: 0, heading: EAST, islandX: 400, islandZ: 300, pier: { x: 400, y: 13, z: 8 }, places: [] };
+  const FAR: Port = { id: 1, name: 'Kingsreach', faction: 'imperial', x: 400, z: 0, heading: EAST, islandX: 400, islandZ: 300, pier: { x: 400, y: 13, z: 8 }, places: [], lamps: [] };
 
   it('take a ship that comes in slowly, and remember her captain', () => {
     const sea = newSea(new VoxelWorld(), false, 1, [HOME, FAR]);
@@ -488,5 +500,24 @@ describe('harbours', () => {
     applyDamage(sea.player, 1000, 0, 0);
     run(sea, 6);
     expect(sea.player.cls.design).toBe(SLOOP);
+  });
+});
+
+describe('the carpenter', () => {
+  it('mends the hull with planks from the hold, out of a fight', () => {
+    const sea = newSea(new VoxelWorld());
+    const p = sea.player;
+    p.hull -= 20;
+    p.cargo = { planks: 3 };
+    const damaged = p.hull;
+    run(sea, 10);
+    expect(p.hull).toBeGreaterThan(damaged + 12);
+    expect(p.cargo.planks ?? 0).toBeLessThan(3);
+    // No planks, no mending.
+    p.cargo = {};
+    const now = p.hull;
+    run(sea, 5);
+    expect(p.hull).toBe(now);
+    expect(sea.takeEvents().some((e) => e.kind === 'mending')).toBe(true);
   });
 });

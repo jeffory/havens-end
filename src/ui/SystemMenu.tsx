@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { DAY_MINUTE_CHOICES } from '../core/clock';
 import { AUTOSAVE, listSaves, type SaveListing, type SaveSummary } from '../save/storage';
+import type { Settings } from './settings';
 import { focusFirst } from './menuNav';
 import type { NavHandlers } from './Overlay';
 
@@ -12,17 +14,24 @@ export interface SystemMenuProps {
   load: (slot: string) => void;
   remove: (slot: string) => Promise<void>;
   newGame: () => void;
+  settings: Settings;
+  changeSettings: (settings: Settings) => void;
   nav: NavHandlers;
 }
 
-type View = 'main' | 'save' | 'load' | 'new';
+type View = 'main' | 'save' | 'load' | 'new' | 'settings';
 
 export const describe = (s: SaveSummary) => `${s.gold.toLocaleString('en')} g · ${s.ship} · ${s.place} · ${Math.floor(s.time / 60)} min at sea`;
 const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** The game menu: carry on, save to a named slot, load, or start again. */
-export function SystemMenu({ title, summary, resume, save, load, remove, newGame, nav }: SystemMenuProps) {
+export function SystemMenu({ title, summary, resume, save, load, remove, newGame, settings: initial, changeSettings, nav }: SystemMenuProps) {
   const [view, setView] = useState<View>('main');
+  const [settings, setSettings] = useState(initial);
+  const change = (next: Settings) => {
+    setSettings(next);
+    changeSettings(next);
+  };
   const [saves, setSaves] = useState<SaveListing[] | null>(null);
   const [message, setMessage] = useState('');
   const [name, setName] = useState('');
@@ -101,7 +110,34 @@ export function SystemMenu({ title, summary, resume, save, load, remove, newGame
                 New game…
               </button>
             )}
+            <button type="button" onClick={() => setView('settings')}>
+              Settings…
+            </button>
           </div>
+        )}
+
+        {view === 'settings' && (
+          <>
+            <h3>Length of a day</h3>
+            <div className="choice-row">
+              {DAY_MINUTE_CHOICES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={m === settings.dayMinutes ? 'active' : ''}
+                  aria-pressed={m === settings.dayMinutes}
+                  data-autofocus={m === settings.dayMinutes ? true : undefined}
+                  onClick={() => change({ ...settings, dayMinutes: m })}
+                >
+                  {m} min
+                </button>
+              ))}
+            </div>
+            <p className="hint">
+              A whole day and night takes {settings.dayMinutes} minutes of play; about a third of it is night. Settlers work by day and sleep at night, when
+              pirates prowl and creatures come out.
+            </p>
+          </>
         )}
 
         {view === 'save' && (

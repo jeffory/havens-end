@@ -1,7 +1,9 @@
 import { Group, Mesh, MeshLambertMaterial, Vector3, Vector4 } from 'three';
+import { BLOCK_PALETTE, type BlockId } from '../voxel/blocks';
 import type { Chunk } from '../voxel/Chunk';
 import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
+import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { toGeometry } from './voxelGeometry';
 
@@ -17,17 +19,25 @@ export class ChunkRenderer {
   /** The cutaway: feet position and radius (0 = off), and the horizontal way to the camera plus its slope. */
   private readonly cut = { value: new Vector4(0, 0, 0, 0) };
   private readonly cutView = { value: new Vector3(0, 1, 1) };
+  /** How brightly embers, lanterns and windows glow: faintly by day, strongly at night. */
+  private readonly glow = { value: 0.2 };
 
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
     this.material.onBeforeCompile = (shader) => {
       shader.uniforms.uCut = this.cut;
       shader.uniforms.uCutView = this.cutView;
+      shader.uniforms.uGlow = this.glow;
+      // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float cutaway;\nvarying vec3 vCutWorld;\nvarying float vCutaway;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvCutaway = cutaway;');
+        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;')
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);',
+        );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec4 uCut;\nuniform vec3 uCutView;\nvarying vec3 vCutWorld;\nvarying float vCutaway;')
+        .replace('#include <common>', '#include <common>\nuniform vec4 uCut;\nuniform vec3 uCutView;\nuniform float uGlow;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
         .replace(
           '#include <clipping_planes_fragment>',
           /* glsl */ `#include <clipping_planes_fragment>
@@ -41,7 +51,12 @@ if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut
 }`,
         );
     };
-    this.material.customProgramCacheKey = () => 'havens-end-terrain-cutaway';
+    this.material.customProgramCacheKey = () => 'havens-end-terrain';
+  }
+
+  /** How strongly glowing blocks light themselves: 0 not at all, ~2 on a dark night. */
+  setGlow(amount: number): void {
+    this.glow.value = amount;
   }
 
   /**
@@ -52,6 +67,21 @@ if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut
   setCutaway(x: number, y: number, z: number, radius: number, towardX = 0, towardZ = 1, slope = 1): void {
     this.cut.value.set(x, y, z, radius);
     this.cutView.value.set(towardX, towardZ, slope);
+  }
+
+  /**
+   * Is this voxel cut away from view, so the mouse should pick through it? The same
+   * test as the shader's, made at the voxel's centre.
+   */
+  hides(x: number, y: number, z: number, id: BlockId): boolean {
+    const cut = this.cut.value;
+    const view = this.cutView.value;
+    if (cut.w <= 0 || ((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) === 0) return false;
+    const cx = x + 0.5;
+    const cz = z + 0.5;
+    const height = y + 0.5 - cut.y;
+    if (height <= 2.3 || (cx - cut.x) * view.x + (cz - cut.z) * view.y <= 0.5) return false;
+    return Math.hypot(cx - (cut.x + view.x * height * view.z), cz - (cut.z + view.y * height * view.z)) < cut.w;
   }
 
   get meshCount(): number {

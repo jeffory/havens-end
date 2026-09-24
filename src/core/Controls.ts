@@ -19,6 +19,8 @@ export type Action =
   | 'interact'
   | 'use'
   | 'useAtCursor'
+  | 'place'
+  | 'placeAtCursor'
   | 'itemPrev'
   | 'itemNext'
   | 'item1'
@@ -28,6 +30,8 @@ export type Action =
   | 'item5'
   | 'item6'
   | 'item7'
+  | 'item8'
+  | 'item9'
   | 'build'
   | 'cancel'
   // Menus (port screens, the chart)
@@ -77,6 +81,7 @@ const SEA_PAD: Bindings<number> = [
 const FOOT_PAD: Bindings<number> = [
   [PAD.A, 'interact'],
   [PAD.X, 'use'],
+  [PAD.LT, 'place'],
   [PAD.LB, 'itemPrev'],
   [PAD.RB, 'itemNext'],
   [PAD.Y, 'build'],
@@ -129,6 +134,7 @@ const SEA_KEYS: Bindings<string> = [
 const FOOT_KEYS: Bindings<string> = [
   ['KeyE', 'interact'],
   ['Space', 'use'],
+  ['KeyF', 'place'],
   ['KeyQ', 'itemPrev'],
   ['KeyR', 'itemNext'],
   ['Digit1', 'item1'],
@@ -138,6 +144,8 @@ const FOOT_KEYS: Bindings<string> = [
   ['Digit5', 'item5'],
   ['Digit6', 'item6'],
   ['Digit7', 'item7'],
+  ['Digit8', 'item8'],
+  ['Digit9', 'item9'],
   ['KeyB', 'build'],
   ['Escape', 'system'],
   ['KeyZ', 'rotateLeft'],
@@ -273,8 +281,11 @@ export class Controls {
     this.walkX = this.mode === 'foot' ? held('KeyD', 'ArrowRight') - held('KeyA', 'ArrowLeft') : 0;
     this.walkY = this.mode === 'foot' ? held('KeyW', 'ArrowUp') - held('KeyS', 'ArrowDown') : 0;
     if (this.mode === 'foot') {
-      // On foot the mouse works: a left click uses what's in hand on the cell under the cursor.
-      for (const click of input.takeClicks()) if (click.button === 0) this.queue('useAtCursor');
+      // On foot the mouse works: a left click uses what's in hand on the block under the cursor, a right click puts earth there.
+      for (const click of input.takeClicks()) {
+        if (click.button === 0) this.queue('useAtCursor');
+        if (click.button === 2) this.queue('placeAtCursor');
+      }
     }
 
     this.padZoom = 0;

@@ -4,9 +4,14 @@ export interface VoxelPalette {
   colors: Float32Array;
   /** 1 where the id is solid (256 entries). */
   solid: Uint8Array;
-  /** 1 where the id may be cut away to show someone on foot beneath it (trees, buildings). Terrain never is. */
-  cutaway?: Uint8Array;
+  /** Per id, which of FLAG_CUTAWAY and FLAG_GLOW apply (terrain only; models have none). */
+  flags?: Uint8Array;
 }
+
+/** May be cut away to show someone on foot beneath it: trees and buildings, never the ground. */
+export const FLAG_CUTAWAY = 1;
+/** Gives off its own light at night: embers, lanterns, lit windows. */
+export const FLAG_GLOW = 2;
 
 export const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 

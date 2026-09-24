@@ -61,6 +61,7 @@ export class Hud {
   private readonly nav: Record<string, Element>;
   private readonly combat: Record<string, HTMLElement>;
   private readonly toasts: HTMLElement;
+  private readonly clock: HTMLElement;
   private readonly shown = new Map<Element, string>();
   private frames = 0;
   private elapsed = 0;
@@ -69,7 +70,7 @@ export class Hud {
     const help = document.createElement('div');
     help.className = 'hud';
     help.innerHTML = `
-      <div class="hud-title">Haven's End <span>phase 5 · on foot &amp; camps</span></div>
+      <div class="hud-title">Haven's End <span>phase 6 · crews, production &amp; night</span></div>
       <div class="hud-help">
         <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
         <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />
@@ -124,8 +125,10 @@ export class Hud {
     prompt.hidden = true;
     this.toasts = document.createElement('div');
     this.toasts.className = 'hud-toasts';
+    this.clock = document.createElement('div');
+    this.clock.className = 'hud-clock';
 
-    parent.append(help, nav, combat, prompt, this.toasts);
+    parent.append(help, nav, combat, prompt, this.toasts, this.clock);
     this.combat = {
       hull: combat.querySelector('.bar.hull > div')!,
       sails: combat.querySelector('.bar.sails > div')!,
@@ -167,6 +170,13 @@ export class Hud {
     }
     this.combat.prompt.hidden ||= !visible;
     this.toasts.hidden = !visible;
+    this.clock.hidden = !visible;
+  }
+
+  /** The time of day, top centre: "☀ Day 3 · 14:20". */
+  setClock(day: number, time: string, night: boolean): void {
+    this.text(this.clock, `${night ? '☾' : '☀'} Day ${day} · ${time}`);
+    this.clock.classList.toggle('night', night);
   }
 
   setGamepadConnected(connected: boolean): void {

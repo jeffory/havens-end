@@ -21,6 +21,8 @@ export interface Port {
   pier: { x: number; y: number; z: number };
   /** Doors in town (and the shipyard at the foot of the pier): walk up to one to go in. */
   places: PortPlace[];
+  /** Lamps on the pier and beacons on towers: they light the way in after dark. */
+  lamps: Array<{ x: number; y: number; z: number }>;
 }
 
 export type PlaceKind = 'market' | 'tavern' | 'office' | 'shipyard';

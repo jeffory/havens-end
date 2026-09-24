@@ -1,9 +1,10 @@
+import { advanceClock, type Clock, createClock } from '../core/clock';
 import { type Captain, createCaptain } from '../economy/captain';
 import { type Contract, creditBounties } from '../economy/contracts';
 import type { Logbook } from '../economy/logbook';
 import type { Standing } from '../economy/reputation';
 import { type Upgrade, withUpgrades } from '../economy/shipyard';
-import { type Cargo, cargoCount, loadCargo } from '../economy/goods';
+import { type Cargo, cargoCount, loadCargo, unload } from '../economy/goods';
 import type { Port, PortFaction } from '../economy/ports';
 import { applyDeed, type Deed, portOpen } from '../economy/reputation';
 import { hullContacts, type ShipSpec, stepShip } from '../sailing/ship';
@@ -36,6 +37,7 @@ export type SeaEvent =
   | { kind: 'standing'; faction: PortFaction; from: number; to: number }
   | { kind: 'bounty'; contract: number; target: PortFaction; progress: number; count: number }
   | { kind: 'docked'; port: number }
+  | { kind: 'mending' }
   | { kind: 'refused'; port: number; reason: DockProblem };
 
 /** What the player's helmsman, gun crews and boarding party are told this tick. */
@@ -53,6 +55,8 @@ export type DockProblem = 'closed' | 'fast' | 'enemies';
 
 export interface SeaSnapshot {
   time: number;
+  /** Time of day (older saves have none: it's worked out from `time`). */
+  clock?: { day: number; phase: number };
   encounters: number;
   docked: number | null;
   ashore: boolean;
@@ -76,6 +80,7 @@ export interface SeaSnapshot {
     contracts: Contract[];
     logbook: Logbook;
     pack: Cargo;
+    passengers?: number;
   };
 }
 
@@ -93,6 +98,9 @@ const CAPTURED_SECONDS = 1.5;
 const BOARDING_GAP = 5;
 const BOARDING_SPEED = 4;
 const MAX_EVENTS = 500;
+/** The carpenter's work with planks from the hold: hull points a second, and hull points a plank. */
+const CARPENTER_RATE = 1.5;
+const HULL_PER_PLANK = 4;
 
 /**
  * Everything afloat and everything flying: ships, shots, barrels and the encounter
@@ -101,6 +109,8 @@ const MAX_EVENTS = 500;
  */
 export class Sea {
   time = 0;
+  /** Time of day, moving with the sea. Its length is the player's setting. */
+  readonly clock: Clock = createClock();
   readonly vessels: Vessel[] = [];
   readonly shots: Shot[] = [];
   readonly barrels: Barrel[] = [];
@@ -118,6 +128,9 @@ export class Sea {
    * comes looking for a fight with an empty ship, and the encounter director waits.
    */
   ashore = false;
+  /** Planks' worth of hull the carpenter has mended since the last plank was used up. */
+  private carpentry = 0;
+  private mending = false;
 
   constructor(
     readonly world: VoxelWorld,
@@ -149,6 +162,7 @@ export class Sea {
     const c = this.captain;
     return {
       time: this.time,
+      clock: { day: this.clock.day, phase: this.clock.phase },
       encounters: this.encounters.count,
       docked: this.docked?.id ?? null,
       ashore: this.ashore,
@@ -172,12 +186,15 @@ export class Sea {
         contracts: structuredClone(c.contracts),
         logbook: structuredClone(c.logbook),
         pack: { ...c.pack },
+        passengers: c.passengers,
       },
     };
   }
 
   restore(s: SeaSnapshot): void {
     this.time = s.time;
+    this.clock.day = s.clock?.day ?? 1 + Math.floor(s.time / this.clock.length);
+    this.clock.phase = s.clock?.phase ?? (s.time / this.clock.length) % 1;
     this.random = mulberry32(Math.floor(s.time * 1000) ^ 0x5a17);
     this.encounters.count = s.encounters;
     const design = [...this.classes.keys()].find((t) => t.name === s.ship.design);
@@ -199,6 +216,7 @@ export class Sea {
       contracts: structuredClone(c.contracts),
       logbook: structuredClone(c.logbook),
       pack: { ...c.pack },
+      passengers: c.passengers ?? 0,
     });
     this.docked = s.docked === null ? null : (this.ports[s.docked] ?? null);
     this.ashore = s.ashore;
@@ -239,6 +257,7 @@ export class Sea {
 
   step(dt: number, orders: PlayerOrders): void {
     this.time += dt;
+    advanceClock(this.clock, dt);
     for (const v of this.vessels) {
       v.prev.x = v.ship.x;
       v.prev.z = v.ship.z;
@@ -267,7 +286,35 @@ export class Sea {
     stepShots(this, dt);
     stepBarrels(this, dt);
     this.fates(dt);
+    this.carpenter(dt);
     if (this.spawning) this.encounters.step(this, dt);
+  }
+
+  /**
+   * Time passing while nothing happens at sea (the captain asleep ashore): the clock and
+   * the sea's time move on, and the ships wait where they are.
+   */
+  pass(seconds: number): void {
+    this.time += seconds;
+    advanceClock(this.clock, seconds);
+  }
+
+  /** Out of a fight, the carpenter mends her hull with planks from the hold. */
+  private carpenter(dt: number): void {
+    const p = this.player;
+    const full = p.cls.type.hull;
+    const working = p.status === 'afloat' && p.hull < full && (p.cargo.planks ?? 0) > 0 && !this.hunted();
+    if (working && !this.mending) this.emit({ kind: 'mending' });
+    this.mending = working;
+    if (!working) return;
+    const mend = Math.min(full - p.hull, CARPENTER_RATE * dt);
+    p.hull += mend;
+    this.carpentry += mend / HULL_PER_PLANK;
+    if (this.carpentry >= 1) {
+      unload(p.cargo, 'planks', 1);
+      this.carpentry -= 1;
+    }
+    syncCondition(p);
   }
 
   /** Who the player could board right now, if anyone: alongside, and not racing past. */

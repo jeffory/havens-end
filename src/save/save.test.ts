@@ -30,6 +30,7 @@ const PORTS: Port[] = [0, 1].map((id) => ({
   islandZ: 0,
   pier: { x: 3000, y: 13, z: 0 },
   places: [],
+  lamps: [],
 }));
 
 /** A flat island, generated the same way every time: the "world seed". */
@@ -75,6 +76,17 @@ describe('saves', () => {
     a.land.use('hoe');
     a.land.use('caneCuttings');
     a.sea.time = 500;
+    a.sea.pass(100);
+    a.sea.captain.passengers = 3;
+    Object.assign(a.sea.player.cargo, { timber: 200, stone: 50 });
+    a.land.build('hut', 20, 10, 0);
+    a.land.build('sawpit', 10, -10, 0);
+    a.sea.player.cargo = { rum: 12 };
+    a.sea.captain.passengers = 3;
+    const fire = a.land.buildings.find((b) => b.kind === 'campfire')!;
+    a.land.settle(fire, 1);
+    a.land.assign(a.land.settlers[0].id, 'worker', a.land.buildings.find((b) => b.kind === 'sawpit')!.id);
+    a.land.drop('sapling', 30.5, SEA_LEVEL + 1, 30.5, 2);
 
     const saved = JSON.parse(JSON.stringify({
       sea: a.sea.snapshot(),
@@ -96,16 +108,42 @@ describe('saves', () => {
     expect(b.sea.player.cargo).toEqual({ rum: 12 });
     expect(b.sea.captain.contracts).toEqual(a.sea.captain.contracts);
     expect(b.sea.ashore).toBe(true);
-    expect(b.sea.time).toBe(500);
+    expect(b.sea.time).toBe(600);
+    expect(b.sea.clock).toEqual(a.sea.clock);
+    expect(b.sea.captain.passengers).toBe(2);
+    expect(b.land.settlers).toEqual(a.land.settlers);
+    expect(b.land.buildings.find((x) => x.kind === 'sawpit')!.work).toEqual({ recipe: 0, progress: 0 });
     expect(b.economy.lines(PORTS[0])[0].stock).toBe(3);
     expect(b.economy.offers(PORTS[0], 'office')).toEqual(a.economy.offers(PORTS[0], 'office'));
     expect(b.land.buildings).toEqual(a.land.buildings);
     expect(b.land.crops).toEqual(a.land.crops);
     expect(b.land.pack).toEqual(a.land.pack);
     expect(b.land.walker).toMatchObject({ x: 10.5, z: 10.5 });
+    expect(b.land.drops).toMatchObject([{ good: 'sapling', amount: 2, x: 30.5, y: SEA_LEVEL + 1, z: 30.5 }]);
     // The voxels too: the fire and the planted field.
     expect(b.world.getVoxel(20, SEA_LEVEL + 1, 0)).toBe(Block.Embers);
     expect(b.world.getVoxel(10, SEA_LEVEL, 11)).toBe(Block.Soil);
     expect(b.world.getVoxel(10, SEA_LEVEL + 1, 11)).toBe(Block.Sprout);
+  });
+});
+
+describe('older saves', () => {
+  it('from before the clock and settlers still load, with the time of day worked out', () => {
+    const a = game();
+    a.sea.time = 900;
+    const sea = JSON.parse(JSON.stringify(a.sea.snapshot()));
+    delete sea.clock;
+    delete sea.captain.passengers;
+    const land = JSON.parse(JSON.stringify(a.land.snapshot()));
+    delete land.settlers;
+    delete land.fallow;
+    delete land.saplings;
+    const b = game();
+    b.sea.restore(sea);
+    b.land.restore(land);
+    expect(b.sea.clock.day).toBe(2);
+    expect(b.sea.clock.phase).toBeCloseTo((900 / b.sea.clock.length) % 1);
+    expect(b.sea.captain.passengers).toBe(0);
+    expect(b.land.settlers).toEqual([]);
   });
 });

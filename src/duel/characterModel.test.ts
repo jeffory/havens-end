@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseVox } from '../vox/parseVox';
 import { buildCharacterModel, CHARACTER_HEIGHT, cutlassCells, PART_NAMES } from './characterModel';
+import { buildSettlerModel } from './settlerModel';
 
 function load(name: string) {
   const bytes = readFileSync(`public/models/characters/${name}.vox`);
@@ -40,5 +41,19 @@ describe('buildCharacterModel', () => {
     const xs = [...cells].filter((_, i) => i % 4 === 0);
     expect(Math.min(...xs)).toBeLessThan(-10);
     expect(Math.max(...xs)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('buildSettlerModel', () => {
+  it('builds a whole settler, the same height with or without a hat, and each one different', () => {
+    const looks = [1, 2, 3, 4, 5, 6, 7, 8].map((look) => buildSettlerModel(look * 7919));
+    for (const m of looks) {
+      for (const part of PART_NAMES) expect(m.parts[part].cells.length).toBeGreaterThan(0);
+      expect(m.parts.arm_r.pivot.x).toBeLessThan(m.parts.torso.pivot.x);
+      expect(m.hand.x).toBeLessThan(m.parts.arm_r.pivot.x);
+      expect(m.scale).toBeCloseTo(CHARACTER_HEIGHT / 26);
+    }
+    const shirts = new Set(looks.map((m) => [...m.palette.slice(12, 15)].join()));
+    expect(shirts.size).toBeGreaterThan(2);
   });
 });

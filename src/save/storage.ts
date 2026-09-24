@@ -2,8 +2,9 @@ import type { SeaSnapshot } from '../combat/sea';
 import type { EconomySnapshot } from '../economy/economy';
 import type { LandSnapshot } from '../land/Land';
 
-/** Bumped when the format changes in a way old saves can't be read. */
-export const SAVE_VERSION = 1;
+/** Bumped when the format changes. Version 2 (Phase 6) added the clock, settlers and workshops; version 1 saves still load. */
+export const SAVE_VERSION = 2;
+export const READABLE_VERSIONS: readonly number[] = [1, 2];
 export const AUTOSAVE = 'autosave';
 
 /** One saved game: the world seed plus everything that has changed since it was generated. */

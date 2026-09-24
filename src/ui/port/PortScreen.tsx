@@ -38,10 +38,12 @@ export interface PortScreenProps {
   nav: NavHandlers;
   /** The sea chart, for planning the next run from port. */
   chart: Omit<ChartProps, 'economy' | 'sea'>;
+  /** Takes a room at the tavern and sleeps (the screen closes). */
+  sleep: (until: 'morning' | 'dusk') => void;
 }
 
 /** Ashore in a port: the harbour, market, shipyard, tavern and the port's masters, as tabs. */
-export function PortScreen({ port, economy, sea, arrival, leave, close, tab: initial, nav, chart }: PortScreenProps) {
+export function PortScreen({ port, economy, sea, arrival, leave, close, tab: initial, nav, chart, sleep }: PortScreenProps) {
   const [tab, setTab] = useState<Tab>(initial);
   const [log, setLog] = useState<Notice[]>(arrival);
   const [, redraw] = useReducer((n: number) => n + 1, 0);
@@ -73,7 +75,7 @@ export function PortScreen({ port, economy, sea, arrival, leave, close, tab: ini
     office: OFFICE_NAMES[port.faction],
     chart: 'Chart',
   };
-  const props = { port, economy, sea, act };
+  const props = { port, economy, sea, act, sleep };
   return (
     <div className={`port-screen faction-${port.faction}`} role="dialog" aria-label={port.name}>
       <header className="port-header">

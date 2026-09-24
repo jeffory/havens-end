@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshLambertMaterial } from 'three';
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Sprite } from 'three';
 import type { VesselStatus } from '../combat/vessel';
 import { WATER_LEVEL, waterSurfaceY } from '../ocean/waves';
 import { angleOffWind } from '../sailing/pointOfSail';
@@ -6,6 +6,7 @@ import type { ShipState } from '../sailing/ship';
 import type { ModelPart, ShipModel } from '../sailing/shipModel';
 import type { Wind } from '../sailing/weather';
 import { paletteFromRgba, type VoxelPalette } from '../voxel/palette';
+import { glowMaterial } from './glow';
 import { meshCells } from './voxelGeometry';
 
 /** True wind speed in u/s for wind strength 1; only used to work out apparent wind for the flag. */
@@ -46,6 +47,9 @@ export class ShipView {
   private brace = 0;
 
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
+  /** The stern lantern, lit at night: how you see a ship in the dark. */
+  private readonly lantern = new Mesh(new BoxGeometry(0.45, 0.6, 0.45), new MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, toneMapped: false }));
+  private readonly halo = new Sprite(glowMaterial(0xffb45a));
 
   constructor(
     readonly model: ShipModel,
@@ -71,6 +75,19 @@ export class ShipView {
       this.flags.push(pivot);
     }
     this.root.add(this.body);
+    this.lantern.position.set(0, model.deck + 1.8, model.stern + 1.2);
+    this.halo.position.copy(this.lantern.position);
+    this.halo.scale.setScalar(4);
+    this.lantern.visible = this.halo.visible = false;
+    this.body.add(this.lantern, this.halo);
+  }
+
+  /** Lights the stern lantern: 0 by day, 1 on a dark night. */
+  setLantern(amount: number): void {
+    const lit = amount > 0.02;
+    this.lantern.visible = this.halo.visible = lit;
+    this.lantern.material.opacity = Math.min(1, amount * 1.5);
+    this.halo.material.opacity = amount * 0.85;
   }
 
   update(pose: ShipPose, ship: ShipState, wind: Wind, time: number, frameSeconds: number, status: VesselStatus = 'afloat', fate = 0): void {
@@ -123,6 +140,8 @@ export class ShipView {
       if (object instanceof Mesh) object.geometry.dispose();
     });
     this.material.dispose();
+    this.lantern.material.dispose();
+    this.halo.material.dispose();
   }
 
   private pivotGroup(part: ModelPart): Group {

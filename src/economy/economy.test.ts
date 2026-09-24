@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { phaseOf } from '../core/clock';
 import { Sea } from '../combat/sea';
 import { shipClass } from '../combat/vessel';
 import { footprintSamples } from '../sailing/hull';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP } from '../sailing/ships';
 import { Weather } from '../sailing/weather';
 import { VoxelWorld } from '../voxel/VoxelWorld';
+import { PASSENGER_BERTHS } from './captain';
 import { contractTitle, type Delivery } from './contracts';
-import { Economy } from './economy';
+import { Economy, ROOM_COST } from './economy';
 import { cargoCount, STAPLES } from './goods';
 import { knownRoutes } from './logbook';
 import { buyCost, findLine, sellValue, stepMarket, unitPrice } from './market';
@@ -38,6 +40,7 @@ const port = (id: number, name: string, faction: Port['faction'], x: number): Po
   islandZ: 100,
   pier: { x, y: 13, z: 8 },
   places: [],
+  lamps: [],
 });
 const PORTS: Port[] = [
   port(0, 'Haven', 'merchant', 0),
@@ -114,9 +117,37 @@ describe('markets', () => {
     const { sea, economy } = setup();
     sea.player.cargo.muskets = 10;
     expect(economy.sell(KINGSREACH, 'muskets', 10).ok).toBe(false);
+    expect(economy.sell(KINGSREACH, 'muskets', 10, true).message).toMatch(/after dark/);
+    sea.clock.phase = phaseOf(22);
     const gold = sea.captain.gold;
     expect(economy.sell(KINGSREACH, 'muskets', 10, true).ok).toBe(true);
     expect(sea.captain.gold).toBeGreaterThan(gold + 10 * 75);
+  });
+});
+
+describe('camp goods', () => {
+  it("every port deals in planks and provisions; pirate havens want arms and provisions, the Crown's yards planks", () => {
+    const { economy } = setup();
+    for (const port of economy.ports) {
+      const goods = economy.lines(port).map((l) => l.good);
+      expect(goods).toContain('planks');
+      expect(goods).toContain('provisions');
+      expect(goods).toContain('iron');
+    }
+    const role = (port: Port, good: string) => economy.lines(port).find((l) => l.good === good)?.role;
+    const nest = economy.ports.find((p) => p.faction === 'pirate')!;
+    const crown = economy.ports.find((p) => p.faction === 'imperial')!;
+    expect(role(nest, 'cutlasses')).toBe('demands');
+    expect(role(nest, 'provisions')).toBe('demands');
+    expect(role(crown, 'planks')).toBe('demands');
+    expect(role(crown, 'iron')).toBe('produces');
+  });
+
+  it("leave the older lines as they were, so earlier saves' stocks still line up", () => {
+    const { economy } = setup();
+    const lines = economy.lines(economy.ports[0]);
+    expect(lines.slice(0, 5).map((l) => l.good)).toEqual(['sugar', 'rum', 'tobacco', 'cloth', 'spice']);
+    expect(lines.findIndex((l) => l.good === 'pepperSeed')).toBeLessThan(lines.findIndex((l) => l.good === 'planks'));
   });
 });
 
@@ -225,6 +256,29 @@ describe('the tavern', () => {
     expect(economy.hire(HAVEN, 1).ok).toBe(false);
   });
 
+  it('signs settlers on as passengers, as many as there are berths for', () => {
+    const { sea, economy } = setup();
+    sea.captain.gold = 1000;
+    const { available, fee } = economy.settlersFor(HAVEN);
+    expect(available).toBeGreaterThan(2);
+    expect(economy.hireSettlers(HAVEN, 2).ok).toBe(true);
+    expect(sea.captain.passengers).toBe(2);
+    expect(sea.captain.gold).toBe(1000 - 2 * fee);
+    sea.captain.passengers = PASSENGER_BERTHS;
+    expect(economy.hireSettlers(HAVEN, 1).message).toMatch(/berths/);
+  });
+
+  it('lets a room, and the fixer keeps to the dark', () => {
+    const { sea, economy } = setup();
+    sea.clock.phase = phaseOf(10);
+    expect(economy.afterDark()).toBe(false);
+    const gold = sea.captain.gold;
+    expect(economy.takeRoom().ok).toBe(true);
+    expect(sea.captain.gold).toBe(gold - ROOM_COST);
+    sea.clock.phase = phaseOf(22);
+    expect(economy.afterDark()).toBe(true);
+  });
+
   it('a round for the house brings news of prices elsewhere, into the price book', () => {
     const { sea, economy } = setup();
     expect(economy.buyRound(HAVEN).ok).toBe(true);
@@ -237,6 +291,8 @@ describe('the tavern', () => {
     sea.captain.standing.imperial = -60;
     const cost = economy.bribeCost('imperial')!;
     const gold = sea.captain.gold;
+    expect(economy.bribe(NEST, 'imperial').message).toMatch(/after dark/);
+    sea.clock.phase = phaseOf(23);
     expect(economy.bribe(NEST, 'imperial').ok).toBe(true);
     expect(sea.captain.standing.imperial).toBe(-45);
     expect(sea.captain.gold).toBe(gold - cost);
