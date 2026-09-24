@@ -1,0 +1,314 @@
+import { describe, expect, it } from 'vitest';
+import { outlineFromFootprint } from '../sailing/hull';
+import { hullContacts } from '../sailing/ship';
+import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP, type ShipType } from '../sailing/ships';
+import { Weather } from '../sailing/weather';
+import { Block } from '../voxel/blocks';
+import { VoxelWorld } from '../voxel/VoxelWorld';
+import { createAi } from './ai';
+import { AMMO, type Ammo, landingDistance } from './ammo';
+import { dropBarrel } from './barrels';
+import { planGroup, regionTier } from './encounters';
+import { fireBroadside } from './gunnery';
+import { type PlayerOrders, Sea } from './sea';
+import { applyDamage, createVessel, distanceToBody, type Faction, gunsManned, reloadTime, shipClass, type Vessel } from './vessel';
+
+function box(length: number, beam: number): Float32Array {
+  const cells: Array<[number, number]> = [];
+  for (let x = 0; x < beam; x++) for (let z = 0; z < length; z++) cells.push([x - beam / 2, z - length / 2]);
+  return outlineFromFootprint(cells);
+}
+
+const CLASSES = new Map(
+  [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG].map((type) => {
+    const big = type.model.includes('brig');
+    return [type, shipClass(type, big ? box(21, 7) : box(15, 5), big ? 3 : 2.5, big ? 20 : 16)] as const;
+  }),
+);
+
+const EAST = Math.PI / 2; // heading +x; port side faces north (-z)
+const HOLD: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
+
+function newSea(world = new VoxelWorld(), spawning = false, seed = 1): Sea {
+  return new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, { x: 0, z: 0, heading: EAST }, seed, spawning);
+}
+
+function place(sea: Sea, type: ShipType, faction: Faction, x: number, z: number, heading = EAST): Vessel {
+  const v = createVessel(sea.nextId++, `${faction} ${type.name}`, faction, sea.classFor(type), x, z, heading, sea.nextId);
+  sea.add(v);
+  return v;
+}
+
+function run(sea: Sea, seconds: number, orders: Partial<PlayerOrders> = {}) {
+  const once = { ...HOLD, ...orders };
+  for (let t = 0; t < seconds; t += 1 / 60) {
+    sea.step(1 / 60, once);
+    // Fire and board orders are one-shot, like a key press.
+    once.fire = [];
+    once.board = false;
+  }
+}
+
+describe('broadsides', () => {
+  it('hit a ship lying abeam within range, and fall short of one beyond it', () => {
+    const sea = newSea();
+    const near = place(sea, MERCHANT_SLOOP, 'merchant', 0, -30);
+    const far = place(sea, MERCHANT_SLOOP, 'merchant', 20, -120);
+    run(sea, 4, { fire: ['port'] });
+    expect(near.hull).toBeLessThan(near.cls.type.hull);
+    expect(far.hull).toBe(far.cls.type.hull);
+  });
+
+  it('fire straight out of the side, not ahead', () => {
+    const sea = newSea();
+    const ahead = place(sea, MERCHANT_SLOOP, 'merchant', 40, 0);
+    run(sea, 4, { fire: ['port', 'starboard'] });
+    expect(ahead.hull).toBe(ahead.cls.type.hull);
+  });
+
+  it('need reloading between shots', () => {
+    const sea = newSea();
+    expect(fireBroadside(sea, sea.player, 'port')).toBe(true);
+    expect(fireBroadside(sea, sea.player, 'port')).toBe(false);
+    expect(fireBroadside(sea, sea.player, 'starboard')).toBe(true);
+    run(sea, reloadTime(sea.player) + 0.1);
+    expect(fireBroadside(sea, sea.player, 'port')).toBe(true);
+  });
+
+  it('reach further with round shot than chain, and further with chain than grape', () => {
+    expect(landingDistance('round', 2)).toBeGreaterThan(landingDistance('chain', 2));
+    expect(landingDistance('chain', 2)).toBeGreaterThan(landingDistance('grape', 2));
+    expect(landingDistance('round', 2)).toBeGreaterThan(AMMO.round.range);
+  });
+
+  it('do different work: round holes the hull, chain tears sails, grape kills crew', () => {
+    const loss = (ammo: Ammo) => {
+      const sea = newSea();
+      const target = place(sea, BRIG, 'imperial', 0, -18);
+      for (let volley = 0; volley < 3; volley++) run(sea, reloadTime(sea.player) + 0.1, { fire: ['port'], ammo });
+      const t = target.cls.type;
+      return { hull: 1 - target.hull / t.hull, sails: 1 - target.sails / t.sails, crew: 1 - target.crew / t.crew };
+    };
+    const round = loss('round');
+    const chain = loss('chain');
+    const grape = loss('grape');
+    expect(round.hull).toBeGreaterThan(Math.max(round.sails, round.crew));
+    expect(chain.sails).toBeGreaterThan(Math.max(chain.hull, chain.crew));
+    expect(grape.crew).toBeGreaterThan(Math.max(grape.hull, grape.sails));
+  });
+});
+
+describe('damage', () => {
+  it('slows a ship whose rigging is shot away', () => {
+    const sea = newSea();
+    const v = place(sea, SLOOP, 'pirate', 0, 0);
+    applyDamage(v, 0, 70, 0);
+    expect(v.ship.rig).toBeCloseTo(0.3);
+  });
+
+  it('mans fewer guns and reloads slower with a thinned crew', () => {
+    const sea = newSea();
+    const v = place(sea, BRIG, 'imperial', 0, 0);
+    const fullReload = reloadTime(v);
+    applyDamage(v, 0, 0, v.crew * 0.6);
+    expect(gunsManned(v)).toBeLessThan(BRIG.gunsPerSide);
+    expect(reloadTime(v)).toBeGreaterThan(fullReload * 1.3);
+  });
+
+  it('makes a ship strike her colours when most of her crew is gone', () => {
+    const sea = newSea();
+    const v = place(sea, SLOOP, 'pirate', 0, 0);
+    applyDamage(v, 0, 0, v.crew * 0.85);
+    expect(v.status).toBe('struck');
+  });
+
+  it('sinks a ship at zero hull, and she is gone a few seconds later', () => {
+    const sea = newSea();
+    const v = place(sea, SLOOP, 'pirate', 0, -40);
+    applyDamage(v, 1000, 0, 0);
+    expect(v.status).toBe('sinking');
+    run(sea, 8);
+    expect(sea.vessels).not.toContain(v);
+  });
+
+  it('gives the player a fresh ship at home after sinking', () => {
+    const sea = newSea();
+    applyDamage(sea.player, 1000, 0, 0);
+    run(sea, 6);
+    expect(sea.player.status).toBe('afloat');
+    expect(sea.player.hull).toBe(SLOOP.hull);
+    expect(sea.takeEvents().some((e) => e.kind === 'respawn')).toBe(true);
+  });
+});
+
+describe('boarding', () => {
+  it('takes a ship that has struck, and some of her crew sign on', () => {
+    const sea = newSea();
+    sea.player.crew = 15;
+    const prize = place(sea, MERCHANT_BRIG, 'merchant', 0, -8);
+    applyDamage(prize, 0, 0, prize.crew * 0.85);
+    expect(sea.boardingTarget()).toBe(prize);
+    run(sea, 0.1, { board: true });
+    expect(prize.status).toBe('captured');
+    expect(sea.player.crew).toBeGreaterThan(15);
+  });
+
+  it('only works alongside', () => {
+    const sea = newSea();
+    place(sea, MERCHANT_SLOOP, 'merchant', 0, -30);
+    expect(sea.boardingTarget()).toBeNull();
+  });
+});
+
+describe('barrels', () => {
+  it('spare the ship that dropped them but blow up under a pursuer', () => {
+    const sea = newSea();
+    const merchant = place(sea, MERCHANT_SLOOP, 'merchant', 30, 0);
+    merchant.helm.sails = 1;
+    merchant.ship.surge = 8;
+    sea.player.ship.surge = 8;
+    const dropped = sea.barrels.length;
+    // The merchant runs east with the player close behind; she drops a barrel in the player's path.
+    run(sea, 0.5, { sails: 1 });
+    expect(merchant.barrels).toBe(MERCHANT_SLOOP.barrels);
+    expect(dropBarrel(sea, merchant)).toBe(true);
+    expect(sea.barrels.length).toBe(dropped + 1);
+    const before = sea.player.hull;
+    run(sea, 6, { sails: 1 });
+    expect(merchant.hull).toBe(MERCHANT_SLOOP.hull);
+    expect(sea.player.hull).toBeLessThan(before);
+    expect(sea.barrels.length).toBe(dropped);
+  });
+
+  it('can be set off by a round shot, where it comes down near the end of its flight', () => {
+    const sea = newSea();
+    const reach = landingDistance('round', 2.5 - 0.7); // from the test sloop's gun deck
+    for (const x of [-4, 0, 4]) sea.barrels.push({ id: 90 + x, x, z: -(reach - 2), arm: 0, age: 0 });
+    run(sea, 4, { fire: ['port'] });
+    expect(sea.takeEvents().some((e) => e.kind === 'explosion')).toBe(true);
+  });
+});
+
+describe('captains', () => {
+  function withAi(sea: Sea, type: ShipType, faction: Faction, x: number, z: number, heading: number): Vessel {
+    const v = place(sea, type, faction, x, z, heading);
+    v.ai = createAi(x + Math.sin(heading) * 600, z + Math.cos(heading) * 600, heading);
+    v.helm.sails = 0.5;
+    return v;
+  }
+
+  it('merchants run from the player', () => {
+    const sea = newSea();
+    const merchant = withAi(sea, MERCHANT_SLOOP, 'merchant', 0, -70, -EAST); // heading west, toward the player's bow
+    let fled = false;
+    for (let t = 0; t < 25; t += 1 / 60) {
+      sea.step(1 / 60, HOLD);
+      fled ||= merchant.ai!.mode === 'flee';
+    }
+    expect(fled).toBe(true);
+    // Once clear she goes back to her business.
+    expect(Math.hypot(merchant.ship.x, merchant.ship.z)).toBeGreaterThan(110);
+  });
+
+  it('warships close in and fire a broadside', () => {
+    const sea = newSea();
+    withAi(sea, SLOOP, 'imperial', 0, -120, 0);
+    run(sea, 45);
+    expect(sea.player.hull).toBeLessThan(SLOOP.hull);
+  });
+
+  it('steer clear of land', () => {
+    const world = new VoxelWorld();
+    for (let x = 60; x < 66; x++) for (let z = -80; z < 80; z++) for (let y = 0; y < 16; y++) world.setVoxel(x, y, z, Block.Stone);
+    const sea = newSea(world);
+    const merchant = withAi(sea, MERCHANT_SLOOP, 'merchant', 0, -200, EAST); // cruising east, straight at the wall
+    merchant.ai!.destX = 400;
+    merchant.ai!.destZ = -200;
+    // Keep the player out of the way so she just cruises.
+    sea.player.ship.x = -500;
+    let touched = false;
+    for (let t = 0; t < 40; t += 1 / 60) {
+      sea.step(1 / 60, HOLD);
+      if (hullContacts(world, merchant.cls.spec, merchant.ship.x, merchant.ship.z, merchant.ship.heading) > 0 || merchant.ship.grounded) touched = true;
+    }
+    expect(touched).toBe(false);
+  });
+});
+
+describe('encounters', () => {
+  it('get harder the further you sail from home', () => {
+    expect(regionTier(100, 100)).toBe(0);
+    expect(regionTier(1000, 0)).toBe(1);
+    expect(regionTier(0, -2000)).toBe(2);
+    // Out in Imperial waters, merchants sail in escorted convoys.
+    const convoy = planGroup(2, 0.1);
+    expect(convoy[0].faction).toBe('merchant');
+    expect(convoy.length).toBeGreaterThan(1);
+    expect(convoy.slice(1).every((m) => m.faction === 'imperial')).toBe(true);
+  });
+
+  it('bring a merchant first, out of sight and in open water', () => {
+    const sea = newSea(new VoxelWorld(), true);
+    run(sea, 5);
+    const newcomer = sea.vessels[1];
+    expect(newcomer.faction).toBe('merchant');
+    const d = Math.hypot(newcomer.ship.x - sea.player.ship.x, newcomer.ship.z - sea.player.ship.z);
+    expect(d).toBeGreaterThan(200);
+    expect(d).toBeLessThan(320);
+  });
+});
+
+describe('determinism', () => {
+  it('plays out identically from the same seed and orders', () => {
+    const play = () => {
+      const sea = newSea(new VoxelWorld(), true, 42);
+      run(sea, 20, { sails: 1, rudder: 0.2 });
+      run(sea, 1, { fire: ['port', 'starboard'], ammo: 'chain' });
+      run(sea, 20, { sails: 1, rudder: -0.3 });
+      return JSON.stringify(sea.vessels.map((v) => [v.name, v.ship, v.hull, v.sails, v.crew]));
+    };
+    expect(play()).toBe(play());
+  });
+});
+
+describe('the player', () => {
+  it('is taken when her last hands fall, and starts again at home', () => {
+    const sea = newSea();
+    applyDamage(sea.player, 0, 0, 1000);
+    expect(sea.player.status).toBe('captured');
+    run(sea, 6);
+    expect(sea.player.status).toBe('afloat');
+    expect(sea.player.crew).toBe(SLOOP.crew);
+  });
+});
+
+describe('fleets', () => {
+  it('give way to each other instead of colliding head-on', () => {
+    const sea = newSea();
+    sea.player.ship.x = -3000; // far away, so both simply cruise
+    // A collision course square across the trade wind, so both ships can actually hold it.
+    const trade = sea.weather.windAt(0, 0, 0);
+    const [dx, dz] = [-trade.dirZ, trade.dirX];
+    const heading = Math.atan2(dx, dz);
+    const west = place(sea, BRIG, 'imperial', -60 * dx, -60 * dz, heading);
+    const east = place(sea, BRIG, 'imperial', 60 * dx, 60 * dz, heading + Math.PI);
+    west.ai = createAi(1000 * dx, 1000 * dz, heading);
+    east.ai = createAi(-1000 * dx, -1000 * dz, heading + Math.PI);
+    // Hulls touch when any point of one's waterline outline is inside (or grazing) the other.
+    const touching = (a: Vessel, b: Vessel) => {
+      const o = a.cls.spec.outline;
+      const s = Math.sin(a.ship.heading);
+      const c = Math.cos(a.ship.heading);
+      for (let i = 0; i < o.length; i += 2) {
+        if (distanceToBody(b, a.ship.x + o[i] * c + o[i + 1] * s, 0, a.ship.z - o[i] * s + o[i + 1] * c) < 0.5) return true;
+      }
+      return false;
+    };
+    let contact = 0;
+    for (let t = 0; t < 40; t += 1 / 60) {
+      sea.step(1 / 60, HOLD);
+      if (touching(west, east)) contact++;
+    }
+    expect(contact).toBe(0);
+  });
+});

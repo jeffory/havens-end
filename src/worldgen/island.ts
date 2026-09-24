@@ -2,7 +2,8 @@ import { SEA_LEVEL } from '../config';
 import { hash2, hash3 } from '../util/hash';
 import { Block, type BlockId } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import { fbm2, mulberry32, seededNoise2D, smoothstep } from './noise';
+import { smoothstep } from '../util/math';
+import { fbm2, mulberry32, seededNoise2D } from './noise';
 
 export interface IslandParams {
   seed: number;

@@ -15,8 +15,9 @@ import {
   type Vector3,
 } from 'three';
 import type { SeabedMap } from '../ocean/SeabedMap';
+import { smoothstep } from '../util/math';
 import { glslFloat, WATER_LEVEL, WAVE_AMPLITUDE, WAVE_GLSL, wavePhases } from '../ocean/waves';
-import { WAKE_LIFETIME, WAKE_POINTS } from './Wake';
+import { WAKE_LIFETIME, type WakePool } from './Wake';
 
 export const OCEAN_COLORS = {
   shallow: 0x86e8d8,
@@ -34,18 +35,22 @@ export class OceanRenderer {
   readonly group = new Group();
   private readonly seabedTexture: DataTexture;
   private seabedVersion: number;
+  /** Foam (wakes, splashes) per water cell, stamped on the CPU each frame and sampled by the shader. */
+  private readonly foam: Uint8Array;
+  private readonly foamTexture: DataTexture;
   private readonly uniforms;
 
   constructor(
     private readonly seabed: SeabedMap,
-    /** Ship wake points (see Wake); shared objects, so the ocean always sees the latest. */
-    wake: Vector4[],
-    gridSize = 160,
+    private readonly wakes: WakePool,
+    private readonly gridSize = 160,
   ) {
     this.group.name = 'ocean';
     this.seabedTexture = new DataTexture(seabed.heights, seabed.size, seabed.size, RedFormat, UnsignedByteType);
     this.seabedTexture.needsUpdate = true;
     this.seabedVersion = seabed.version;
+    this.foam = new Uint8Array(gridSize * gridSize);
+    this.foamTexture = new DataTexture(this.foam, gridSize, gridSize, RedFormat, UnsignedByteType);
 
     this.uniforms = {
       uWavePhase: { value: wavePhases(0) },
@@ -56,7 +61,9 @@ export class OceanRenderer {
       uMid: { value: new Color(OCEAN_COLORS.mid) },
       uDeep: { value: new Color(OCEAN_COLORS.deep) },
       uFoam: { value: new Color(OCEAN_COLORS.foam) },
-      uWake: { value: wake },
+      uFoamMap: { value: this.foamTexture },
+      /** World position of the foam map's corner, and its size in cells. */
+      uFoamRect: { value: new Vector4(0, 0, gridSize, gridSize) },
     };
 
     // Unit column whose top face sits at local y = 0; the shader lifts it by the wave height.
@@ -87,12 +94,44 @@ export class OceanRenderer {
     // Move in whole cells so water columns stay aligned with the terrain voxel grid.
     this.group.position.x = Math.floor(focus.x);
     this.group.position.z = Math.floor(focus.z);
+    this.stampFoam(this.group.position.x - this.gridSize / 2, this.group.position.z - this.gridSize / 2);
     wavePhases(time, this.uniforms.uWavePhase.value);
     this.uniforms.uTime.value = time;
     if (this.seabed.version !== this.seabedVersion) {
       this.seabedVersion = this.seabed.version;
       this.seabedTexture.needsUpdate = true;
     }
+  }
+
+  /**
+   * Paints every live wake point into the foam map as a disc that spreads and thins
+   * with age. Cheap on the CPU (a few thousand writes), and it spares the shader from
+   * looping over every point for every pixel.
+   */
+  private stampFoam(originX: number, originZ: number): void {
+    const n = this.gridSize;
+    const foam = this.foam;
+    foam.fill(0);
+    for (const p of this.wakes.points) {
+      if (p.w <= 0) continue;
+      const radius = 1 + p.z * 0.7;
+      const strength = p.w * (1 - p.z / WAKE_LIFETIME) * 255;
+      const cx = p.x - originX;
+      const cz = p.y - originZ;
+      const r = Math.ceil(radius);
+      for (let row = Math.max(0, Math.floor(cz) - r); row <= Math.min(n - 1, Math.floor(cz) + r); row++) {
+        for (let col = Math.max(0, Math.floor(cx) - r); col <= Math.min(n - 1, Math.floor(cx) + r); col++) {
+          const d = Math.hypot(col + 0.5 - cx, row + 0.5 - cz);
+          const inside = 1 - smoothstep(radius - 0.8, radius, d);
+          const value = inside * strength;
+          const i = row * n + col;
+          if (value > foam[i]) foam[i] = value;
+        }
+      }
+    }
+    this.uniforms.uFoamRect.value.x = originX;
+    this.uniforms.uFoamRect.value.y = originZ;
+    this.foamTexture.needsUpdate = true;
   }
 
   private createWaterMaterial(): MeshStandardMaterial {
@@ -136,7 +175,8 @@ uniform vec3 uMid;
 uniform vec3 uDeep;
 uniform vec3 uFoam;
 uniform float uTime;
-uniform vec4 uWake[${WAKE_POINTS}];
+uniform sampler2D uFoamMap;
+uniform vec4 uFoamRect;
 varying float vDepth;
 varying float vWave;
 varying vec2 vCell;`,
@@ -151,15 +191,8 @@ water *= 1.0 + vWave * ${glslFloat(0.08 / WAVE_AMPLITUDE)};
 // Surf flickering on the cells that touch the beach.
 float flicker = fract(sin(dot(floor(vCell) + mod(floor(uTime * 1.5), 64.0), vec2(12.9898, 78.233))) * 43758.5453);
 float surf = (1.0 - smoothstep(0.5, 1.2, vDepth)) * step(0.45, flicker);
-// Wake: dithered foam cells along the ship's recent track, spreading and thinning with age.
-float wake = 0.0;
-for (int i = 0; i < ${WAKE_POINTS}; i++) {
-  vec4 w = uWake[i];
-  if (w.w <= 0.0) continue;
-  float radius = 1.0 + w.z * 0.7;
-  float inside = 1.0 - smoothstep(radius - 0.8, radius, distance(vCell, w.xy));
-  wake = max(wake, inside * w.w * (1.0 - w.z / ${glslFloat(WAKE_LIFETIME)}));
-}
+// Wake and splash foam, dithered per cell so it stays blocky.
+float wake = texture2D(uFoamMap, (vCell - uFoamRect.xy) / uFoamRect.zw).r;
 float grain = fract(sin(dot(floor(vCell), vec2(39.34, 11.13)) + mod(floor(uTime * 4.0), 97.0)) * 24634.6345);
 // Strictly greater: fract() can return exactly 0.0 at this magnitude, and step(0.0, 0.0) is 1.
 float foam = max(surf * 0.85, wake * 0.95 > grain ? 0.8 : 0.0);

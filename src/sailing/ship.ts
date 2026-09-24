@@ -42,6 +42,10 @@ export interface ShipState {
   grounded: boolean;
   /** Seconds left before `grounded` clears; keeps it steady while the hull bumps the bottom. */
   groundedTimer: number;
+  /** Condition of sails and rigging, 0..1. Shot-away canvas gives less drive (chain shot). */
+  rig: number;
+  /** Fraction of the crew left, 0..1. A short-handed ship works her sails slowly. */
+  crewing: number;
 }
 
 /** What the helm is asking for; the crew move the rudder and canvas toward it at a finite pace. */
@@ -66,13 +70,13 @@ const PUSH_OFF_STEPS = [0.05, 0.1, 0.2];
 const GROUNDED_MEMORY = 0.5;
 
 export function createShip(x: number, z: number, heading: number): ShipState {
-  return { x, z, heading, surge: 0, sway: 0, yawRate: 0, rudder: 0, sail: 0, heel: 0, grounded: false, groundedTimer: 0 };
+  return { x, z, heading, surge: 0, sway: 0, yawRate: 0, rudder: 0, sail: 0, heel: 0, grounded: false, groundedTimer: 0, rig: 1, crewing: 1 };
 }
 
 /** Advances one ship by one fixed step. Deterministic: same inputs, same result. */
 export function stepShip(ship: ShipState, spec: ShipSpec, helm: Helm, wind: Wind, world: VoxelReader, dt: number): void {
   ship.rudder = approach(ship.rudder, clamp(helm.rudder, -1, 1), RUDDER_RATE * dt);
-  ship.sail = approach(ship.sail, clamp(helm.sails, 0, 1), SAIL_RATE * dt);
+  ship.sail = approach(ship.sail, clamp(helm.sails, 0, 1), SAIL_RATE * (0.3 + 0.7 * ship.crewing) * dt);
 
   const fx = Math.sin(ship.heading);
   const fz = Math.cos(ship.heading);
@@ -81,7 +85,7 @@ export function stepShip(ship: ShipState, spec: ShipSpec, helm: Helm, wind: Wind
 
   // Drive from the sails, shaped by the point of sail. Quadratic drag is tuned so that
   // full drive settles at exactly topSpeed.
-  const push = spec.acceleration * ship.sail * wind.strength;
+  const push = spec.acceleration * ship.sail * wind.strength * (0.15 + 0.85 * ship.rig);
   const drive = push * sailEfficiency(angleOffWind(fx, fz, wind));
   const quadDrag = (spec.acceleration - LINEAR_DRAG * spec.topSpeed) / spec.topSpeed ** 2;
   const drag = quadDrag * ship.surge * Math.abs(ship.surge) + LINEAR_DRAG * ship.surge + TURN_SCRUB * Math.abs(ship.yawRate) * ship.surge;

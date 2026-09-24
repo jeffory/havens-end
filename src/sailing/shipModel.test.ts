@@ -77,5 +77,19 @@ describe('placeholder sloop.vox', () => {
     expect(model.flags).toHaveLength(1);
     expect(model.halfBeam).toBe(2.5);
     expect(model.bow - model.stern).toBe(18); // 15 of hull plus the bowsprit
+    expect(model.deck).toBeGreaterThan(1); // well clear of the water
+    expect(model.deck).toBeLessThan(5);
+    expect(model.top).toBeGreaterThan(14); // masthead
+  });
+});
+
+describe('placeholder brig.vox', () => {
+  it('loads with a hull, two sails and a flag', () => {
+    const bytes = readFileSync('public/models/ships/brig.vox');
+    const model = buildShipModel(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) as ArrayBuffer), 2);
+    expect(model.sails).toHaveLength(2);
+    expect(model.flags).toHaveLength(1);
+    expect(model.halfBeam).toBe(3.5);
+    expect(model.bow - model.stern).toBe(25); // 21 of hull plus the bowsprit
   });
 });

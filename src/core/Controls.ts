@@ -1,7 +1,18 @@
 import type { Input } from './Input';
 
 /** Discrete things the player can ask for. */
-export type Action = 'sailUp' | 'sailDown' | 'rotateLeft' | 'rotateRight';
+export type Action =
+  | 'sailUp'
+  | 'sailDown'
+  | 'rotateLeft'
+  | 'rotateRight'
+  | 'firePort'
+  | 'fireStarboard'
+  | 'ammoRound'
+  | 'ammoChain'
+  | 'ammoGrape'
+  | 'ammoNext'
+  | 'board';
 
 /** Button indices in the W3C "standard" gamepad layout, with Xbox names. */
 export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
@@ -15,6 +26,10 @@ const PAD_ACTIONS: ReadonlyArray<readonly [number, Action]> = [
   [PAD.A, 'sailDown'],
   [PAD.LB, 'rotateLeft'],
   [PAD.RB, 'rotateRight'],
+  [PAD.LT, 'firePort'],
+  [PAD.RT, 'fireStarboard'],
+  [PAD.X, 'ammoNext'],
+  [PAD.B, 'board'],
 ];
 
 const KEY_ACTIONS: ReadonlyArray<readonly [string, Action]> = [
@@ -22,8 +37,16 @@ const KEY_ACTIONS: ReadonlyArray<readonly [string, Action]> = [
   ['ArrowUp', 'sailUp'],
   ['KeyS', 'sailDown'],
   ['ArrowDown', 'sailDown'],
-  ['KeyQ', 'rotateLeft'],
-  ['KeyE', 'rotateRight'],
+  // Left hand fires port, right hand starboard, matching the ship's sides.
+  ['KeyQ', 'firePort'],
+  ['KeyE', 'fireStarboard'],
+  ['KeyZ', 'rotateLeft'],
+  ['KeyC', 'rotateRight'],
+  ['Digit1', 'ammoRound'],
+  ['Digit2', 'ammoChain'],
+  ['Digit3', 'ammoGrape'],
+  ['KeyR', 'ammoNext'],
+  ['KeyB', 'board'],
 ];
 
 export interface PadSnapshot {

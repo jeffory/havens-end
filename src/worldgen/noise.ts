@@ -29,8 +29,3 @@ export function fbm2(noise: Noise2D, x: number, y: number, octaves = 4, lacunari
   }
   return sum / norm;
 }
-
-export function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0), 1);
-  return t * t * (3 - 2 * t);
-}

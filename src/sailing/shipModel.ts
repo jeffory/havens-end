@@ -30,6 +30,9 @@ export interface ShipModel {
   bow: number;
   stern: number;
   halfBeam: number;
+  /** Ship-local height of the deck (top of most hull columns) and of the highest masthead. */
+  deck: number;
+  top: number;
 }
 
 /**
@@ -87,7 +90,21 @@ export function buildShipModel(file: VoxFile, draft: number): ShipModel {
     bow: hullBox.maxZ + 1 - origin.z,
     stern: hullBox.minZ - origin.z,
     halfBeam: (hullBox.maxX + 1 - hullBox.minX) / 2,
+    deck: deckTop(hull) - origin.y,
+    top: Math.max(hullBox.maxY, ...sails.map((c) => bounds(c).maxY), ...flags.map((c) => bounds(c).maxY)) + 1 - origin.y,
   };
+}
+
+/** The most common column top: the deck (rails, masts and cabins are the exceptions). */
+function deckTop(cells: number[]): number {
+  const tops = new Map<string, number>();
+  for (let i = 0; i < cells.length; i += 4) {
+    const key = `${cells[i]},${cells[i + 2]}`;
+    tops.set(key, Math.max(tops.get(key) ?? -Infinity, cells[i + 1] + 1));
+  }
+  const counts = new Map<number, number>();
+  for (const top of tops.values()) counts.set(top, (counts.get(top) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
 }
 
 function push(parts: number[][]): number[] {

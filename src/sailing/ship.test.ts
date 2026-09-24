@@ -143,3 +143,22 @@ describe('grounding', () => {
     expect(sail(createShip(0, 0, EAST), { rudder: 0, sails: 1 }, 20, shoal(10)).x).toBeGreaterThan(70);
   });
 });
+
+describe('damage', () => {
+  it('is slower with shot-away rigging', () => {
+    const whole = sail(createShip(0, 0, EAST), { rudder: 0, sails: 1 }, 40);
+    const torn = createShip(0, 0, EAST);
+    torn.rig = 0.3;
+    sail(torn, { rudder: 0, sails: 1 }, 40);
+    expect(torn.surge).toBeLessThan(0.75 * whole.surge);
+    expect(torn.surge).toBeGreaterThan(0.3 * whole.surge);
+  });
+
+  it('works the sails slowly when short-handed', () => {
+    const full = sail(createShip(0, 0, EAST), { rudder: 0, sails: 1 }, 1);
+    const shortHanded = createShip(0, 0, EAST);
+    shortHanded.crewing = 0.2;
+    sail(shortHanded, { rudder: 0, sails: 1 }, 1);
+    expect(shortHanded.sail).toBeLessThan(0.6 * full.sail);
+  });
+});

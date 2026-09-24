@@ -16,7 +16,7 @@ const DEFAULTS: CameraRigOptions = {
   pitchDeg: 52,
   yawDeg: 45,
   fovDeg: 30,
-  distance: 80,
+  distance: 90,
   minDistance: 25,
   maxDistance: 150,
 };

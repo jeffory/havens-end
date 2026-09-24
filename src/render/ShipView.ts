@@ -1,4 +1,5 @@
 import { Group, Mesh, MeshLambertMaterial } from 'three';
+import type { VesselStatus } from '../combat/vessel';
 import { WATER_LEVEL, waterSurfaceY } from '../ocean/waves';
 import { angleOffWind } from '../sailing/pointOfSail';
 import type { ShipState } from '../sailing/ship';
@@ -9,6 +10,12 @@ import { meshCells } from './voxelGeometry';
 
 /** True wind speed in u/s for wind strength 1; only used to work out apparent wind for the flag. */
 const WIND_SPEED = 15;
+
+/** Flag colours: `field` replaces the flag's main colour, `emblem` every other colour on it. */
+export interface Livery {
+  field: number;
+  emblem: number;
+}
 
 export interface ShipPose {
   x: number;
@@ -38,10 +45,15 @@ export class ShipView {
   private roll = 0;
   private brace = 0;
 
-  constructor(readonly model: ShipModel) {
+  private readonly material = new MeshLambertMaterial({ vertexColors: true });
+
+  constructor(
+    readonly model: ShipModel,
+    livery?: Livery,
+  ) {
     this.root.name = 'ship';
     const palette = paletteFromRgba(model.palette);
-    const material = new MeshLambertMaterial({ vertexColors: true });
+    const material = this.material;
     const o = model.origin;
 
     this.body.add(this.partMesh(model.hull.cells, palette, material, o.x, o.y, o.z));
@@ -54,13 +66,14 @@ export class ShipView {
     }
     for (const part of model.flags) {
       const pivot = this.pivotGroup(part);
-      pivot.add(this.partMesh(part.cells, palette, material, part.pivot.x, part.pivot.y, part.pivot.z));
+      const flagPalette = livery ? paletteFromRgba(recolorFlag(part, model.palette, livery)) : palette;
+      pivot.add(this.partMesh(part.cells, flagPalette, material, part.pivot.x, part.pivot.y, part.pivot.z));
       this.flags.push(pivot);
     }
     this.root.add(this.body);
   }
 
-  update(pose: ShipPose, ship: ShipState, wind: Wind, time: number, frameSeconds: number): void {
+  update(pose: ShipPose, ship: ShipState, wind: Wind, time: number, frameSeconds: number, status: VesselStatus = 'afloat', fate = 0): void {
     const { model } = this;
     this.root.position.set(pose.x, WATER_LEVEL, pose.z);
     this.root.rotation.y = pose.heading;
@@ -77,8 +90,10 @@ export class ShipView {
     this.heave += ((bow + stern + port + starboard) / 4 - WATER_LEVEL - this.heave) * ease;
     this.pitch += (Math.atan2(bow - stern, model.bow - model.stern - 2) - this.pitch) * ease;
     this.roll += (Math.atan2(port - starboard, 2 * model.halfBeam) - this.roll) * ease;
-    this.body.position.y = this.heave;
-    this.body.rotation.set(-this.pitch, 0, this.roll + ship.heel);
+    // Going down: settle by the stern and roll over as she fills.
+    const sinking = status === 'sinking' ? fate : 0;
+    this.body.position.y = this.heave - sinking * 0.9 - sinking * sinking * 0.12;
+    this.body.rotation.set(-this.pitch + sinking * 0.05, 0, this.roll + ship.heel + sinking * 0.11);
 
     // Brace the yards round to the wind: square when running, hard over when close-hauled.
     const fx = s;
@@ -97,8 +112,17 @@ export class ShipView {
     const localX = ax * c - az * s; // toward port
     const localZ = ax * s + az * c; // toward the bow
     this.flags.forEach((flag, i) => {
+      // A ship that has struck her colours has hauled her flag down.
+      flag.visible = status === 'afloat' || status === 'sinking';
       flag.rotation.y = Math.atan2(-localX, -localZ) + 0.12 * Math.sin(time * 9 + i * 1.7);
     });
+  }
+
+  dispose(): void {
+    this.root.traverse((object) => {
+      if (object instanceof Mesh) object.geometry.dispose();
+    });
+    this.material.dispose();
   }
 
   private pivotGroup(part: ModelPart): Group {
@@ -116,6 +140,19 @@ export class ShipView {
     mesh.receiveShadow = true;
     return mesh;
   }
+}
+
+/** A copy of the palette with the flag's own colours swapped for a faction's. */
+function recolorFlag(part: ModelPart, rgba: Uint8Array, livery: Livery): Uint8Array {
+  const counts = new Map<number, number>();
+  for (let i = 3; i < part.cells.length; i += 4) counts.set(part.cells[i], (counts.get(part.cells[i]) ?? 0) + 1);
+  const field = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const out = rgba.slice();
+  for (const index of counts.keys()) {
+    const hex = index === field ? livery.field : livery.emblem;
+    out.set([(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, 255], index * 4);
+  }
+  return out;
 }
 
 function partHeight(part: ModelPart): number {

@@ -30,6 +30,12 @@ describe('readPad', () => {
     expect(held.actions).toEqual([]);
   });
 
+  it('fires port and starboard broadsides with the triggers', () => {
+    expect(readPad(pad(undefined, [PAD.LT]), new Set()).actions).toEqual(['firePort']);
+    expect(readPad(pad(undefined, [PAD.RT]), new Set()).actions).toEqual(['fireStarboard']);
+    expect(readPad(pad(undefined, [PAD.B, PAD.X]), new Set()).actions.sort()).toEqual(['ammoNext', 'board']);
+  });
+
   it('maps face buttons to the sails', () => {
     expect(readPad(pad(undefined, [PAD.Y]), new Set()).actions).toEqual(['sailUp']);
     expect(readPad(pad(undefined, [PAD.A]), new Set()).actions).toEqual(['sailDown']);

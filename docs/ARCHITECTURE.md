@@ -104,8 +104,11 @@ per frame: ChunkRenderer.update(budget)
   uploaded as a texture. The shader uses it for the turquoise-to-navy ramp,
   see-through shallows, beach surf, and to collapse columns inside dry land. It
   follows terrain edits, so digging a channel floods it.
-- **Wake.** The ship's recent stern positions (`render/Wake.ts`) are a uniform
-  array; the shader turns them into dithered, blocky foam that spreads and fades.
+- **Foam.** Ship wakes and shot splashes are points in a pool (`render/Wake.ts`).
+  Each frame the ocean stamps them into a 160×160 foam texture aligned with the
+  water grid. The shader samples it once and dithers it into blocky foam. (A
+  per-pixel loop over every point was the first version; it cost ~20% of frame time
+  in battles.)
 - Implemented by injecting into `MeshStandardMaterial` (`onBeforeCompile`), so
   lighting, shadows and fog still apply.
 
@@ -159,14 +162,78 @@ tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz 
 |---|---|---|
 | Steer | A / D, ← / → | Left stick, d-pad ← → |
 | Sails up / down | W / S, ↑ / ↓ | D-pad ↑ ↓, Y / A |
-| Turn view | Q / E | LB / RB |
+| Fire port / starboard broadside | Q / E | LT / RT |
+| Round / chain / grape shot | 1 / 2 / 3 (R cycles) | X cycles |
+| Board | B | B |
+| Turn view | Z / C | LB / RB |
 | Zoom | Mouse wheel | Right stick ↕ |
 
-## 6. Ship art: MagicaVoxel authoring guide
+## 6. Naval combat (Phase 3)
 
-Ships live in `public/models/ships/*.vox`; handling stats are in `sailing/ships.ts`.
-`npm run make:placeholder-ship` regenerates the placeholder sloop, which is also a
-template: open it in MagicaVoxel and restyle it.
+All combat is simulation code in `src/combat/`: no three.js, deterministic (a seeded
+RNG lives in the `Sea`), and unit-tested. `Sea.step()` advances, in order: orders,
+AI captains, sailing, hull separation, shots, barrels, fates (sinking, capture,
+respawn), encounters. It reports what happened as `SeaEvent`s, and the renderer turns
+those into smoke, splashes, splinters, explosions and messages.
+
+**Guns.** Broadsides fire straight out of the side at one fixed elevation. You aim
+by manoeuvring, and range comes from the charge. Each side reloads separately.
+Reload time and the number of guns manned both fall with crew losses.
+
+| Shot | Reach* | Per projectile | Use |
+|---|---|---|---|
+| Round | ~55 | hull 8 | sinking ships |
+| Chain | ~43 | sails 9 | crippling speed: drive scales with rig condition |
+| Grape (4 balls/gun) | ~30 | crew 0.6 each | fewer guns manned, slower reloads; she strikes her colours |
+
+\* From a sloop's gun deck; the range dots on the water show it live, and they
+light up as each side reloads.
+
+**Damage and outcomes.** Hull ≤ 0 sinks her. An AI ship below 20% hull or crew
+**strikes her colours**: she furls sail, hauls down her flag and can be boarded
+freely. Boarding needs you alongside (within about 5 voxels) and nearly matched in
+speed. A struck ship is taken outright; otherwise the crews fight it out, weighted
+by numbers. **Phase 3b replaces those dice with the captains' duel.** Half a
+captured crew signs on, if you have room. If your own hull or crew runs out, you
+start again with a fresh sloop at home.
+
+**AI captains** (`combat/ai.ts`) decide four times a second and steer every tick:
+- *Merchants* cruise, run from the player (within 110 or once provoked), and drop
+  **explosive barrels** when a pursuer is close astern (2–4 per ship). Barrels arm
+  after 2 s, blow when a hull touches them or a shot hits them, and set off
+  neighbours in a chain.
+- *Warships* (Imperial and rival pirates) close to range, then turn to bring a loaded
+  broadside to bear. They hold the fight at about 60% of reach and pick their shot:
+  grape when close, chain against a faster target, round otherwise.
+- *Escorts* keep station off the convoy leader's quarters until anyone in the group
+  is attacked.
+- Everyone keeps out of the no-go zone, probes ahead for land, and gives way to other
+  ships (to starboard when head-on).
+
+**Encounters** (`combat/encounters.ts`) spawn groups out of sight (230–300 away) on
+courses that cross yours. Groups that fall far astern untouched leave the map.
+Difficulty rises with distance from home:
+
+| Region | Distance | Groups |
+|---|---|---|
+| Home waters | < 700 | lone merchant, pirate or Imperial sloop |
+| Contested waters | < 1500 | merchant brig with an escort, Imperial brig, pirate pairs |
+| Imperial waters | beyond | escorted convoys (brig + 2 escorts), warship pairs |
+
+The first two encounters are fixed (a merchant, then a pirate) so new players meet
+a prize and then a fight.
+
+**Factions** show in their flags: the ship's own flag object is recoloured by faction
+(crimson and gold Imperial, white and blue merchant, dark red pirate). The player's
+black flag is drawn as authored. Floating labels name each ship and show her hull
+and intent.
+
+## 7. Ship art: MagicaVoxel authoring guide
+
+Ships live in `public/models/ships/*.vox`; handling and combat stats are in
+`sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
+and brig, which are also templates: open one in MagicaVoxel and restyle it. Painted
+gun ports are cosmetic: guns are spaced along the hull from `gunsPerSide`.
 
 1. **Axes:** Z up, **bow toward +Y**, starboard toward +X.
 2. **One object per moving part**, named in the world editor:
@@ -176,7 +243,8 @@ template: open it in MagicaVoxel and restyle it.
      **forward face** of its mast. It swings about its aft face and furls upward
      toward its top edge.
    - `flag…`: streaming **aft** from where it meets the mast. It turns about its
-     forward top edge.
+     forward top edge. Its most-used colour becomes the faction's field colour and
+     every other colour on it becomes the emblem colour.
 3. **Hidden objects and layers are ignored**, handy for reference geometry.
 4. **Waterline:** nothing to mark. Set `draft` in the ship type (voxels from the keel
    up to the waterline). It positions the model in the water and sets the grounding depth.
@@ -187,7 +255,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 7. Simulation, physics and time
+## 8. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -199,15 +267,15 @@ rate**, interpolating with `alpha`. The rule, enforced by structure in `Game.ts`
 Camera easing, wave riding, sail bracing, the wake, streaks and the HUD are
 presentation, so they run on frame time.
 
-**Still to build:**
-- **Cannonballs (Phase 3):** point projectiles integrated per tick, inheriting ship
-  velocity. Each step's movement segment is tested against hull footprints, the voxel
-  grid (DDA) and the water plane (splash).
-- **Characters on land (Phase 5):** axis-separated swept AABB against the voxel grid,
-  with one-voxel step-up.
+**Cannonballs** are ballistic points integrated per tick, inheriting the firing
+ship's velocity. Each step's segment is tested against every other hull's box
+(keel to masthead), floating barrels, the voxel terrain (DDA) and the water.
 
-**Entities and systems.** Plain, serialisable data (`ShipState`, later `ships[]`,
-`projectiles[]`), with systems as functions called in a fixed order each tick. An ECS
+**Still to build:** characters on land (Phase 5), as an axis-separated swept AABB
+against the voxel grid with a one-voxel step-up.
+
+**Entities and systems.** Plain, serialisable data (`Vessel`, `Shot`, `Barrel` in
+the `Sea`), with systems as functions called in a fixed order each tick. An ECS
 library is only worth adopting once NPC automation (Phase 6) brings many
 cross-cutting queries.
 
@@ -219,7 +287,7 @@ consistently with the ledger.
 **Saves (designed now, built in Phase 5).** Seeds, modified chunks (run-length
 encoded) and the `sim` state as JSON, in IndexedDB.
 
-## 8. Module map
+## 9. Module map
 
 ```
 src/
@@ -237,26 +305,32 @@ src/
   vox/                 MagicaVoxel .vox parser (scene graph) and writer
   sailing/             ship handling, hull outline, point of sail, weather,
                        ship types, .vox → ship parts
+  combat/              Sea (the combat sim), vessels, ammo, gunnery, barrels,
+                       AI captains, encounters
   worldgen/            seeded noise, island generator
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
-  render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, ShipView,
+  render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
+                       ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
                        Wake, WindStreaks, voxelGeometry
   tools/TerrainTool.ts dig / place dev tool
-  ui/Hud.ts            DOM overlay: help, compass/nav panel, perf readout
+  ui/                  Hud (help, compass, combat panel, prompts, messages),
+                       ShipLabels (name tags over ships)
+  util/                hash, small math helpers
 scripts/               asset generators (placeholder ship)
 public/models/ships/   ship .vox files
 ```
 
-`voxel`, `vox`, `sailing`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
+`voxel`, `vox`, `sailing`, `combat`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
 next to the code). The browser-bound `Input` and `GameLoop`, and `SeabedMap`, are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 9. Roadmap (proposed)
+## 10. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
-3. **Naval combat:** broadsides with per-side reload, ballistic arcs, hull/sail/crew damage, AI ships, sinking.
+3. ✅ **Naval combat:** broadsides, three shot types, damage and surrender, boarding, merchant barrels, AI captains, regional encounters and convoys.
+   - **3b. Captains' duel:** boarding fights become a parry-and-block sword fight on deck.
 4. **Ports & economy:** docking, supply/demand trade, shipyard and upgrades, crew hiring; React DOM menus.
 5. **On foot & base building:** captain controller, dig/flatten/build with inventory, claiming land, save/load.
 6. **Crew automation & farming:** job system, voxel-surface pathfinding, production chains, off-screen ledger, day/night.
