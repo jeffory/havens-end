@@ -132,6 +132,12 @@ icons, HD materials and `.vox` props through a ComfyUI server. Copy `.env.exampl
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
 model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, settlers, workshops and the night, the character art pipeline, simulation rules and roadmap.
 
+## Deploy
+
+The game is static files, so it deploys to Cloudflare as a Worker with static assets
+(`wrangler.jsonc`). `npx wrangler deploy` builds it, then uploads `dist/`. Cloudflare's
+Git integration runs the same command on every push.
+
 ## License
 
 MIT: see [LICENSE](LICENSE).
