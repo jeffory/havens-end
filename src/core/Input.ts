@@ -14,6 +14,7 @@ export class Input {
   /** Pointer position in normalised device coordinates. */
   readonly pointer = { x: 0, y: 0, inside: false };
   private readonly held = new Set<string>();
+  private readonly buttons = new Set<number>();
   private readonly pressed = new Map<string, number>();
   private readonly clicks: PointerClick[] = [];
   private wheel = 0;
@@ -24,6 +25,7 @@ export class Input {
     window.addEventListener('blur', this.onBlur);
     element.addEventListener('pointermove', this.onPointerMove);
     element.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointerup', this.onPointerUp);
     element.addEventListener('pointerleave', this.onPointerLeave);
     element.addEventListener('wheel', this.onWheel, { passive: false });
     element.addEventListener('contextmenu', this.onContextMenu);
@@ -32,6 +34,10 @@ export class Input {
   /** `code` is a KeyboardEvent.code such as 'KeyW' or 'ShiftLeft' (layout independent). */
   isHeld(code: string): boolean {
     return this.held.has(code);
+  }
+
+  isMouseHeld(button: number): boolean {
+    return this.buttons.has(button);
   }
 
   /** How many times `code` went down since the last endFrame(). */
@@ -73,6 +79,7 @@ export class Input {
   /** Keys released while the window is unfocused never send keyup; forget them all. */
   private readonly onBlur = () => {
     this.held.clear();
+    this.buttons.clear();
   };
 
   private readonly onPointerMove = (e: PointerEvent) => {
@@ -81,6 +88,11 @@ export class Input {
 
   private readonly onPointerDown = (e: PointerEvent) => {
     this.clicks.push({ button: e.button, ...this.toNdc(e) });
+    this.buttons.add(e.button);
+  };
+
+  private readonly onPointerUp = (e: PointerEvent) => {
+    this.buttons.delete(e.button);
   };
 
   private readonly onPointerLeave = () => {

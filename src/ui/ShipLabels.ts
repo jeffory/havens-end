@@ -24,6 +24,10 @@ export class ShipLabels {
     parent.append(this.layer);
   }
 
+  setVisible(visible: boolean): void {
+    this.layer.hidden = !visible;
+  }
+
   update(labels: readonly ShipLabel[], camera: Camera, width: number, height: number): void {
     const seen = new Set<number>();
     for (const label of labels) {

@@ -2,8 +2,12 @@ import { Color, Fog, NeutralToneMapping, PCFShadowMap, Scene, Vector3, WebGLRend
 import { type Ammo, AMMO_TYPES } from './combat/ammo';
 import { REGION_NAMES, regionTier } from './combat/encounters';
 import { type PlayerOrders, Sea, type SeaEvent } from './combat/sea';
-import { reloadTime, type ShipClass, shipClass, type Side } from './combat/vessel';
+import { reloadTime, type ShipClass, shipClass, type Side, toLocal } from './combat/vessel';
 import { SIM_HZ } from './config';
+import { type DuelCast, DuelScene } from './DuelScene';
+import { buildCharacterModel, type CharacterModel } from './duel/characterModel';
+import type { DuelIntent } from './duel/duel';
+import { cargoCount } from './economy/goods';
 import { Controls } from './core/Controls';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
@@ -26,6 +30,7 @@ import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
 import { TerrainTool } from './tools/TerrainTool';
+import { DuelHud } from './ui/DuelHud';
 import { type CombatReadout, Hud, type NavReadout } from './ui/Hud';
 import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
@@ -50,6 +55,8 @@ const LABEL_RANGE = 220;
 const FRAME_RANGE = 100;
 const FRAME_SHARE = 0.4;
 const FRAME_MAX_SHIFT = 22;
+/** Captain models, by faction (the player's own is 'player'). */
+const CAPTAINS = ['player', 'imperial', 'merchant', 'pirate'] as const;
 const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
 /**
@@ -83,14 +90,19 @@ export class Game {
   private readonly tool: TerrainTool;
   private readonly hud: Hud;
   private readonly labels: ShipLabels;
+  private readonly duelHud: DuelHud;
   private readonly loop: GameLoop;
+  /** The captains' duel in progress, if boarding led to one. The sea waits while it's on. */
+  private duel: DuelScene | null = null;
+  /** Seconds spent in duels: keeps the waves moving while the sea simulation waits. */
+  private pausedTime = 0;
 
   /** Standing orders from the helm: canvas and shot type persist between key presses. */
   private readonly orders: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
   private readonly cameraTarget = new Vector3();
   private readonly threat = new Vector3();
 
-  /** Loads the ship art, then builds the game. */
+  /** Loads the ship and captain art, then builds the game. */
   static async create(container: HTMLElement): Promise<Game> {
     const models = new Map<ShipType, ShipModel>();
     const files = new Map<string, Promise<ArrayBuffer>>();
@@ -98,12 +110,17 @@ export class Game {
       if (!files.has(type.model)) files.set(type.model, load(`${import.meta.env.BASE_URL}${type.model}`));
       models.set(type, buildShipModel(parseVox(await files.get(type.model)!), type.draft));
     }
-    return new Game(container, models);
+    const captains = new Map<string, CharacterModel>();
+    for (const name of CAPTAINS) {
+      captains.set(name, buildCharacterModel(parseVox(await load(`${import.meta.env.BASE_URL}models/characters/${name}.vox`))));
+    }
+    return new Game(container, models, captains);
   }
 
   private constructor(
     private readonly container: HTMLElement,
     models: Map<ShipType, ShipModel>,
+    private readonly captains: Map<string, CharacterModel>,
   ) {
     this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -134,6 +151,7 @@ export class Game {
     this.tool = new TerrainTool(this.world, this.rig.camera);
     this.hud = new Hud(container);
     this.labels = new ShipLabels(container);
+    this.duelHud = new DuelHud(container);
     this.scene.add(
       this.terrain.group,
       this.ocean.group,
@@ -169,6 +187,10 @@ export class Game {
 
   private update(dt: number): void {
     const { controls, orders } = this;
+    if (this.duel) {
+      this.duel.step(dt, this.duelIntent());
+      return;
+    }
     orders.rudder = controls.rudder;
     orders.sails = Math.min(1, Math.max(0, orders.sails + (controls.take('sailUp') - controls.take('sailDown')) * 0.5));
     if (controls.take('ammoRound')) orders.ammo = 'round';
@@ -194,11 +216,13 @@ export class Game {
     for (let n = controls.take('rotateRight'); n > 0; n--) rig.rotate(1);
     rig.zoom(controls.takeZoom(frameSeconds));
 
-    // The rendered moment trails the latest sim step by (1 - alpha) of a step.
-    const behind = (1 - alpha) * this.loop.step;
-    const time = sea.time - behind;
+    // The rendered moment trails the latest sim step by (1 - alpha) of a step. While a
+    // duel pauses the sea, the waves keep going on their own clock.
+    if (this.duel) this.pausedTime += frameSeconds;
+    const behind = this.duel ? 0 : (1 - alpha) * this.loop.step;
+    const time = sea.time - behind + this.pausedTime;
     this.handleEvents(sea.takeEvents(), time);
-    this.fleet.update(sea, alpha, time, frameSeconds);
+    this.fleet.update(sea, this.duel ? 1 : alpha, time, frameSeconds);
 
     const pose = this.fleet.pose(player.id)!;
     const fx = Math.sin(pose.heading);
@@ -210,13 +234,20 @@ export class Game {
       const shift = threat.sub(this.cameraTarget).multiplyScalar(FRAME_SHARE);
       this.cameraTarget.add(shift.clampLength(0, FRAME_MAX_SHIFT));
     }
-    rig.update(this.cameraTarget, frameSeconds);
+    let focus = rig.focus;
+    if (this.duel) {
+      const verdict = this.duel.render(frameSeconds, time);
+      focus = this.duel.focus;
+      if (verdict) this.endDuel(verdict === 'won');
+    } else {
+      rig.update(this.cameraTarget, frameSeconds);
+    }
 
     // Squalls darken the sky and the light.
-    const overhead = this.weather.windAt(rig.focus.x, rig.focus.z, time);
+    const overhead = this.weather.windAt(focus.x, focus.z, time);
     this.sky.lerpColors(SKY_COLOR, STORM_COLOR, overhead.squall);
     this.sun.setOvercast(overhead.squall);
-    this.sun.follow(rig.focus, rig.distance);
+    this.sun.follow(focus, this.duel ? 25 : rig.distance);
     this.fog.near = rig.distance * 1.4;
     this.fog.far = rig.distance * 3.5;
 
@@ -227,15 +258,18 @@ export class Game {
     this.shots.update(sea.shots, behind);
     this.barrels.update(sea.barrels, time);
     this.arcs.update(player);
+    this.arcs.mesh.visible &&= !this.duel;
     this.effects.update(frameSeconds);
-    this.tool.update(this.input);
+    if (!this.duel) this.tool.update(this.input);
 
     this.renderer.render(this.scene, rig.camera);
-    const wind = this.weather.windAt(pose.x, pose.z, time);
-    this.hud.setGamepadConnected(controls.gamepadConnected);
-    this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));
-    this.hud.setCombat(this.combatReadout());
-    this.labels.update(this.shipLabels(), rig.camera, this.container.clientWidth, this.container.clientHeight);
+    if (!this.duel) {
+      const wind = this.weather.windAt(pose.x, pose.z, time);
+      this.hud.setGamepadConnected(controls.gamepadConnected);
+      this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));
+      this.hud.setCombat(this.combatReadout());
+      this.labels.update(this.shipLabels(), rig.camera, this.container.clientWidth, this.container.clientHeight);
+    }
     this.hud.frame(frameSeconds, () => ({
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
@@ -284,21 +318,67 @@ export class Game {
           if (e.vessel === this.sea.player.id) this.hud.toast('Your ship is going down!', 'bad');
           else this.hud.toast(`The ${e.name} is sinking.`, 'good');
           break;
-        case 'captured':
-          this.hud.toast(`The ${e.name} is ours! ${e.joined > 0 ? `${e.joined} of her crew sign on.` : 'No room aboard for any of her crew.'}`, 'good');
+        case 'captured': {
+          const loot = [e.gold > 0 && `${e.gold} gold`, e.goods > 0 && `${e.goods} goods`].filter(Boolean).join(' and ');
+          const hands = e.joined > 0 ? `${e.joined} of her crew sign on.` : 'No room aboard for any of her crew.';
+          this.hud.toast(`The ${e.name} is ours!${loot ? ` Plunder: ${loot}.` : ''} ${hands}`, 'good');
           break;
-        case 'repelled':
-          this.hud.toast(`Boarders repelled by the ${e.name}: ${e.lost} of your crew lost.`, 'bad');
+        }
+        case 'boardingFight':
+          this.startDuel(e.vessel);
+          break;
+        case 'jailed':
+          this.hud.toast(
+            `Thrown in irons! Your freedom costs ${e.fine} gold${e.goods > 0 ? `, and your ${e.goods} goods are seized` : ''}. You are released at ${e.port}.`,
+            'bad',
+          );
+          this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
           break;
         case 'overrun':
           this.hud.toast('Your last hands have fallen and the enemy swarms aboard!', 'bad');
           break;
         case 'respawn':
-          this.hud.toast('You wash ashore at home, and a new sloop is found for you.', 'info');
+          this.hud.toast(`You wash ashore at ${e.port}${e.goods > 0 ? `; your ${e.goods} goods went down with her` : ''}. A new sloop is found for you.`, 'info');
           this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
           break;
       }
     }
+  }
+
+  /** Boarders away: the captains meet on the prize's deck. */
+  private startDuel(vesselId: number): void {
+    const enemy = this.sea.vessel(vesselId);
+    const ship = this.fleet.view(vesselId);
+    if (!enemy || !ship) {
+      this.sea.finishBoarding(false);
+      return;
+    }
+    const player = this.sea.player;
+    const [side] = toLocal(enemy, player.ship.x, player.ship.z);
+    const cast: DuelCast = {
+      player: this.captains.get('player')!,
+      enemy: this.captains.get(enemy.faction === 'player' ? 'pirate' : enemy.faction)!,
+    };
+    const seed = Math.floor(this.sea.random() * 2 ** 31);
+    this.duel = new DuelScene(player, enemy, ship, side, cast, seed, this.duelHud, this.effects, this.rig, this.container);
+    this.controls.setMode('duel');
+    this.hud.setVisible(false);
+    this.labels.setVisible(false);
+  }
+
+  private endDuel(won: boolean): void {
+    this.duel?.dispose();
+    this.duel = null;
+    this.sea.finishBoarding(won);
+    this.controls.setMode('sea');
+    this.hud.setVisible(true);
+    this.labels.setVisible(true);
+  }
+
+  private duelIntent(): DuelIntent {
+    const c = this.controls;
+    const attack = c.take('light') ? 'light' : c.take('heavy') ? 'heavy' : c.take('thrust') ? 'thrust' : c.take('kick') ? 'kick' : null;
+    return { move: c.rudder, block: c.block, attack, roll: c.take('roll') > 0 };
   }
 
   /** The closest other ship still in the fight, if one is near enough to frame. */
@@ -334,6 +414,9 @@ export class Game {
       starboard: loaded('starboard'),
       boardable: this.sea.boardingTarget()?.name ?? null,
       sinking: p.status === 'sinking' || p.status === 'captured',
+      gold: this.sea.captain.gold,
+      cargo: cargoCount(p.cargo),
+      hold: type.hold,
     };
   }
 

@@ -10,7 +10,8 @@ import { AMMO, type Ammo, landingDistance } from './ammo';
 import { dropBarrel } from './barrels';
 import { planGroup, regionTier } from './encounters';
 import { fireBroadside } from './gunnery';
-import { type PlayerOrders, Sea } from './sea';
+import { cargoCount, plunder } from '../economy/goods';
+import { JAIL_FINE, type PlayerOrders, Sea } from './sea';
 import { applyDamage, createVessel, distanceToBody, type Faction, gunsManned, reloadTime, shipClass, type Vessel } from './vessel';
 
 function box(length: number, beam: number): Float32Array {
@@ -310,5 +311,67 @@ describe('fleets', () => {
       if (touching(west, east)) contact++;
     }
     expect(contact).toBe(0);
+  });
+});
+
+describe('boarding, plunder and jail', () => {
+  function alongside(sea: Sea, faction: Faction = 'merchant') {
+    const prize = place(sea, MERCHANT_BRIG, faction, 0, -8);
+    prize.gold = 150;
+    prize.cargo = { sugar: 50, rum: 40 };
+    return prize;
+  }
+
+  it('boarding a ship that has not struck starts the captains’ duel', () => {
+    const sea = newSea();
+    const prize = alongside(sea);
+    run(sea, 0.1, { board: true });
+    expect(sea.boarding).toBe(prize.id);
+    expect(sea.takeEvents().some((e) => e.kind === 'boardingFight')).toBe(true);
+    expect(prize.status).toBe('afloat');
+  });
+
+  it('winning the duel takes the ship, her gold, and as much cargo as the hold takes', () => {
+    const sea = newSea();
+    const prize = alongside(sea);
+    run(sea, 0.1, { board: true });
+    const gold = sea.captain.gold;
+    sea.finishBoarding(true);
+    expect(prize.status).toBe('captured');
+    expect(sea.captain.gold).toBe(gold + 150);
+    expect(cargoCount(sea.player.cargo)).toBe(SLOOP.hold); // 90 aboard her, room for 30
+    expect(sea.boarding).toBeNull();
+  });
+
+  it('losing it means jail: fined, hold emptied, released at the last port', () => {
+    const sea = newSea();
+    alongside(sea);
+    sea.player.cargo = { cloth: 12 };
+    sea.player.ship.x = 300; // wherever the fight happened
+    sea.captain.gold = 1000;
+    sea.boarding = sea.vessels[1].id;
+    sea.finishBoarding(false);
+    expect(sea.captain.gold).toBe(1000 * (1 - JAIL_FINE));
+    expect(cargoCount(sea.player.cargo)).toBe(0);
+    expect(sea.player.ship.x).toBe(sea.captain.lastPort.x);
+    expect(sea.takeEvents().find((e) => e.kind === 'jailed')).toMatchObject({ fine: 300, goods: 12, port: 'Haven' });
+  });
+
+  it('a sunk ship takes her cargo down with her, but the captain keeps their purse', () => {
+    const sea = newSea();
+    sea.player.cargo = { rum: 20 };
+    sea.captain.gold = 500;
+    applyDamage(sea.player, 1000, 0, 0);
+    run(sea, 6);
+    expect(sea.captain.gold).toBe(500);
+    expect(cargoCount(sea.player.cargo)).toBe(0);
+  });
+
+  it('merchants carry cargo worth taking; warships carry a paymaster’s chest', () => {
+    const random = () => 0.5;
+    expect(cargoCount(plunder(MERCHANT_BRIG, 'merchant', random).cargo)).toBeGreaterThan(20);
+    const warship = plunder(BRIG, 'imperial', random);
+    expect(cargoCount(warship.cargo)).toBe(0);
+    expect(warship.gold).toBeGreaterThan(0);
   });
 });

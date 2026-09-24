@@ -18,6 +18,8 @@ export interface ShipType {
   reload: number;
   /** Explosive barrels carried, dropped astern to shake off pursuers. */
   barrels: number;
+  /** Cargo capacity, in units of goods. */
+  hold: number;
 }
 
 /** Quick and handy: the player's first ship, and the light warships of every flag. */
@@ -34,6 +36,7 @@ export const SLOOP: ShipType = {
   gunsPerSide: 4,
   reload: 5.5,
   barrels: 0,
+  hold: 30,
 };
 
 /** A proper warship: slower and heavier, with a broadside that hurts. */
@@ -50,9 +53,10 @@ export const BRIG: ShipType = {
   gunsPerSide: 7,
   reload: 6.5,
   barrels: 0,
+  hold: 60,
 };
 
-export const MERCHANT_SLOOP: ShipType = { ...SLOOP, name: 'merchant sloop', hull: 80, crew: 14, gunsPerSide: 0, barrels: 2 };
+export const MERCHANT_SLOOP: ShipType = { ...SLOOP, name: 'merchant sloop', hull: 80, crew: 14, gunsPerSide: 0, barrels: 2, hold: 40 };
 
 export const MERCHANT_BRIG: ShipType = {
   ...BRIG,
@@ -62,6 +66,7 @@ export const MERCHANT_BRIG: ShipType = {
   crew: 22,
   gunsPerSide: 2,
   barrels: 4,
+  hold: 80,
 };
 
 export const SHIP_TYPES: readonly ShipType[] = [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG];

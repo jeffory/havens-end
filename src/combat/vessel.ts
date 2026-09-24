@@ -1,3 +1,4 @@
+import type { Cargo } from '../economy/goods';
 import { createShip, type Helm, type ShipSpec, type ShipState } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { AiState } from './ai';
@@ -48,6 +49,9 @@ export interface Vessel {
   /** Ships spawned together (a convoy and its escorts) share a group. */
   group: number;
   ai: AiState | null;
+  /** Coin aboard (for AI ships: plunder; the player's purse lives on the captain). */
+  gold: number;
+  cargo: Cargo;
 }
 
 export function shipClass(type: ShipType, outline: Float32Array, deck: number, top: number): ShipClass {
@@ -95,6 +99,8 @@ export function createVessel(
     fate: 0,
     group,
     ai: null,
+    gold: 0,
+    cargo: {},
   };
 }
 

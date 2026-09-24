@@ -36,6 +36,9 @@ export interface CombatReadout {
   /** Name of the ship alongside that could be boarded, if any. */
   boardable: string | null;
   sinking: boolean;
+  gold: number;
+  cargo: number;
+  hold: number;
 }
 
 export type Tone = 'info' | 'good' | 'bad';
@@ -101,6 +104,7 @@ export class Hud {
         <span data-ammo="chain"><kbd>2</kbd> Chain</span>
         <span data-ammo="grape"><kbd>3</kbd> Grape</span>
       </div>
+      <div class="purse"><b data-c="gold"></b> gold · hold <b data-c="hold"></b></div>
       <div class="guns">
         <div><span>Port</span><div class="bar reload"><div data-c="port"></div></div></div>
         <div><span>Starboard</span><div class="bar reload"><div data-c="starboard"></div></div></div>
@@ -137,6 +141,15 @@ export class Hud {
     });
   }
 
+  /** Hides the sailing and gunnery panels (during a duel, which has its own). */
+  setVisible(visible: boolean): void {
+    for (const panel of [this.padHelp.parentElement!, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
+      (panel as HTMLElement).hidden = !visible;
+    }
+    this.combat.prompt.hidden ||= !visible;
+    this.toasts.hidden = !visible;
+  }
+
   setGamepadConnected(connected: boolean): void {
     this.padHelp.hidden = !connected;
   }
@@ -169,6 +182,8 @@ export class Hud {
       this.width(bar, c[side]);
       bar.classList.toggle('loaded', c[side] >= 1);
     }
+    this.text(this.combat.gold, `${c.gold}`);
+    this.text(this.combat.hold, `${c.cargo}/${c.hold}`);
     const prompt = this.combat.prompt;
     const message = c.sinking ? 'Abandon ship!' : c.boardable ? `B / 🎮 B: board the ${c.boardable}` : '';
     prompt.hidden = message === '';

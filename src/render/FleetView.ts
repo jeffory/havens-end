@@ -33,6 +33,10 @@ export class FleetView {
     this.group.name = 'fleet';
   }
 
+  view(id: number): ShipView | undefined {
+    return this.views.get(id);
+  }
+
   /** Where a vessel is drawn this frame (interpolated). */
   pose(id: number): ShipPose | undefined {
     return this.poses.get(id);

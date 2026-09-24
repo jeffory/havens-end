@@ -1,3 +1,4 @@
+import { cargoCount, loadCargo } from '../economy/goods';
 import { stepShip } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { Weather } from '../sailing/weather';
@@ -8,7 +9,7 @@ import type { Ammo } from './ammo';
 import { type Barrel, stepBarrels } from './barrels';
 import { Encounters } from './encounters';
 import { fireBroadside, type Shot, stepShots } from './gunnery';
-import { createVessel, distanceToBody, type ShipClass, type Side, syncCondition, toLocal, type Vessel, type VesselStatus } from './vessel';
+import { createVessel, distanceToBody, type Faction, type ShipClass, type Side, syncCondition, toLocal, type Vessel, type VesselStatus } from './vessel';
 
 export type SeaEvent =
   | { kind: 'fire'; x: number; y: number; z: number; dirX: number; dirZ: number; vessel: number }
@@ -19,11 +20,12 @@ export type SeaEvent =
   | { kind: 'explosion'; x: number; z: number }
   | { kind: 'struck'; vessel: number; name: string }
   | { kind: 'sinking'; vessel: number; name: string }
-  | { kind: 'captured'; vessel: number; name: string; joined: number }
-  | { kind: 'repelled'; vessel: number; name: string; lost: number }
+  | { kind: 'captured'; vessel: number; name: string; joined: number; gold: number; goods: number }
+  | { kind: 'boardingFight'; vessel: number; name: string; faction: Faction }
+  | { kind: 'jailed'; fine: number; goods: number; port: string }
   | { kind: 'spawned'; vessel: number; name: string }
   | { kind: 'overrun' }
-  | { kind: 'respawn' };
+  | { kind: 'respawn'; goods: number; port: string };
 
 /** What the player's helmsman, gun crews and boarding party are told this tick. */
 export interface PlayerOrders {
@@ -36,6 +38,23 @@ export interface PlayerOrders {
 
 const SINK_SECONDS = 7;
 const RESPAWN_SECONDS = 5;
+/** Share of the captain's gold it costs to buy your way out of jail. */
+export const JAIL_FINE = 0.3;
+const STARTING_GOLD = 200;
+
+/** A harbour to come home to. Phase 4 adds more; for now there's Haven, the home island. */
+export interface Port {
+  name: string;
+  x: number;
+  z: number;
+  heading: number;
+}
+
+/** The player as a person rather than a ship: what survives losing the ship. */
+export interface Captain {
+  gold: number;
+  lastPort: Port;
+}
 const CAPTURED_SECONDS = 1.5;
 const BOARDING_GAP = 5;
 const BOARDING_SPEED = 4;
@@ -55,7 +74,9 @@ export class Sea {
   readonly random: () => number;
   readonly encounters = new Encounters();
   private events: SeaEvent[] = [];
-  private readonly home: { x: number; z: number; heading: number };
+  readonly captain: Captain;
+  /** The ship the player is fighting their way aboard, while the captains' duel plays out. */
+  boarding: number | null = null;
 
   constructor(
     readonly world: VoxelWorld,
@@ -68,7 +89,7 @@ export class Sea {
     private readonly spawning = true,
   ) {
     this.random = mulberry32(seed);
-    this.home = { ...start };
+    this.captain = { gold: STARTING_GOLD, lastPort: { name: 'Haven', ...start } };
     this.add(createVessel(this.nextId++, 'Your sloop', 'player', this.classFor(playerType), start.x, start.z, start.heading, 0));
   }
 
@@ -182,37 +203,58 @@ export class Sea {
   }
 
   /**
-   * Boarding. A ship that has struck is taken without a fight; otherwise the crews fight
-   * it out, weighted by numbers. (Phase 3b replaces the dice with a captains' duel.)
+   * Boarding. A ship that has struck is taken without a fight. Otherwise the captains
+   * duel on her deck: the sim waits (the game stops stepping it) until finishBoarding().
    */
   private board(): void {
     const target = this.boardingTarget();
     if (!target) return;
-    const p = this.player;
-    let won = target.status === 'struck';
-    if (!won) {
-      const ours = p.crew * (0.75 + this.random() * 0.5);
-      const theirs = target.crew * (0.75 + this.random() * 0.5);
-      won = ours > theirs;
-      if (!won) {
-        const lost = Math.round(p.crew * 0.25);
-        p.crew -= lost;
-        target.crew *= 0.9;
-        syncCondition(p);
-        syncCondition(target);
-        this.provoke(target, p.id);
-        this.emit({ kind: 'repelled', vessel: target.id, name: target.name, lost });
-        return;
-      }
-      p.crew = Math.max(1, p.crew - Math.round(target.crew * 0.15));
+    if (target.status === 'struck') {
+      this.capture(target);
+      return;
     }
-    // Half the prize crew sign on, as far as there are hammocks for them.
-    const joined = Math.min(p.cls.type.crew - Math.floor(p.crew), Math.floor(target.crew * 0.5));
-    p.crew += Math.max(0, joined);
+    this.boarding = target.id;
+    this.provoke(target, this.player.id);
+    this.emit({ kind: 'boardingFight', vessel: target.id, name: target.name, faction: target.faction });
+  }
+
+  /** The duel is over: take the ship, or be taken. */
+  finishBoarding(won: boolean): void {
+    const target = this.boarding === null ? undefined : this.vessel(this.boarding);
+    this.boarding = null;
+    if (!target) return;
+    if (won) {
+      // The crews fought too: some of ours fall even in victory.
+      const p = this.player;
+      p.crew = Math.max(1, p.crew - Math.round(target.crew * 0.1));
+      syncCondition(p);
+      this.capture(target);
+    } else {
+      this.jail();
+    }
+  }
+
+  /** Takes a prize: her coin, as much cargo as fits, and half her crew if there's room. */
+  private capture(target: Vessel): void {
+    const p = this.player;
+    const joined = Math.max(0, Math.min(p.cls.type.crew - Math.floor(p.crew), Math.floor(target.crew * 0.5)));
+    p.crew += joined;
     syncCondition(p);
+    this.captain.gold += target.gold;
+    const moved = loadCargo(p.cargo, target.cargo, p.cls.type.hold - cargoCount(p.cargo));
     target.status = 'captured';
     target.fate = 0;
-    this.emit({ kind: 'captured', vessel: target.id, name: target.name, joined: Math.max(0, joined) });
+    this.emit({ kind: 'captured', vessel: target.id, name: target.name, joined, gold: target.gold, goods: cargoCount(moved) });
+    target.gold = 0;
+  }
+
+  /** Beaten and taken: pay your way out of jail and start over from the last port, hold empty. */
+  private jail(): void {
+    const fine = Math.round(this.captain.gold * JAIL_FINE);
+    const goods = cargoCount(this.player.cargo);
+    this.captain.gold -= fine;
+    this.newShip();
+    this.emit({ kind: 'jailed', fine, goods, port: this.captain.lastPort.name });
   }
 
   /** Keeps hulls from passing through each other: overlapping ships are eased apart. */
@@ -245,7 +287,8 @@ export class Sea {
       if (v.status !== 'sinking' && v.status !== 'captured') continue;
       v.fate += dt;
       if (v.faction === 'player') {
-        if (v.fate > RESPAWN_SECONDS) this.respawn(v);
+        // Sunk: wash up at the last port. Overrun: the enemy takes you to jail.
+        if (v.fate > RESPAWN_SECONDS) v.status === 'sinking' ? this.respawn() : this.jail();
       } else if (v.fate > (v.status === 'sinking' ? SINK_SECONDS : CAPTURED_SECONDS)) {
         gone.push(v);
       }
@@ -253,12 +296,19 @@ export class Sea {
     this.remove(gone);
   }
 
-  /** A new ship at the home island, patched up and crewed. */
-  private respawn(p: Vessel): void {
-    const fresh = createVessel(p.id, p.name, 'player', p.cls, this.home.x, this.home.z, this.home.heading, 0);
-    this.vessels[0] = fresh;
+  /** Her cargo went down with her; the captain's purse didn't. */
+  private respawn(): void {
+    const goods = cargoCount(this.player.cargo);
+    this.newShip();
+    this.emit({ kind: 'respawn', goods, port: this.captain.lastPort.name });
+  }
+
+  /** A fresh sloop, crewed and with an empty hold, waiting at the last port. */
+  private newShip(): void {
+    const p = this.player;
+    const port = this.captain.lastPort;
+    this.vessels[0] = createVessel(p.id, p.name, 'player', p.cls, port.x, port.z, port.heading, 0);
     this.barrels.length = 0;
-    this.emit({ kind: 'respawn' });
   }
 }
 

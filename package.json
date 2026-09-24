@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "make:placeholder-ship": "tsx scripts/make-placeholder-ship.ts"
+    "make:placeholder-ship": "tsx scripts/make-placeholder-ship.ts",
+    "duel:balance": "tsx scripts/duel-balance.ts",
+    "characters:generate": ".venv/bin/python scripts/generate-characters.py",
+    "characters:voxelize": "for c in player imperial merchant pirate; do .venv/bin/python scripts/voxelize-character.py art-source/characters/$c.glb public/models/characters/$c.vox; done"
   },
   "dependencies": {
     "simplex-noise": "^4.0.3",

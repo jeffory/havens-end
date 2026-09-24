@@ -27,6 +27,9 @@ const BURSTS = {
   dust: { count: 8, color: 0xd9c38e, alt: 0x8f9193, size: [0.25, 0.5], speed: [1.5, 4], lift: 3, life: [0.6, 1.2], gravity: 10, drag: 0.6, grow: 1.4 },
   fire: { count: 22, color: 0xffb13b, alt: 0xff5a1f, size: [0.5, 1.1], speed: [3, 9], lift: 4, life: [0.3, 0.7], gravity: 2, drag: 0.4, grow: 1.6 },
   blackSmoke: { count: 14, color: 0x3d3a36, alt: 0x5c5852, size: [1, 1.8], speed: [1, 4], lift: 2.5, life: [1.8, 3], gravity: -0.8, drag: 0.3, grow: 2.4 },
+  sparks: { count: 10, color: 0xfff3c4, alt: 0xffc94d, size: [0.05, 0.1], speed: [3, 7], lift: 1.5, life: [0.12, 0.3], gravity: 12, drag: 0.5, grow: 1 },
+  parrySparks: { count: 22, color: 0xffe066, alt: 0xffffff, size: [0.07, 0.14], speed: [4, 9], lift: 2, life: [0.2, 0.45], gravity: 10, drag: 0.4, grow: 1 },
+  wound: { count: 8, color: 0xd9412f, alt: 0xff8a5c, size: [0.05, 0.1], speed: [2, 5], lift: 1.5, life: [0.2, 0.4], gravity: 14, drag: 0.6, grow: 1 },
   bubbles: { count: 3, color: 0xe8f7fb, size: [0.2, 0.45], speed: [0.2, 1], lift: 1.5, life: [0.5, 1], gravity: -1, drag: 0.8, grow: 1 },
 } satisfies Record<string, Burst>;
 

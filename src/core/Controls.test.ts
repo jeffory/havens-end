@@ -41,3 +41,19 @@ describe('readPad', () => {
     expect(readPad(pad(undefined, [PAD.A]), new Set()).actions).toEqual(['sailDown']);
   });
 });
+
+describe('readPad in a duel', () => {
+  it('maps the face buttons to sword work', () => {
+    expect(readPad(pad(undefined, [PAD.X]), new Set(), 'duel').actions).toEqual(['light']);
+    expect(readPad(pad(undefined, [PAD.Y]), new Set(), 'duel').actions).toEqual(['heavy']);
+    expect(readPad(pad(undefined, [PAD.A]), new Set(), 'duel').actions).toEqual(['roll']);
+    expect(readPad(pad(undefined, [PAD.B]), new Set(), 'duel').actions).toEqual(['kick']);
+    expect(readPad(pad(undefined, [PAD.RB]), new Set(), 'duel').actions).toEqual(['thrust']);
+  });
+
+  it('holds the guard up on either left shoulder button', () => {
+    expect(readPad(pad(undefined, [PAD.LB]), new Set(), 'duel').block).toBe(true);
+    expect(readPad(pad(undefined, [PAD.LT]), new Set(), 'duel').block).toBe(true);
+    expect(readPad(pad(), new Set(), 'duel').block).toBe(false);
+  });
+});

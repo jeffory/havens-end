@@ -1,4 +1,5 @@
 import { SEA_LEVEL } from '../config';
+import { plunder } from '../economy/goods';
 import { hullContacts } from '../sailing/ship';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP, type ShipType } from '../sailing/ships';
 import { createAi, sailable } from './ai';
@@ -121,6 +122,7 @@ export class Encounters {
         const v = createVessel(sea.nextId++, this.name(sea, member), member.faction, sea.classFor(member.type), places[i].x, places[i].z, heading, group);
         v.helm.sails = 0.5;
         v.ship.sail = 0.5;
+        Object.assign(v, plunder(member.type, member.faction, sea.random));
         v.ai = createAi(destX + (destX - x), destZ + (destZ - z), heading);
         if (leader) {
           v.ai.leader = leader.id;

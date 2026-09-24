@@ -308,3 +308,197 @@ canvas {
 .ship-labels {
   z-index: 1;
 }
+
+/* ---- Captains' duel ---- */
+.duel-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  font: 13px/1.4 system-ui, sans-serif;
+  color: #fff8ea;
+}
+
+.duel-top {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 16px;
+}
+
+.duel-side {
+  max-width: 380px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
+.duel-side.foe {
+  justify-self: end;
+  width: 100%;
+  text-align: right;
+}
+
+.duel-side b {
+  font-size: 15px;
+}
+
+.duel-side .bar {
+  margin-top: 4px;
+  background: rgb(0 0 0 / 0.35);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.duel-side.foe .bar > div {
+  margin-left: auto;
+}
+
+.duel-hp {
+  height: 12px;
+}
+
+.duel-hp > div {
+  background: linear-gradient(#e0473a, #a8261d);
+}
+
+.duel-st {
+  height: 6px;
+}
+
+.duel-st > div {
+  background: #e9c46a;
+}
+
+.duel-st > div.winded {
+  background: #8a8174;
+}
+
+.duel-title {
+  padding: 4px 14px 6px;
+  border-radius: 8px;
+  background: rgb(20 24 30 / 0.7);
+  font: 800 20px/1.1 system-ui, sans-serif;
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
+.duel-title span {
+  display: block;
+  font: 500 11px system-ui, sans-serif;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+
+/* The parry cue: a ring closing on the enemy's blade. */
+.duel-cue {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.duel-cue .ring,
+.duel-cue .core {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.duel-cue .ring {
+  border: 3px solid #fff;
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.6);
+}
+
+.duel-cue .core {
+  border: 2px solid rgb(255 255 255 / 0.55);
+}
+
+.duel-cue.red .ring {
+  border-color: #ff3b2f;
+  box-shadow: 0 0 10px #ff3b2f;
+}
+
+.duel-cue.now .ring {
+  border-color: #ffd23f;
+  box-shadow: 0 0 12px #ffd23f;
+}
+
+.duel-pop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font: 900 20px system-ui, sans-serif;
+  text-shadow: 0 2px 3px rgb(0 0 0 / 0.7);
+  white-space: nowrap;
+  animation: duel-pop 1s ease-out forwards;
+}
+
+.duel-pop.good { color: #9ff29a; }
+.duel-pop.bad { color: #ff7a6b; }
+.duel-pop.info { color: #fff8ea; font-size: 16px; }
+.duel-pop.gold { color: #ffd23f; font-size: 26px; }
+
+@keyframes duel-pop {
+  0% { opacity: 0; margin-top: 6px; }
+  15% { opacity: 1; margin-top: 0; }
+  100% { opacity: 0; margin-top: -42px; }
+}
+
+.duel-help {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgb(20 24 30 / 0.65);
+  text-align: center;
+}
+
+.duel-help kbd {
+  display: inline-block;
+  min-width: 1.3em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.18);
+  font: 600 11px/17px ui-monospace, monospace;
+}
+
+.duel-help .pad {
+  display: block;
+  opacity: 0.7;
+}
+
+.duel-result {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 16px 28px;
+  border-radius: 12px;
+  background: rgb(20 24 30 / 0.82);
+  text-align: center;
+}
+
+.duel-result b {
+  display: block;
+  font: 900 34px system-ui, sans-serif;
+}
+
+.duel-result.won b { color: #ffd23f; }
+.duel-result.lost b { color: #ff7a6b; }
+
+/* The hidden attribute must win over panels that set their own display. */
+[hidden] {
+  display: none !important;
+}
+
+.hud-combat .purse {
+  margin: 2px 0 4px;
+  font-size: 12px;
+}

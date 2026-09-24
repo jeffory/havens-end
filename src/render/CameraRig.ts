@@ -35,6 +35,9 @@ export class CameraRig {
   distance: number;
   private targetYaw: number;
   private targetDistance: number;
+  private framing = false;
+  private readonly framedPosition = new Vector3();
+  private readonly framedTarget = new Vector3();
   private readonly options: CameraRigOptions;
 
   constructor(aspect: number, options: Partial<CameraRigOptions> = {}) {
@@ -80,6 +83,26 @@ export class CameraRig {
     const s = Math.sin(this.yaw);
     const c = Math.cos(this.yaw);
     return { forwardX: -s, forwardZ: -c, rightX: c, rightZ: -s };
+  }
+
+  /** Eases the camera to an explicit shot (the duel), from wherever it was. */
+  frame(position: Vector3, target: Vector3, dt: number): void {
+    if (!this.framing) {
+      this.framing = true;
+      this.framedPosition.copy(this.camera.position);
+      this.framedTarget.copy(this.focus);
+    }
+    const k = 1 - Math.exp(-4 * dt);
+    this.framedPosition.lerp(position, k);
+    this.framedTarget.lerp(target, k);
+    this.camera.position.copy(this.framedPosition);
+    this.camera.lookAt(this.framedTarget);
+  }
+
+  /** Back to following the ship. */
+  release(): void {
+    this.framing = false;
+    this.place();
   }
 
   setAspect(aspect: number): void {

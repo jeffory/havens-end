@@ -36,8 +36,8 @@ interface Sail {
  */
 export class ShipView {
   readonly root = new Group();
-  /** Wave motion and heel happen on this inner group, so the root keeps the true pose. */
-  private readonly body = new Group();
+  /** Wave motion and heel happen on this inner group, so the root keeps the true pose. Things on deck go here. */
+  readonly body = new Group();
   private readonly sails: Sail[] = [];
   private readonly flags: Group[] = [];
   private heave = 0;
