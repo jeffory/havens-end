@@ -5,7 +5,7 @@ Date: 2026-09-24. Status: approved; building on branch `asset-tooling`.
 ## Goal
 
 A command-line tool that turns prompts into finished, game-ready art for Haven's End,
-using the user's self-hosted ComfyUI (http://127.0.0.1:8188). It mixes free
+using the user's self-hosted ComfyUI (its address set as `COMFY_URL` in `.env`). It mixes free
 local models with paid partner models, aiming at "Higgsfield-level" quality. Candidates
 are picked by a human.
 
@@ -39,7 +39,7 @@ TypeScript under `scripts/assetgen/`, run with `npm run asset -- <command>` (tsx
 
 | Module | Responsibility |
 |---|---|
-| `env.ts` | Loads `.env`; `COMFY_URL` (default the home server), `COMFY_API_KEY` |
+| `env.ts` | Loads `.env`; `COMFY_URL` (default ComfyUI's local `http://127.0.0.1:8188`), `COMFY_API_KEY` |
 | `comfy/graph.ts` | Tiny builder for ComfyUI API-format graphs |
 | `comfy/client.ts` | Upload, submit (with the key), poll history, download outputs, surface node errors |
 | `comfy/pipelines.ts` | Graph builders: text-to-image per model, seam repair, background removal, normal/height, upscale, image→3D |

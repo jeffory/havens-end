@@ -1,22 +1,23 @@
 # assetgen: prompts to game-ready art
 
 `npm run asset` turns short descriptions into finished assets for Haven's End. It runs
-them through the ComfyUI server at http://127.0.0.1:8188, mixing paid
-partner models (Nano Banana Pro, FLUX.2, GPT Image, Tripo 3D) with free models on the
-local GPU (FLUX.2 Klein, SDXL, BiRefNet, Deep Bump). Generation is only half the job.
+them through a ComfyUI server, mixing paid partner models (Nano Banana Pro, FLUX.2,
+GPT Image, Tripo 3D) with free models on the server's GPU (FLUX.2 Klein, SDXL,
+BiRefNet, Deep Bump). Generation is only half the job.
 The tool also turns "AI pixel art" into true pixel art, makes textures tile, cuts out
 sprites, and voxelizes 3D models.
 
 ## Setup
 
 1. `npm install` (the tool needs `sharp` and Node 20.12 or newer).
-2. Put a Comfy platform API key in the gitignored `.env` at the repo root:
-   `COMFY_API_KEY=…` (create one at https://platform.comfy.org/profile/api-keys).
-   Without it only the free local models work. Logging in to the ComfyUI web page
-   does not help: scripts need the key.
+2. Copy `.env.example` to `.env` at the repo root (it's gitignored) and fill it in:
+   - `COMFY_URL`: your ComfyUI server. Leave it out for ComfyUI's default,
+     `http://127.0.0.1:8188`.
+   - `COMFY_API_KEY`: a Comfy platform API key, from
+     https://platform.comfy.org/profile/api-keys. Without it only the free local
+     models work. Logging in to the ComfyUI web page doesn't help: scripts need the
+     key.
 3. `npm run asset -- doctor` checks the server, nodes, models and key.
-
-`COMFY_URL` in `.env` points the tool at a different ComfyUI server.
 
 ## The loop: generate, look, pick
 

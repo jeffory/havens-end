@@ -13,7 +13,7 @@ npm run build                  # typecheck + production bundle in dist/
 npm run make:placeholder-ship  # regenerate the placeholder sloop and brig
 npm run duel:balance           # win rates of a scripted player vs each enemy captain
 
-# Captain art (needs COMFY_API_KEY in .env, and the Python venv:
+# Captain art (needs a ComfyUI server and key in .env: see .env.example; and the Python venv:
 #   python3 -m venv --system-site-packages .venv && .venv/bin/pip install trimesh)
 npm run characters:generate    # Tripo via ComfyUI -> art-source/characters/*.glb
 npm run characters:voxelize    # -> public/models/characters/*.vox
@@ -123,11 +123,15 @@ conventions (axes, naming the `hull` / `sail` / `flag` objects) are in
 ## Generated art
 
 `npm run asset` generates pixel-art block textures, voxel colour patterns, sprites,
-icons, HD materials and `.vox` props through the ComfyUI server. It needs
-`COMFY_API_KEY` in `.env` for the paid models. See
+icons, HD materials and `.vox` props through a ComfyUI server. Copy `.env.example` to
+`.env` and set `COMFY_URL` (your server) and `COMFY_API_KEY` (for the paid models). See
 [scripts/assetgen/README.md](scripts/assetgen/README.md).
 
 ## Docs
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
 model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, settlers, workshops and the night, the character art pipeline, simulation rules and roadmap.
+
+## License
+
+MIT: see [LICENSE](LICENSE).

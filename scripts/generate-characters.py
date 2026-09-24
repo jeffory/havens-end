@@ -5,7 +5,8 @@ partner nodes), saving them to art-source/characters/*.glb (gitignored: they're 
 and regenerating costs credits). Turn them into game voxels with
 scripts/voxelize-character.py.
 
-Needs COMFY_API_KEY in .env. Usage: .venv/bin/python scripts/generate-characters.py [id ...]
+Needs COMFY_API_KEY in .env, and COMFY_URL if the server isn't ComfyUI's default local
+address. Usage: .venv/bin/python scripts/generate-characters.py [id ...]
 """
 import json
 import pathlib
@@ -15,7 +16,6 @@ import uuid
 
 import requests
 
-COMFY = "http://127.0.0.1:8188"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "art-source" / "characters"
 
@@ -36,11 +36,21 @@ CHARACTERS = {
 }
 
 
-def api_key() -> str:
-    for line in (ROOT / ".env").read_text().splitlines():
-        if line.startswith("COMFY_API_KEY="):
+def env(name: str) -> str | None:
+    """A setting from the gitignored .env at the repo root, if it's there."""
+    path = ROOT / ".env"
+    for line in path.read_text().splitlines() if path.exists() else []:
+        if line.startswith(f"{name}="):
             return line.split("=", 1)[1].strip()
-    sys.exit("COMFY_API_KEY missing from .env")
+    return None
+
+
+# The ComfyUI server: its own default local address unless .env says otherwise.
+COMFY = (env("COMFY_URL") or "http://127.0.0.1:8188").rstrip("/")
+
+
+def api_key() -> str:
+    return env("COMFY_API_KEY") or sys.exit("COMFY_API_KEY missing from .env")
 
 
 def workflow(prompt: str, seed: int) -> dict:

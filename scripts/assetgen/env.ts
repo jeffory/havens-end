@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 /** The repository root (this file lives in scripts/assetgen/). */
 export const ROOT = resolve(import.meta.dirname, '../..');
 
+/** ComfyUI's own default address; set `COMFY_URL` in .env to use another server. */
 export const DEFAULT_COMFY_URL = 'http://127.0.0.1:8188';
 
 /** Loads the gitignored .env at the repo root, if present. Variables already set win. */
