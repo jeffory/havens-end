@@ -1,3 +1,4 @@
+import { huntsPlayer, merchantsWary } from '../economy/reputation';
 import { WATER_LEVEL } from '../ocean/waves';
 import { angleOffWind } from '../sailing/pointOfSail';
 import type { Wind } from '../sailing/weather';
@@ -68,15 +69,21 @@ function decide(sea: Sea, v: Vessel, ai: AiState): void {
   const wind = sea.weather.windAt(ship.x, ship.z, sea.time);
   const isMerchant = v.faction === 'merchant';
 
+  // Who comes for the player unprovoked depends on the captain's name among each flag.
+  const standing = sea.captain.standing;
   let course = ai.course;
-  if (playerFightable && isMerchant && (ai.alerted || distance < MERCHANT_SIGHT)) {
+  if (playerFightable && isMerchant && (ai.alerted || (distance < MERCHANT_SIGHT && merchantsWary(standing)))) {
     ai.mode = 'flee';
     course = Math.atan2(-dx, -dz);
     v.helm.sails = 1;
     // A pursuer close astern gets a keg of powder in her path.
     const [bx, bz] = [-Math.sin(ship.heading), -Math.cos(ship.heading)];
     if (distance < 45 && (dx * bx + dz * bz) / distance > Math.cos((50 * Math.PI) / 180)) dropBarrel(sea, v);
-  } else if (playerFightable && !isMerchant && (ai.alerted || distance < WARSHIP_SIGHT || (leader?.ai?.alerted ?? false))) {
+  } else if (
+    playerFightable &&
+    !isMerchant &&
+    (ai.alerted || (distance < WARSHIP_SIGHT && huntsPlayer(standing, v.faction)) || (leader?.ai?.alerted ?? false))
+  ) {
     ai.mode = 'engage';
     course = engage(sea, v, dx, dz, distance);
     v.helm.sails = 1;

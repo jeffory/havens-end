@@ -1,5 +1,9 @@
+import { type Captain, createCaptain } from '../economy/captain';
+import { creditBounties } from '../economy/contracts';
 import { cargoCount, loadCargo } from '../economy/goods';
-import { stepShip } from '../sailing/ship';
+import type { Port, PortFaction } from '../economy/ports';
+import { applyDeed, type Deed, portOpen } from '../economy/reputation';
+import { hullContacts, type ShipSpec, stepShip } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { Weather } from '../sailing/weather';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
@@ -19,13 +23,17 @@ export type SeaEvent =
   | { kind: 'barrel'; x: number; z: number }
   | { kind: 'explosion'; x: number; z: number }
   | { kind: 'struck'; vessel: number; name: string }
-  | { kind: 'sinking'; vessel: number; name: string }
-  | { kind: 'captured'; vessel: number; name: string; joined: number; gold: number; goods: number }
+  | { kind: 'sinking'; vessel: number; name: string; faction: Faction }
+  | { kind: 'captured'; vessel: number; name: string; faction: Faction; joined: number; gold: number; goods: number }
   | { kind: 'boardingFight'; vessel: number; name: string; faction: Faction }
   | { kind: 'jailed'; fine: number; goods: number; port: string }
   | { kind: 'spawned'; vessel: number; name: string }
   | { kind: 'overrun' }
-  | { kind: 'respawn'; goods: number; port: string };
+  | { kind: 'respawn'; goods: number; port: string }
+  | { kind: 'standing'; faction: PortFaction; from: number; to: number }
+  | { kind: 'bounty'; contract: number; target: PortFaction; progress: number; count: number }
+  | { kind: 'docked'; port: number }
+  | { kind: 'refused'; port: number; reason: DockProblem };
 
 /** What the player's helmsman, gun crews and boarding party are told this tick. */
 export interface PlayerOrders {
@@ -33,28 +41,23 @@ export interface PlayerOrders {
   sails: number;
   ammo: Ammo;
   fire: Side[];
+  /** Board the ship alongside or, in a harbour, go ashore. */
   board: boolean;
 }
+
+/** Why the harbour won't take you right now. */
+export type DockProblem = 'closed' | 'fast' | 'enemies';
 
 const SINK_SECONDS = 7;
 const RESPAWN_SECONDS = 5;
 /** Share of the captain's gold it costs to buy your way out of jail. */
 export const JAIL_FINE = 0.3;
-const STARTING_GOLD = 200;
-
-/** A harbour to come home to. Phase 4 adds more; for now there's Haven, the home island. */
-export interface Port {
-  name: string;
-  x: number;
-  z: number;
-  heading: number;
-}
-
-/** The player as a person rather than a ship: what survives losing the ship. */
-export interface Captain {
-  gold: number;
-  lastPort: Port;
-}
+/** Within this of a berth you're in the harbour, and can dock. */
+export const HARBOUR_RADIUS = 45;
+/** Come in slower than this (u/s) to go alongside. */
+export const DOCK_SPEED = 3;
+/** No docking while a ship that's fighting you is this close. */
+const DOCK_CLEARANCE = 90;
 const CAPTURED_SECONDS = 1.5;
 const BOARDING_GAP = 5;
 const BOARDING_SPEED = 4;
@@ -77,20 +80,26 @@ export class Sea {
   readonly captain: Captain;
   /** The ship the player is fighting their way aboard, while the captains' duel plays out. */
   boarding: number | null = null;
+  /** The port the player is ashore in. The sea waits (the game stops stepping it) until undock(). */
+  docked: Port | null = null;
 
   constructor(
     readonly world: VoxelWorld,
     readonly weather: Weather,
     private readonly classes: Map<ShipType, ShipClass>,
-    playerType: ShipType,
-    start: { x: number; z: number; heading: number },
+    /** The ship a captain starts with, and is given again after losing one. */
+    private readonly starter: ShipType,
+    /** Every harbour in the archipelago; the first is home, where the game starts. */
+    readonly ports: readonly Port[],
     seed: number,
     /** Tests switch the encounter director off to stage exact situations. */
     private readonly spawning = true,
   ) {
     this.random = mulberry32(seed);
-    this.captain = { gold: STARTING_GOLD, lastPort: { name: 'Haven', ...start } };
-    this.add(createVessel(this.nextId++, 'Your sloop', 'player', this.classFor(playerType), start.x, start.z, start.heading, 0));
+    this.captain = createCaptain(ports[0]);
+    const cls = this.classFor(starter);
+    const berth = this.berthFor(cls.spec, ports[0]);
+    this.add(createVessel(this.nextId++, 'Your sloop', 'player', cls, berth.x, berth.z, berth.heading, 0));
   }
 
   /** The player's ship is always the first vessel. */
@@ -182,14 +191,90 @@ export class Sea {
   reportStatusChange(v: Vessel, before: VesselStatus): void {
     if (v.status === before) return;
     if (v.status === 'struck') this.emit({ kind: 'struck', vessel: v.id, name: v.name });
-    if (v.status === 'sinking') this.emit({ kind: 'sinking', vessel: v.id, name: v.name });
+    if (v.status === 'sinking') {
+      this.emit({ kind: 'sinking', vessel: v.id, name: v.name, faction: v.faction });
+      // Only ships the player had fired on count as the player's work.
+      if (v.ai?.alerted) this.deed(v, 'sink');
+    }
     if (v.status === 'captured' && v.faction === 'player') this.emit({ kind: 'overrun' });
   }
 
-  /** Being shot at makes a ship (and her whole group) hostile to whoever fired. */
+  /**
+   * Being shot at makes a ship (and her whole group) hostile to whoever fired. Firing
+   * first on a ship that wasn't already fighting you is an attack, and word gets round.
+   */
   provoke(v: Vessel, attacker: number): void {
     if (attacker !== this.player.id) return;
-    for (const other of this.vessels) if (other.group === v.group && other.ai) other.ai.alerted = true;
+    const group = this.vessels.filter((o) => o.group === v.group && o.ai);
+    const unprovoked = group.some((o) => !o.ai!.alerted) && group.every((o) => o.ai!.mode !== 'engage');
+    for (const o of group) o.ai!.alerted = true;
+    if (unprovoked) this.deed(v, 'attack');
+  }
+
+  /** What the world makes of what the captain did: standing with every flag, and bounties. */
+  private deed(v: Vessel, deed: Deed): void {
+    if (v.faction === 'player') return;
+    for (const change of applyDeed(this.captain.standing, v.faction, deed)) this.emit({ kind: 'standing', ...change });
+    if (deed === 'attack') return;
+    for (const b of creditBounties(this.captain.contracts, v.faction)) {
+      this.emit({ kind: 'bounty', contract: b.id, target: b.target, progress: b.progress, count: b.count });
+    }
+  }
+
+  /** The harbour the player is in, if any. */
+  harbour(): Port | null {
+    const { x, z } = this.player.ship;
+    return this.ports.find((port) => Math.hypot(port.x - x, port.z - z) < HARBOUR_RADIUS) ?? null;
+  }
+
+  /** What's stopping the player going alongside in this port, if anything. */
+  dockProblem(port: Port): DockProblem | null {
+    const p = this.player.ship;
+    if (!portOpen(this.captain.standing, port.faction)) return 'closed';
+    if (Math.abs(p.surge) > DOCK_SPEED) return 'fast';
+    const hunted = this.vessels.some(
+      (v) => v.ai?.mode === 'engage' && v.status === 'afloat' && Math.hypot(v.ship.x - p.x, v.ship.z - p.z) < DOCK_CLEARANCE,
+    );
+    return hunted ? 'enemies' : null;
+  }
+
+  /** Where a ship of this hull lies at a port: the berth, or as near it as she fits. */
+  berthFor(spec: ShipSpec, port: Port): { x: number; z: number; heading: number } {
+    const fx = Math.sin(port.heading);
+    const fz = Math.cos(port.heading);
+    let x = port.x;
+    let z = port.z;
+    const clear = () => [-3, 0, 3].every((d) => hullContacts(this.world, spec, x + fx * d, z + fz * d, port.heading) === 0);
+    for (let i = 0; i < 100 && !clear(); i++) {
+      x += fx;
+      z += fz;
+    }
+    return { x, z, heading: port.heading };
+  }
+
+  /** Back to sea from the berth. */
+  undock(): void {
+    this.docked = null;
+  }
+
+  /**
+   * The shipyard's work: the player's ship replaced by one of `cls`, lying at the berth.
+   * Crew and cargo come across as far as they fit; the caller checks the cargo does.
+   */
+  refit(cls: ShipClass, name: string, upgrades: Vessel['upgrades'] = []): Vessel {
+    const old = this.player;
+    const port = this.docked ?? this.captain.lastPort;
+    const berth = this.berthFor(cls.spec, port);
+    const v = createVessel(old.id, name, 'player', cls, berth.x, berth.z, berth.heading, 0);
+    v.crew = Math.min(cls.type.crew, Math.floor(old.crew));
+    v.hull = Math.min(cls.type.hull, old.cls.design === cls.design ? old.hull : cls.type.hull);
+    v.sails = old.cls.design === cls.design ? Math.min(cls.type.sails, old.sails) : cls.type.sails;
+    v.cargo = old.cargo;
+    v.ammo = old.ammo;
+    v.upgrades = upgrades;
+    syncCondition(v);
+    this.vessels[0] = v;
+    return v;
   }
 
   private obey(orders: PlayerOrders): void {
@@ -199,7 +284,30 @@ export class Sea {
     p.helm.sails = orders.sails;
     p.ammo = orders.ammo;
     for (const side of orders.fire) fireBroadside(this, p, side);
-    if (orders.board) this.board();
+    if (orders.board) {
+      if (this.boardingTarget()) this.board();
+      else this.dock();
+    }
+  }
+
+  /** Goes alongside in the harbour the player is in, if it'll have them. */
+  private dock(): void {
+    const port = this.harbour();
+    if (!port) return;
+    const problem = this.dockProblem(port);
+    if (problem) {
+      this.emit({ kind: 'refused', port: port.id, reason: problem });
+      return;
+    }
+    const p = this.player;
+    const berth = this.berthFor(p.cls.spec, port);
+    Object.assign(p.ship, { x: berth.x, z: berth.z, heading: berth.heading, surge: 0, sway: 0, yawRate: 0, rudder: 0, sail: 0 });
+    Object.assign(p.prev, { x: berth.x, z: berth.z, heading: berth.heading });
+    p.helm.sails = 0;
+    p.helm.rudder = 0;
+    this.docked = port;
+    this.captain.lastPort = port;
+    this.emit({ kind: 'docked', port: port.id });
   }
 
   /**
@@ -244,8 +352,9 @@ export class Sea {
     const moved = loadCargo(p.cargo, target.cargo, p.cls.type.hold - cargoCount(p.cargo));
     target.status = 'captured';
     target.fate = 0;
-    this.emit({ kind: 'captured', vessel: target.id, name: target.name, joined, gold: target.gold, goods: cargoCount(moved) });
+    this.emit({ kind: 'captured', vessel: target.id, name: target.name, faction: target.faction, joined, gold: target.gold, goods: cargoCount(moved) });
     target.gold = 0;
+    this.deed(target, 'capture');
   }
 
   /** Beaten and taken: pay your way out of jail and start over from the last port, hold empty. */
@@ -306,21 +415,22 @@ export class Sea {
   /** A fresh sloop, crewed and with an empty hold, waiting at the last port. */
   private newShip(): void {
     const p = this.player;
-    const port = this.captain.lastPort;
-    this.vessels[0] = createVessel(p.id, p.name, 'player', p.cls, port.x, port.z, port.heading, 0);
+    const cls = this.classFor(this.starter);
+    const berth = this.berthFor(cls.spec, this.captain.lastPort);
+    this.vessels[0] = createVessel(p.id, 'Your sloop', 'player', cls, berth.x, berth.z, berth.heading, 0);
     this.barrels.length = 0;
   }
 }
 
-/** Does any of `a`'s waterline outline lie inside `b`'s hull? */
+/** Does any of `a`'s waterline footprint lie inside `b`'s hull? (Every other sample is plenty.) */
 function overlaps(a: Vessel, b: Vessel): boolean {
-  const outline = a.cls.spec.outline;
+  const footprint = a.cls.spec.footprint;
   const s = Math.sin(a.ship.heading);
   const c = Math.cos(a.ship.heading);
   const body = b.cls.body;
-  for (let i = 0; i < outline.length; i += 4) {
-    const x = a.ship.x + outline[i] * c + outline[i + 1] * s;
-    const z = a.ship.z - outline[i] * s + outline[i + 1] * c;
+  for (let i = 0; i < footprint.length; i += 4) {
+    const x = a.ship.x + footprint[i] * c + footprint[i + 1] * s;
+    const z = a.ship.z - footprint[i] * s + footprint[i + 1] * c;
     const [lx, lz] = toLocal(b, x, z);
     if (Math.abs(lx) < body.halfBeam && lz > body.stern && lz < body.bow) return true;
   }

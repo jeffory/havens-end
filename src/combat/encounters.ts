@@ -4,6 +4,7 @@ import { hullContacts } from '../sailing/ship';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP, type ShipType } from '../sailing/ships';
 import { createAi, sailable } from './ai';
 import type { Sea } from './sea';
+import type { PortFaction } from '../economy/ports';
 import { createVessel, type Faction, type Vessel } from './vessel';
 
 export type Tier = 0 | 1 | 2;
@@ -27,7 +28,13 @@ const merchant = (type: ShipType): GroupMember => ({ type, faction: 'merchant' }
 const imperial = (type: ShipType): GroupMember => ({ type, faction: 'imperial' });
 const pirate = (type: ShipType): GroupMember => ({ type, faction: 'pirate' });
 
-export function planGroup(tier: Tier, roll: number): GroupPlan {
+/**
+ * What sails into view. Near an Imperial port or a pirate haven, `local` makes its own
+ * ships likelier: patrols off the Crown's harbours, raiders off the Brethren's.
+ */
+export function planGroup(tier: Tier, roll: number, local: PortFaction | null = null, localRoll = 1): GroupPlan {
+  if (local === 'imperial' && localRoll < 0.5) return tier === 0 ? [imperial(SLOOP)] : tier === 1 ? [imperial(BRIG)] : [imperial(BRIG), imperial(SLOOP)];
+  if (local === 'pirate' && localRoll < 0.5) return tier === 0 ? [pirate(SLOOP)] : [pirate(SLOOP), pirate(SLOOP)];
   if (tier === 0) {
     if (roll < 0.5) return [merchant(MERCHANT_SLOOP)];
     if (roll < 0.8) return [pirate(SLOOP)];
@@ -62,6 +69,8 @@ const NAMES: Record<Exclude<Faction, 'player'>, string[]> = {
 
 /** How often the director looks around; it needn't run every tick. */
 const REVIEW_INTERVAL = 1;
+/** A port's own ships are commoner within this distance of it. */
+const PORT_WATERS = 500;
 
 export class Encounters {
   private timer = FIRST_SPAWN;
@@ -87,7 +96,8 @@ export class Encounters {
     const tier = regionTier(player.ship.x, player.ship.z);
     const groups = new Set(sea.vessels.filter((v) => v.faction !== 'player').map((v) => v.group)).size;
     if (groups >= 2 + tier) return;
-    const plan = this.spawned < OPENING.length ? OPENING[this.spawned] : planGroup(tier, sea.random());
+    const local = sea.ports.find((p) => Math.hypot(p.x - player.ship.x, p.z - player.ship.z) < PORT_WATERS)?.faction ?? null;
+    const plan = this.spawned < OPENING.length ? OPENING[this.spawned] : planGroup(tier, sea.random(), local, sea.random());
     if (this.spawnGroup(sea, plan)) this.spawned++;
   }
 

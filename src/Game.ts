@@ -1,14 +1,19 @@
+import { createElement } from 'react';
 import { Color, Fog, NeutralToneMapping, PCFShadowMap, Scene, Vector3, WebGLRenderer } from 'three';
 import { type Ammo, AMMO_TYPES } from './combat/ammo';
 import { REGION_NAMES, regionTier } from './combat/encounters';
-import { type PlayerOrders, Sea, type SeaEvent } from './combat/sea';
+import { type DockProblem, type PlayerOrders, Sea, type SeaEvent } from './combat/sea';
 import { reloadTime, type ShipClass, shipClass, type Side, toLocal } from './combat/vessel';
 import { SIM_HZ } from './config';
 import { type DuelCast, DuelScene } from './DuelScene';
 import { buildCharacterModel, type CharacterModel } from './duel/characterModel';
 import type { DuelIntent } from './duel/duel';
+import { BOUNTY_NOUNS } from './economy/contracts';
+import { Economy, type Notice } from './economy/economy';
 import { cargoCount } from './economy/goods';
-import { Controls } from './core/Controls';
+import type { Port } from './economy/ports';
+import { standingNews } from './economy/reputation';
+import { type Action, Controls } from './core/Controls';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { SeabedMap } from './ocean/SeabedMap';
@@ -25,17 +30,20 @@ import { Sun } from './render/Sun';
 import { WakePool } from './render/Wake';
 import { WindStreaks } from './render/WindStreaks';
 import { angleOffWind, pointOfSailName } from './sailing/pointOfSail';
-import { hullContacts } from './sailing/ship';
 import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
 import { TerrainTool } from './tools/TerrainTool';
+import { ChartScreen } from './ui/ChartScreen';
+import type { ChartProps } from './ui/ChartView';
 import { DuelHud } from './ui/DuelHud';
 import { type CombatReadout, Hud, type NavReadout } from './ui/Hud';
+import { Overlay } from './ui/Overlay';
+import { PortScreen } from './ui/port/PortScreen';
 import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
 import { VoxelWorld } from './voxel/VoxelWorld';
-import { generateIsland } from './worldgen/island';
+import { buildArchipelago, type IslandPlan, planArchipelago } from './worldgen/archipelago';
 
 const WORLD_SEED = 1717;
 const SKY_COLOR = new Color(0xa9d9ea);
@@ -44,8 +52,8 @@ const STORM_COLOR = new Color(0x74879a);
 const REMESH_BUDGET = 2;
 /** Seconds of travel the camera looks ahead of the ship, so you see where you're going. */
 const LOOK_AHEAD = 0.8;
-/** Just offshore of the island's south-east beach, heading out on a reach. */
-const START = { x: 44, z: 50, heading: Math.atan2(0.38, 0.92) };
+/** Chunks meshed before the first frame: the home island. Further islands follow, nearest first. */
+const STARTUP_CHUNKS = 64;
 const LABEL_RANGE = 220;
 /**
  * In a fight the camera also frames the nearest enemy within FRAME_RANGE, shifting
@@ -58,6 +66,13 @@ const FRAME_MAX_SHIFT = 22;
 /** Captain models, by faction (the player's own is 'player'). */
 const CAPTAINS = ['player', 'imperial', 'merchant', 'pirate'] as const;
 const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+/** Menu actions passed to whatever screen is open. */
+const MENU_ACTIONS: readonly Action[] = ['navUp', 'navDown', 'navLeft', 'navRight', 'confirm', 'back', 'tabPrev', 'tabNext', 'chart'];
+const REFUSALS: Record<DockProblem, (port: string) => string> = {
+  closed: (port) => `${port} is closed to you. A fixer in another port might smooth things over.`,
+  fast: (port) => `Take in sail: you're coming into ${port} too fast to go alongside.`,
+  enemies: () => "You can't go alongside with enemies on your tail.",
+};
 
 /**
  * Composition root: builds the world, wires simulation to rendering, runs the loop.
@@ -69,7 +84,10 @@ const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', '
 export class Game {
   readonly world = new VoxelWorld();
   readonly weather = new Weather({ seed: WORLD_SEED });
+  readonly islands: readonly IslandPlan[];
+  readonly ports: readonly Port[];
   readonly sea: Sea;
+  readonly economy: Economy;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly sky = SKY_COLOR.clone();
@@ -91,10 +109,15 @@ export class Game {
   private readonly hud: Hud;
   private readonly labels: ShipLabels;
   private readonly duelHud: DuelHud;
+  private readonly overlay: Overlay;
   private readonly loop: GameLoop;
+  /** The port the player chose on the chart; the compass points to it. */
+  private course: Port | null = null;
+  /** Rebuilds whatever menu is open with fresh props (after the course changes). */
+  private screen: (() => void) | null = null;
   /** The captains' duel in progress, if boarding led to one. The sea waits while it's on. */
   private duel: DuelScene | null = null;
-  /** Seconds spent in duels: keeps the waves moving while the sea simulation waits. */
+  /** Seconds spent in duels and menus: keeps the waves moving while the sea simulation waits. */
   private pausedTime = 0;
 
   /** Standing orders from the helm: canvas and shot type persist between key presses. */
@@ -133,12 +156,14 @@ export class Game {
     this.scene.background = this.sky;
     this.scene.fog = this.fog;
 
-    generateIsland(this.world, { seed: WORLD_SEED, centerX: 0, centerZ: 0, radius: 58, peak: 22 });
-    const seabed = new SeabedMap(this.world, -128, -128, 256);
+    this.islands = planArchipelago(WORLD_SEED);
+    this.ports = buildArchipelago(this.world, this.islands);
 
     const classes = new Map<ShipType, ShipClass>();
-    for (const [type, model] of models) classes.set(type, shipClass(type, model.outline, model.deck, model.top));
-    this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.openWater(classes.get(SLOOP)!, START), WORLD_SEED);
+    for (const [type, model] of models) classes.set(type, shipClass(type, model.footprint, model.deck, model.top));
+    this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.ports, WORLD_SEED);
+    this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
+    const seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z);
 
     this.input = new Input(this.renderer.domElement);
     this.controls = new Controls(this.input);
@@ -152,6 +177,7 @@ export class Game {
     this.hud = new Hud(container);
     this.labels = new ShipLabels(container);
     this.duelHud = new DuelHud(container);
+    this.overlay = new Overlay(container);
     this.scene.add(
       this.terrain.group,
       this.ocean.group,
@@ -179,9 +205,9 @@ export class Game {
   }
 
   start(): void {
-    this.terrain.update(Infinity); // mesh the whole island before the first frame
     this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
-    this.hud.toast('Raise sail with W and go find a prize.');
+    this.terrain.update(STARTUP_CHUNKS, this.rig.focus); // the home island before the first frame
+    this.hud.toast(`Welcome to ${this.ports[0].name}. B to go ashore and trade, M for the chart, W to make sail.`);
     this.loop.start();
   }
 
@@ -191,6 +217,8 @@ export class Game {
       this.duel.step(dt, this.duelIntent());
       return;
     }
+    // Ashore or poring over the chart: the sea waits.
+    if (this.overlay.kind) return;
     orders.rudder = controls.rudder;
     orders.sails = Math.min(1, Math.max(0, orders.sails + (controls.take('sailUp') - controls.take('sailDown')) * 0.5));
     if (controls.take('ammoRound')) orders.ammo = 'round';
@@ -204,25 +232,34 @@ export class Game {
     orders.board = controls.take('board') > 0;
 
     this.sea.step(dt, orders);
+    this.economy.step(dt);
     if (this.sea.player.status !== 'afloat') orders.sails = 0;
+    if (this.sea.docked) this.goAshore(this.sea.docked);
   }
 
   private render(alpha: number, frameSeconds: number): void {
     const { controls, rig, sea } = this;
     const player = sea.player;
 
-    // Camera controls are presentation only, so they run per frame rather than per sim step.
+    // Camera controls and menus are presentation only, so they run per frame rather than per sim step.
     for (let n = controls.take('rotateLeft'); n > 0; n--) rig.rotate(-1);
     for (let n = controls.take('rotateRight'); n > 0; n--) rig.rotate(1);
     rig.zoom(controls.takeZoom(frameSeconds));
+    if (this.overlay.kind) {
+      for (const action of MENU_ACTIONS) for (let n = controls.take(action); n > 0; n--) this.overlay.nav(action);
+    } else if (!this.duel && controls.take('chart') > 0) {
+      this.openChart();
+    }
 
     // The rendered moment trails the latest sim step by (1 - alpha) of a step. While a
-    // duel pauses the sea, the waves keep going on their own clock.
-    if (this.duel) this.pausedTime += frameSeconds;
-    const behind = this.duel ? 0 : (1 - alpha) * this.loop.step;
+    // duel or a menu pauses the sea, the waves keep going on their own clock.
+    const paused = this.duel !== null || this.overlay.kind !== null;
+    if (paused) this.pausedTime += frameSeconds;
+    const behind = paused ? 0 : (1 - alpha) * this.loop.step;
     const time = sea.time - behind + this.pausedTime;
     this.handleEvents(sea.takeEvents(), time);
-    this.fleet.update(sea, this.duel ? 1 : alpha, time, frameSeconds);
+    this.notify(this.economy.takeNotices());
+    this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds);
 
     const pose = this.fleet.pose(player.id)!;
     const fx = Math.sin(pose.heading);
@@ -251,7 +288,7 @@ export class Game {
     this.fog.near = rig.distance * 1.4;
     this.fog.far = rig.distance * 3.5;
 
-    this.terrain.update(REMESH_BUDGET);
+    this.terrain.update(REMESH_BUDGET, focus);
     this.wakes.update(time);
     this.ocean.update(time, rig.focus);
     this.streaks.update(rig.focus, rig.distance * 0.9, time, frameSeconds);
@@ -263,7 +300,7 @@ export class Game {
     if (!this.duel) this.tool.update(this.input);
 
     this.renderer.render(this.scene, rig.camera);
-    if (!this.duel) {
+    if (!paused) {
       const wind = this.weather.windAt(pose.x, pose.z, time);
       this.hud.setGamepadConnected(controls.gamepadConnected);
       this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));
@@ -341,8 +378,96 @@ export class Game {
           this.hud.toast(`You wash ashore at ${e.port}${e.goods > 0 ? `; your ${e.goods} goods went down with her` : ''}. A new sloop is found for you.`, 'info');
           this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
           break;
+        case 'standing':
+          for (const news of standingNews(e)) this.hud.toast(news, e.to > e.from ? 'good' : 'bad');
+          break;
+        case 'bounty': {
+          const [one, many] = BOUNTY_NOUNS[e.target];
+          const job = this.sea.captain.contracts.find((c) => c.id === e.contract);
+          const where = job ? this.ports[job.issuer].name : 'port';
+          this.hud.toast(
+            e.progress < e.count ? `Bounty: ${e.progress} of ${e.count} ${many}.` : `Bounty complete (${e.count === 1 ? `a ${one}` : `${e.count} ${many}`}): collect at ${where}.`,
+            'good',
+          );
+          break;
+        }
+        case 'refused':
+          this.hud.toast(REFUSALS[e.reason](this.ports[e.port].name), 'bad');
+          break;
       }
     }
+  }
+
+  private notify(notices: Notice[]): void {
+    for (const n of notices) this.hud.toast(n.text, n.tone);
+  }
+
+  // ---- Menus: ports and the chart ----
+
+  private chartProps(): Omit<ChartProps, 'economy' | 'sea'> {
+    return {
+      world: this.world,
+      islands: this.islands,
+      course: this.course,
+      setCourse: (port) => {
+        this.course = port;
+        this.screen?.();
+      },
+    };
+  }
+
+  /** Alongside: customs, the price book, fresh jobs, then the port's menus. */
+  private goAshore(port: Port): void {
+    const arrival = this.economy.arrive(port);
+    if (this.course === port) this.course = null;
+    this.openMenu(() =>
+      this.overlay.show(
+        'port',
+        createElement(PortScreen, {
+          key: port.id,
+          port,
+          economy: this.economy,
+          sea: this.sea,
+          arrival,
+          leave: this.setSail,
+          nav: this.overlay.handlers,
+          chart: this.chartProps(),
+        }),
+      ),
+    );
+  }
+
+  private readonly setSail = () => {
+    this.closeMenu();
+    this.sea.undock();
+    this.orders.sails = 0;
+  };
+
+  private openChart(): void {
+    this.openMenu(() =>
+      this.overlay.show(
+        'chart',
+        createElement(ChartScreen, { ...this.chartProps(), economy: this.economy, sea: this.sea, close: this.closeChart, nav: this.overlay.handlers }),
+      ),
+    );
+  }
+
+  private readonly closeChart = () => this.closeMenu();
+
+  private openMenu(show: () => void): void {
+    this.screen = show;
+    show();
+    this.controls.setMode('menu');
+    this.hud.setVisible(false);
+    this.labels.setVisible(false);
+  }
+
+  private closeMenu(): void {
+    this.screen = null;
+    this.overlay.hide();
+    this.controls.setMode('sea');
+    this.hud.setVisible(true);
+    this.labels.setVisible(true);
   }
 
   /** Boarders away: the captains meet on the prize's deck. */
@@ -417,7 +542,20 @@ export class Game {
       gold: this.sea.captain.gold,
       cargo: cargoCount(p.cargo),
       hold: type.hold,
+      dock: this.dockPrompt(),
+      standing: this.sea.captain.standing,
     };
+  }
+
+  /** What the harbour you're in says about going alongside. */
+  private dockPrompt(): string | null {
+    const port = this.sea.harbour();
+    if (!port || this.sea.player.status !== 'afloat') return null;
+    const problem = this.sea.dockProblem(port);
+    if (problem === 'closed') return `${port.name} is closed to you`;
+    if (problem === 'fast') return `Take in sail to go alongside at ${port.name}`;
+    if (problem === 'enemies') return 'Enemies close: shake them off to dock';
+    return `B / 🎮 B: go ashore at ${port.name}`;
   }
 
   private shipLabels(): ShipLabel[] {
@@ -463,20 +601,20 @@ export class Game {
       sails: this.orders.sails,
       grounded: ship.grounded,
       region: REGION_NAMES[regionTier(x, z)],
+      ...this.portPointer(x, z, onScreen),
     };
   }
 
-  /** Slides a spawn point away from the island until a ship of this class (with sea room) touches nothing. */
-  private openWater(cls: ShipClass, start: typeof START): typeof START {
-    const spot = { ...start };
-    const length = Math.hypot(spot.x, spot.z) || 1;
-    const clear = () =>
-      [-2, 0, 2].every((d) => hullContacts(this.world, cls.spec, spot.x + (d * spot.x) / length, spot.z + (d * spot.z) / length, spot.heading) === 0);
-    for (let i = 0; i < 100 && !clear(); i++) {
-      spot.x += spot.x / length;
-      spot.z += spot.z / length;
-    }
-    return spot;
+  /** The compass's gold pointer: to the port on the chart's course, or else the nearest. */
+  private portPointer(x: number, z: number, onScreen: (dx: number, dz: number) => number): Pick<NavReadout, 'portAngle' | 'portText'> {
+    const nearest = this.ports.reduce((a, b) => (Math.hypot(b.x - x, b.z - z) < Math.hypot(a.x - x, a.z - z) ? b : a));
+    const port = this.course ?? nearest;
+    const dx = port.x - x;
+    const dz = port.z - z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 60 && !this.course) return { portAngle: null, portText: `In ${port.name}'s waters` };
+    const point = COMPASS_POINTS[Math.round((((Math.atan2(dx, -dz) / (Math.PI * 2)) * 16) % 16) + 16) % 16];
+    return { portAngle: onScreen(dx, dz), portText: `${this.course ? 'Course for' : 'Nearest port:'} ${port.name} · ${Math.round(distance)} ${point}` };
   }
 
   private readonly onResize = () => {

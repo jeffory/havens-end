@@ -97,6 +97,16 @@ export class VoxelWorld {
     return () => this.listeners.delete(listener);
   }
 
+  /** Removes and returns up to `limit` stale chunks, nearest to the column (x, z) first. */
+  takeDirtyNear(limit: number, x: number, z: number): Chunk[] {
+    if (this.dirty.size <= limit) return this.takeDirty(limit);
+    const half = CHUNK_MASK / 2;
+    const distance = (c: Chunk) => Math.hypot((c.cx << CHUNK_SHIFT) + half - x, (c.cz << CHUNK_SHIFT) + half - z);
+    const nearest = [...this.dirty].sort((a, b) => distance(a[1]) - distance(b[1])).slice(0, limit);
+    for (const [key] of nearest) this.dirty.delete(key);
+    return nearest.map(([, chunk]) => chunk);
+  }
+
   /** Removes and returns up to `limit` stale chunks, oldest first. */
   takeDirty(limit: number): Chunk[] {
     const out: Chunk[] = [];

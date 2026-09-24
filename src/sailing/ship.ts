@@ -18,8 +18,8 @@ export interface ShipSpec {
   acceleration: number;
   /** Turn rate (rad/s) with full rudder and way on. */
   turnRate: number;
-  /** Waterline footprint boundary as (x, z) pairs in ship-local space. */
-  outline: Float32Array;
+  /** Samples covering the waterline footprint (edge and interior) as (x, z) pairs in ship-local space. */
+  footprint: Float32Array;
 }
 
 export interface ShipState {
@@ -67,6 +67,10 @@ const HEEL_MAX = 0.3;
 /** Fraction of speed kept per tick while grounded: running aground stops you almost at once. */
 const GROUNDED_KEEP = 0.5;
 const PUSH_OFF_STEPS = [0.05, 0.1, 0.2];
+/** Fraction of speed kept per tick while scraping along something beside her. */
+const SCRAPE_KEEP = 0.995;
+/** A slide along an obstacle shorter than this per tick is a hull caught on a corner. */
+const MIN_SLIDE = 0.002;
 const GROUNDED_MEMORY = 0.5;
 
 export function createShip(x: number, z: number, heading: number): ShipState {
@@ -131,23 +135,48 @@ function move(ship: ShipState, spec: ShipSpec, world: VoxelReader, dt: number, f
 
   ship.grounded = true;
   ship.groundedTimer = GROUNDED_MEMORY;
-  ship.surge *= GROUNDED_KEEP;
   ship.sway = 0;
 
-  // Glancing blow: slide along the shore on one axis.
-  if (allowed(hullContacts(world, spec, x, ship.z, heading))) {
-    ship.x = x;
-    ship.heading = heading;
-    return;
+  // Scraping along something beside her (a pier, a steep shore): the leeway pressing
+  // her onto it is what's blocked, so carry on straight ahead with a little friction.
+  for (const h of [heading, ship.heading]) {
+    const ax = ship.x + Math.sin(h) * ship.surge * dt;
+    const az = ship.z + Math.cos(h) * ship.surge * dt;
+    if (Math.abs(ship.surge) * dt > MIN_SLIDE && allowed(hullContacts(world, spec, ax, az, h))) {
+      ship.x = ax;
+      ship.z = az;
+      if (h !== heading) ship.yawRate = 0;
+      ship.heading = h;
+      ship.surge *= SCRAPE_KEEP;
+      return;
+    }
   }
-  if (allowed(hullContacts(world, spec, ship.x, z, heading))) {
-    ship.z = z;
-    ship.heading = heading;
-    return;
+  ship.surge *= GROUNDED_KEEP;
+
+  // Glancing blow: slide along the shore on whichever axis gets her further. A slide
+  // that barely moves her (her corner caught on a post) doesn't count: push off instead.
+  const alongX = Math.abs(x - ship.x);
+  const alongZ = Math.abs(z - ship.z);
+  const slides = alongX >= alongZ ? ([[x, ship.z, alongX], [ship.x, z, alongZ]] as const) : ([[ship.x, z, alongZ], [x, ship.z, alongX]] as const);
+  for (const [sx, sz, distance] of slides) {
+    if (distance > MIN_SLIDE && allowed(hullContacts(world, spec, sx, sz, heading))) {
+      ship.x = sx;
+      ship.z = sz;
+      ship.heading = heading;
+      return;
+    }
   }
-  // Turning into the shore: push the hull away from where it touches, so the ship can always turn off.
-  const awayX = x - centroid.x;
-  const awayZ = z - centroid.z;
+  // Push the hull off whatever it touches, so the ship can always get clear: sideways
+  // when the touch is along her side (scraping past a pier), astern when it's dead ahead
+  // (bow into the beach), ahead when it's under her stern.
+  const toX = centroid.x - x;
+  const toZ = centroid.z - z;
+  const side = toX * px + toZ * pz;
+  const ahead = toX * fx + toZ * fz;
+  const across = Math.abs(side) > 0.4 ? -Math.sign(side) : 0;
+  const along = -Math.sign(ahead) * (across === 0 ? 1 : 0.3);
+  const awayX = px * across + fx * along;
+  const awayZ = pz * across + fz * along;
   const length = Math.hypot(awayX, awayZ) || 1;
   for (const step of PUSH_OFF_STEPS) {
     const ox = ship.x + (awayX / length) * step;
@@ -163,7 +192,7 @@ function move(ship: ShipState, spec: ShipSpec, world: VoxelReader, dt: number, f
 }
 
 /**
- * How many outline samples of a hull at this pose touch solid voxels between the keel
+ * How many footprint samples of a hull at this pose touch solid voxels between the keel
  * and just above the waterline. Optionally reports where they touch (their centroid).
  */
 export function hullContacts(
@@ -178,13 +207,13 @@ export function hullContacts(
   const c = Math.cos(heading);
   const yMin = Math.floor(WATER_LEVEL - spec.draft);
   const yMax = Math.floor(WATER_LEVEL + 1);
-  const outline = spec.outline;
+  const footprint = spec.footprint;
   let contacts = 0;
   let sumX = 0;
   let sumZ = 0;
-  for (let i = 0; i < outline.length; i += 2) {
-    const lx = outline[i];
-    const lz = outline[i + 1];
+  for (let i = 0; i < footprint.length; i += 2) {
+    const lx = footprint[i];
+    const lz = footprint[i + 1];
     const wx = x + lx * c + lz * s;
     const wz = z - lx * s + lz * c;
     const cx = Math.floor(wx);

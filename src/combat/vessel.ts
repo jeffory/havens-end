@@ -1,4 +1,5 @@
 import type { Cargo } from '../economy/goods';
+import type { Upgrade } from '../economy/shipyard';
 import { createShip, type Helm, type ShipSpec, type ShipState } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { AiState } from './ai';
@@ -21,7 +22,10 @@ export interface HullBody {
 
 /** What the simulation needs to know about a class of ship; the art stays with the renderer. */
 export interface ShipClass {
+  /** Stats in force, refits included. */
   type: ShipType;
+  /** The ship as designed: her art, her price, and the base for refits. */
+  design: ShipType;
   spec: ShipSpec;
   body: HullBody;
 }
@@ -52,20 +56,23 @@ export interface Vessel {
   /** Coin aboard (for AI ships: plunder; the player's purse lives on the captain). */
   gold: number;
   cargo: Cargo;
+  /** Shipyard refits, already folded into `cls`. */
+  upgrades: Upgrade[];
 }
 
-export function shipClass(type: ShipType, outline: Float32Array, deck: number, top: number): ShipClass {
+export function shipClass(type: ShipType, footprint: Float32Array, deck: number, top: number): ShipClass {
   let halfBeam = 0;
   let bow = -Infinity;
   let stern = Infinity;
-  for (let i = 0; i < outline.length; i += 2) {
-    halfBeam = Math.max(halfBeam, Math.abs(outline[i]));
-    bow = Math.max(bow, outline[i + 1]);
-    stern = Math.min(stern, outline[i + 1]);
+  for (let i = 0; i < footprint.length; i += 2) {
+    halfBeam = Math.max(halfBeam, Math.abs(footprint[i]));
+    bow = Math.max(bow, footprint[i + 1]);
+    stern = Math.min(stern, footprint[i + 1]);
   }
   return {
     type,
-    spec: { ...type, outline },
+    design: type,
+    spec: { ...type, footprint },
     body: { halfBeam, bow, stern, draft: type.draft, deck, top },
   };
 }
@@ -101,6 +108,7 @@ export function createVessel(
     ai: null,
     gold: 0,
     cargo: {},
+    upgrades: [],
   };
 }
 

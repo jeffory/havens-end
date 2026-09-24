@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { outlineFromFootprint } from '../sailing/hull';
+import { footprintSamples } from '../sailing/hull';
 import { hullContacts } from '../sailing/ship';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP, type ShipType } from '../sailing/ships';
 import { Weather } from '../sailing/weather';
@@ -11,13 +11,14 @@ import { dropBarrel } from './barrels';
 import { planGroup, regionTier } from './encounters';
 import { fireBroadside } from './gunnery';
 import { cargoCount, plunder } from '../economy/goods';
+import type { Port } from '../economy/ports';
 import { JAIL_FINE, type PlayerOrders, Sea } from './sea';
 import { applyDamage, createVessel, distanceToBody, type Faction, gunsManned, reloadTime, shipClass, type Vessel } from './vessel';
 
 function box(length: number, beam: number): Float32Array {
   const cells: Array<[number, number]> = [];
   for (let x = 0; x < beam; x++) for (let z = 0; z < length; z++) cells.push([x - beam / 2, z - length / 2]);
-  return outlineFromFootprint(cells);
+  return footprintSamples(cells);
 }
 
 const CLASSES = new Map(
@@ -30,8 +31,10 @@ const CLASSES = new Map(
 const EAST = Math.PI / 2; // heading +x; port side faces north (-z)
 const HOLD: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
 
-function newSea(world = new VoxelWorld(), spawning = false, seed = 1): Sea {
-  return new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, { x: 0, z: 0, heading: EAST }, seed, spawning);
+const HOME: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 0, z: 0, heading: EAST, islandX: 0, islandZ: 300 };
+
+function newSea(world = new VoxelWorld(), spawning = false, seed = 1, ports: Port[] = [HOME]): Sea {
+  return new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, ports, seed, spawning);
 }
 
 function place(sea: Sea, type: ShipType, faction: Faction, x: number, z: number, heading = EAST): Vessel {
@@ -213,9 +216,30 @@ describe('captains', () => {
 
   it('warships close in and fire a broadside', () => {
     const sea = newSea();
-    withAi(sea, SLOOP, 'imperial', 0, -120, 0);
+    withAi(sea, SLOOP, 'pirate', 0, -120, 0);
     run(sea, 45);
     expect(sea.player.hull).toBeLessThan(SLOOP.hull);
+  });
+
+  it('Imperial warships leave an honest captain be, but hunt an outlaw', () => {
+    const honest = newSea();
+    const patrol = withAi(honest, SLOOP, 'imperial', 0, -100, 0);
+    run(honest, 10);
+    expect(patrol.ai!.mode).toBe('cruise');
+
+    const outlaw = newSea();
+    outlaw.captain.standing.imperial = -40;
+    const hunter = withAi(outlaw, SLOOP, 'imperial', 0, -100, 0);
+    run(outlaw, 10);
+    expect(hunter.ai!.mode).toBe('engage');
+  });
+
+  it("pirates don't prey on friends of the Brethren", () => {
+    const sea = newSea();
+    sea.captain.standing.pirate = 30;
+    const pirate = withAi(sea, SLOOP, 'pirate', 0, -100, 0);
+    run(sea, 10);
+    expect(pirate.ai!.mode).toBe('cruise');
   });
 
   it('steer clear of land', () => {
@@ -246,6 +270,12 @@ describe('encounters', () => {
     expect(convoy[0].faction).toBe('merchant');
     expect(convoy.length).toBeGreaterThan(1);
     expect(convoy.slice(1).every((m) => m.faction === 'imperial')).toBe(true);
+  });
+
+  it("favour a port's own ships in its waters", () => {
+    expect(planGroup(0, 0.1, 'imperial', 0.2)[0].faction).toBe('imperial');
+    expect(planGroup(1, 0.1, 'pirate', 0.2).every((m) => m.faction === 'pirate')).toBe(true);
+    expect(planGroup(0, 0.1, 'imperial', 0.9)[0].faction).toBe('merchant');
   });
 
   it('bring a merchant first, out of sight and in open water', () => {
@@ -295,9 +325,9 @@ describe('fleets', () => {
     const east = place(sea, BRIG, 'imperial', 60 * dx, 60 * dz, heading + Math.PI);
     west.ai = createAi(1000 * dx, 1000 * dz, heading);
     east.ai = createAi(-1000 * dx, -1000 * dz, heading + Math.PI);
-    // Hulls touch when any point of one's waterline outline is inside (or grazing) the other.
+    // Hulls touch when any point of one's waterline footprint is inside (or grazing) the other.
     const touching = (a: Vessel, b: Vessel) => {
-      const o = a.cls.spec.outline;
+      const o = a.cls.spec.footprint;
       const s = Math.sin(a.ship.heading);
       const c = Math.cos(a.ship.heading);
       for (let i = 0; i < o.length; i += 2) {
@@ -373,5 +403,90 @@ describe('boarding, plunder and jail', () => {
     const warship = plunder(BRIG, 'imperial', random);
     expect(cargoCount(warship.cargo)).toBe(0);
     expect(warship.gold).toBeGreaterThan(0);
+  });
+});
+
+describe('reputation at sea', () => {
+  it('firing first on a merchant costs standing with the guild and the Crown, and pleases the Brethren', () => {
+    const sea = newSea();
+    place(sea, MERCHANT_SLOOP, 'merchant', 0, -30).ai = createAi(0, -600, EAST);
+    run(sea, 4, { fire: ['port'] });
+    const { standing } = sea.captain;
+    expect(standing.merchant).toBeLessThan(15);
+    expect(standing.imperial).toBeLessThan(0);
+    expect(standing.pirate).toBeGreaterThan(-30);
+    expect(sea.takeEvents().some((e) => e.kind === 'standing' && e.faction === 'merchant')).toBe(true);
+  });
+
+  it("returning fire on a pirate who came for you isn't an attack; sinking her is", () => {
+    const sea = newSea();
+    const pirate = place(sea, SLOOP, 'pirate', 0, -30);
+    pirate.ai = createAi(0, -600, EAST);
+    run(sea, 0.5); // she sees the player and comes on
+    expect(pirate.ai.mode).toBe('engage');
+    run(sea, 4, { fire: ['port'] });
+    expect(pirate.hull).toBeLessThan(SLOOP.hull);
+    expect(sea.captain.standing.pirate).toBe(-30);
+    applyDamage(pirate, 1000, 0, 0);
+    sea.reportStatusChange(pirate, 'afloat');
+    expect(sea.captain.standing.pirate).toBeLessThan(-30);
+    expect(sea.captain.standing.imperial).toBeGreaterThan(0);
+  });
+
+  it('sinking or taking a ship counts toward a bounty on her flag', () => {
+    const sea = newSea();
+    sea.captain.contracts.push({ id: 7, kind: 'bounty', issuer: 0, faction: 'imperial', target: 'pirate', count: 2, progress: 0, reward: 500, standing: 10, deadline: 1e6 });
+    const prize = place(sea, SLOOP, 'pirate', 0, -8);
+    prize.status = 'struck';
+    run(sea, 0.1, { board: true });
+    expect(prize.status).toBe('captured');
+    expect(sea.captain.contracts[0]).toMatchObject({ progress: 1 });
+    expect(sea.takeEvents().find((e) => e.kind === 'bounty')).toMatchObject({ contract: 7, progress: 1, count: 2 });
+  });
+});
+
+describe('harbours', () => {
+  const FAR: Port = { id: 1, name: 'Kingsreach', faction: 'imperial', x: 400, z: 0, heading: EAST, islandX: 400, islandZ: 300 };
+
+  it('take a ship that comes in slowly, and remember her captain', () => {
+    const sea = newSea(new VoxelWorld(), false, 1, [HOME, FAR]);
+    sea.player.ship.x = 390;
+    run(sea, 0.1, { board: true });
+    expect(sea.docked).toBe(FAR);
+    expect(sea.captain.lastPort).toBe(FAR);
+    expect(sea.player.ship).toMatchObject({ x: FAR.x, z: FAR.z, surge: 0 });
+    expect(sea.takeEvents().some((e) => e.kind === 'docked' && e.port === 1)).toBe(true);
+  });
+
+  it('turn away captains going too fast, with enemies on their tail, or on bad terms with the port', () => {
+    const tryDock = (setup: (sea: Sea) => void) => {
+      const sea = newSea(new VoxelWorld(), false, 1, [HOME, FAR]);
+      sea.player.ship.x = 390;
+      setup(sea);
+      sea.step(1 / 60, { ...HOLD, board: true });
+      return { docked: sea.docked, refused: sea.takeEvents().find((e) => e.kind === 'refused') };
+    };
+    expect(tryDock((sea) => (sea.player.ship.surge = 8))).toMatchObject({ docked: null, refused: { reason: 'fast' } });
+    expect(tryDock((sea) => (sea.captain.standing.imperial = -60))).toMatchObject({ docked: null, refused: { reason: 'closed' } });
+    expect(
+      tryDock((sea) => {
+        const hunter = place(sea, SLOOP, 'pirate', 390, -50);
+        hunter.ai = createAi(0, 0, 0);
+        hunter.ai.mode = 'engage';
+      }),
+    ).toMatchObject({ docked: null, refused: { reason: 'enemies' } });
+    // Nowhere near a harbour, the order does nothing.
+    const sea = newSea(new VoxelWorld(), false, 1, [HOME, FAR]);
+    sea.player.ship.x = 200;
+    run(sea, 0.1, { board: true });
+    expect(sea.docked).toBeNull();
+  });
+
+  it('after losing her ship the captain starts again in a sloop, whatever she sailed before', () => {
+    const sea = newSea();
+    sea.refit(sea.classFor(BRIG), 'Your brig');
+    applyDamage(sea.player, 1000, 0, 0);
+    run(sea, 6);
+    expect(sea.player.cls.design).toBe(SLOOP);
   });
 });

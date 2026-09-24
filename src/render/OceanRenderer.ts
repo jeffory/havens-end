@@ -97,9 +97,12 @@ export class OceanRenderer {
     this.stampFoam(this.group.position.x - this.gridSize / 2, this.group.position.z - this.gridSize / 2);
     wavePhases(time, this.uniforms.uWavePhase.value);
     this.uniforms.uTime.value = time;
+    this.seabed.follow(focus.x, focus.z);
     if (this.seabed.version !== this.seabedVersion) {
       this.seabedVersion = this.seabed.version;
       this.seabedTexture.needsUpdate = true;
+      this.uniforms.uSeabedRect.value.x = this.seabed.originX;
+      this.uniforms.uSeabedRect.value.y = this.seabed.originZ;
     }
   }
 

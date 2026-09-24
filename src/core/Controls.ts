@@ -13,6 +13,16 @@ export type Action =
   | 'ammoGrape'
   | 'ammoNext'
   | 'board'
+  | 'chart'
+  // Menus (port screens, the chart)
+  | 'navUp'
+  | 'navDown'
+  | 'navLeft'
+  | 'navRight'
+  | 'confirm'
+  | 'back'
+  | 'tabPrev'
+  | 'tabNext'
   // Duel
   | 'light'
   | 'heavy'
@@ -20,11 +30,15 @@ export type Action =
   | 'kick'
   | 'roll';
 
-export type ControlMode = 'sea' | 'duel';
+export type ControlMode = 'sea' | 'duel' | 'menu';
 
 /** Button indices in the W3C "standard" gamepad layout, with Xbox names. */
-export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
-const AXIS = { LX: 0, RY: 3 } as const;
+export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
+const AXIS = { LX: 0, LY: 1, RY: 3 } as const;
+/** How far the stick must go to count as a menu move, and the auto-repeat while it's held. */
+const STICK_NAV = 0.55;
+const NAV_DELAY = 0.4;
+const NAV_REPEAT = 0.14;
 const DEAD_ZONE = 0.18;
 
 type Bindings<K> = ReadonlyArray<readonly [K, Action]>;
@@ -40,6 +54,19 @@ const SEA_PAD: Bindings<number> = [
   [PAD.RT, 'fireStarboard'],
   [PAD.X, 'ammoNext'],
   [PAD.B, 'board'],
+  [PAD.BACK, 'chart'],
+];
+
+const MENU_PAD: Bindings<number> = [
+  [PAD.UP, 'navUp'],
+  [PAD.DOWN, 'navDown'],
+  [PAD.LEFT, 'navLeft'],
+  [PAD.RIGHT, 'navRight'],
+  [PAD.A, 'confirm'],
+  [PAD.B, 'back'],
+  [PAD.LB, 'tabPrev'],
+  [PAD.RB, 'tabNext'],
+  [PAD.BACK, 'chart'],
 ];
 
 const DUEL_PAD: Bindings<number> = [
@@ -65,6 +92,23 @@ const SEA_KEYS: Bindings<string> = [
   ['Digit3', 'ammoGrape'],
   ['KeyR', 'ammoNext'],
   ['KeyB', 'board'],
+  ['KeyM', 'chart'],
+];
+
+/** Enter and Space aren't here: the browser already clicks the focused button. */
+const MENU_KEYS: Bindings<string> = [
+  ['ArrowUp', 'navUp'],
+  ['KeyW', 'navUp'],
+  ['ArrowDown', 'navDown'],
+  ['KeyS', 'navDown'],
+  ['ArrowLeft', 'navLeft'],
+  ['KeyA', 'navLeft'],
+  ['ArrowRight', 'navRight'],
+  ['KeyD', 'navRight'],
+  ['KeyQ', 'tabPrev'],
+  ['KeyE', 'tabNext'],
+  ['Escape', 'back'],
+  ['KeyM', 'chart'],
 ];
 
 const DUEL_KEYS: Bindings<string> = [
@@ -78,6 +122,7 @@ const DUEL_KEYS: Bindings<string> = [
 const BINDINGS: Record<ControlMode, { keys: Bindings<string>; pad: Bindings<number> }> = {
   sea: { keys: SEA_KEYS, pad: SEA_PAD },
   duel: { keys: DUEL_KEYS, pad: DUEL_PAD },
+  menu: { keys: MENU_KEYS, pad: MENU_PAD },
 };
 
 export interface PadSnapshot {
@@ -98,8 +143,20 @@ export function readPad(pad: PadSnapshot, wasPressed: ReadonlySet<number>, mode:
   }
   const dpad = (pressed.has(PAD.RIGHT) ? 1 : 0) - (pressed.has(PAD.LEFT) ? 1 : 0);
   const stick = deadZone(pad.axes[AXIS.LX] ?? 0);
+  const x = pad.axes[AXIS.LX] ?? 0;
+  const y = pad.axes[AXIS.LY] ?? 0;
   return {
     rudder: dpad !== 0 ? dpad : stick,
+    /** The left stick as a menu direction, if it's pushed far enough. */
+    stickNav: (Math.max(Math.abs(x), Math.abs(y)) < STICK_NAV
+      ? null
+      : Math.abs(x) > Math.abs(y)
+        ? x > 0
+          ? 'navRight'
+          : 'navLeft'
+        : y > 0
+          ? 'navDown'
+          : 'navUp') as Action | null,
     /** Right stick Y: pushed down (positive) zooms out. */
     zoom: deadZone(pad.axes[AXIS.RY] ?? 0),
     /** Duel guard: either left shoulder button. */
@@ -130,6 +187,9 @@ export class Controls {
   private padZoom = 0;
   private readonly queued = new Map<Action, number>();
   private readonly padButtons = new Map<number, Set<number>>();
+  /** The menu direction the stick is held in, and when it next repeats. */
+  private stickNav: Action | null = null;
+  private stickRepeat = 0;
 
   constructor(private readonly input: Input) {}
 
@@ -152,6 +212,7 @@ export class Controls {
 
     this.padZoom = 0;
     this.gamepadConnected = false;
+    let stickNav: Action | null = null;
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
     for (const pad of pads) {
       if (!pad || !pad.connected || pad.mapping !== 'standard') continue;
@@ -162,6 +223,21 @@ export class Controls {
       if (this.mode === 'duel' && state.block) this.block = true;
       if (Math.abs(state.zoom) > Math.abs(this.padZoom)) this.padZoom = state.zoom;
       for (const action of state.actions) this.queue(action);
+      stickNav ??= state.stickNav;
+    }
+    this.pollStick(this.mode === 'menu' ? stickNav : null);
+  }
+
+  /** In menus the stick moves the selection: once when pushed, then repeating while held. */
+  private pollStick(nav: Action | null): void {
+    const now = performance.now() / 1000;
+    if (nav !== this.stickNav) {
+      this.stickNav = nav;
+      this.stickRepeat = now + NAV_DELAY;
+      if (nav) this.queue(nav);
+    } else if (nav && now >= this.stickRepeat) {
+      this.stickRepeat = now + NAV_REPEAT;
+      this.queue(nav);
     }
   }
 

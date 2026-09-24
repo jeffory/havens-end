@@ -24,11 +24,12 @@ export class ChunkRenderer {
   }
 
   /**
-   * Rebuilds up to `budget` dirty chunks. A chunk costs ~2-3 ms to mesh, so a small
-   * per-frame budget keeps big edits from stalling a frame.
+   * Rebuilds up to `budget` dirty chunks, nearest to `near` first when it's given. A
+   * chunk costs ~2-3 ms to mesh, so a small per-frame budget keeps big edits (and the
+   * far islands at startup) from stalling a frame.
    */
-  update(budget: number): number {
-    const chunks = this.world.takeDirty(budget);
+  update(budget: number, near?: { x: number; z: number }): number {
+    const chunks = near ? this.world.takeDirtyNear(budget, near.x, near.z) : this.world.takeDirty(budget);
     for (const chunk of chunks) this.rebuild(chunk);
     return chunks.length;
   }

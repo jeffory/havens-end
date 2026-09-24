@@ -1,11 +1,14 @@
 /**
- * Boundary sample points of a hull's waterline footprint, as (x, z) pairs.
+ * Sample points covering a hull's waterline footprint, as (x, z) pairs: the boundary
+ * first, then the middle of every cell inside.
  *
  * `cells` are the unit squares the hull covers at the waterline, given by their
  * minimum corner. Every exposed cell edge contributes its two corners and midpoint,
- * so samples are at most half a voxel apart: no single-voxel rock can slip between them.
+ * so boundary samples are at most half a voxel apart: no single-voxel rock can slip
+ * between them. The interior samples mean a thin obstacle (a pier, a post) can never
+ * end up inside the hull unnoticed: any overlap at all counts.
  */
-export function outlineFromFootprint(cells: Iterable<readonly [number, number]>): Float32Array {
+export function footprintSamples(cells: Iterable<readonly [number, number]>): Float32Array {
   const key = (x: number, z: number) => `${Math.round(x * 2)},${Math.round(z * 2)}`;
   const covered = new Set<string>();
   const list: Array<readonly [number, number]> = [];
@@ -38,5 +41,6 @@ export function outlineFromFootprint(cells: Iterable<readonly [number, number]>)
       add(x + bx, z + bz);
     }
   }
+  for (const [x, z] of list) add(x + 0.5, z + 0.5);
   return new Float32Array(points);
 }

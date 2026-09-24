@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
-import { outlineFromFootprint } from './hull';
+import { footprintSamples } from './hull';
 import { angleOffWind, sailEfficiency } from './pointOfSail';
 import { createShip, hullContacts, type Helm, type ShipSpec, type ShipState, stepShip } from './ship';
 import type { Wind } from './weather';
 
 /** A 15 x 5 box hull centred on the origin. */
-function boxOutline(length: number, beam: number): Float32Array {
+function boxFootprint(length: number, beam: number): Float32Array {
   const cells: Array<[number, number]> = [];
   for (let x = 0; x < beam; x++) for (let z = 0; z < length; z++) cells.push([x - beam / 2, z - length / 2]);
-  return outlineFromFootprint(cells);
+  return footprintSamples(cells);
 }
 
 const SPEC: ShipSpec = {
@@ -19,7 +19,7 @@ const SPEC: ShipSpec = {
   topSpeed: 11,
   acceleration: 2.4,
   turnRate: 0.5,
-  outline: boxOutline(15, 5),
+  footprint: boxFootprint(15, 5),
 };
 
 /** Steady wind blowing toward +z (from the north). */
@@ -130,6 +130,44 @@ describe('grounding', () => {
     expect(ship.grounded).toBe(false);
     expect(Math.hypot(ship.x - stuckAt.x, ship.z - stuckAt.z)).toBeGreaterThan(20);
     expect(ship.x).toBeLessThan(40 - 2); // and never through the wall
+  });
+
+  it("can't be driven inside a thin pier, and steers off it again", () => {
+    // A pier three wide along z at x = -1..1: planks at deck height, pilings every third voxel.
+    const world = new VoxelWorld();
+    for (let z = -40; z < 40; z++) {
+      for (let x = -1; x <= 1; x++) world.setVoxel(x, 12, z, Block.Planks);
+      if (z % 3 === 0) for (let y = 0; y < 12; y++) for (const x of [-1, 1]) world.setVoxel(x, y, z, Block.Wood);
+    }
+    // Moored alongside to port of it, bow along the pier, the wind pressing her onto it.
+    const easterly: Wind = { dirX: -1, dirZ: 0, strength: 1, squall: 0, calm: 0 };
+    const ship = createShip(6.5, 0, 0);
+    let closest = Infinity;
+    const run = (helm: Helm, seconds: number) => {
+      for (let t = 0; t < seconds; t += 1 / 60) {
+        stepShip(ship, SPEC, helm, easterly, world, 1 / 60);
+        closest = Math.min(closest, ship.x);
+      }
+    };
+    run({ rudder: 1, sails: 1 }, 8); // hard to starboard: straight into the pier
+    expect(closest).toBeGreaterThan(2); // the hull never swallows the pier
+    run({ rudder: -1, sails: 1 }, 8); // put the helm over the other way...
+    run({ rudder: 0, sails: 1 }, 10); // ...and sail off
+    expect(ship.grounded).toBe(false);
+    expect(Math.hypot(ship.x - 6.5, ship.z)).toBeGreaterThan(30);
+    expect(hullContacts(world, SPEC, ship.x, ship.z, ship.heading)).toBe(0);
+  });
+
+  it("doesn't hang up on a corner she's scraping past", () => {
+    // A pier with a wider head; she sails out past it with the wind setting her onto it.
+    const world = new VoxelWorld();
+    for (let z = -40; z < 2; z++) for (let x = z >= -2 ? -2 : -1; x <= (z >= -2 ? 2 : 1); x++) world.setVoxel(x, 12, z, Block.Planks);
+    const onshore: Wind = { dirX: -0.86, dirZ: 0.5, strength: 0.8, squall: 0, calm: 0 };
+    for (const startX of [5.2, 5.4, 5.6, 5.8]) {
+      const ship = createShip(startX, -12, 0);
+      for (let t = 0; t < 25; t += 1 / 60) stepShip(ship, SPEC, { rudder: 0, sails: 1 }, onshore, world, 1 / 60);
+      expect(ship.z).toBeGreaterThan(40);
+    }
   });
 
   it('grounds in water shallower than its draft, but sails over deeper water', () => {

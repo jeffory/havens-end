@@ -19,6 +19,9 @@ export interface NavReadout {
   sails: number;
   grounded: boolean;
   region: string;
+  /** Screen angle to the port you're steering for (or the nearest), and a line about it. */
+  portAngle: number | null;
+  portText: string;
 }
 
 export interface CombatReadout {
@@ -39,6 +42,9 @@ export interface CombatReadout {
   gold: number;
   cargo: number;
   hold: number;
+  /** What the harbour you're in says about docking, if you're in one. */
+  dock: string | null;
+  standing: { imperial: number; merchant: number; pirate: number };
 }
 
 export type Tone = 'info' | 'good' | 'bad';
@@ -63,15 +69,15 @@ export class Hud {
     const help = document.createElement('div');
     help.className = 'hud';
     help.innerHTML = `
-      <div class="hud-title">Haven's End <span>phase 3 · naval combat</span></div>
+      <div class="hud-title">Haven's End <span>phase 4 · ports &amp; trade</span></div>
       <div class="hud-help">
         <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
-        <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot · <kbd>B</kbd> board<br />
-        <kbd>Z</kbd><kbd>C</kbd> turn view · wheel zoom · click dig / place
+        <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />
+        <kbd>B</kbd> board / go ashore · <kbd>M</kbd> chart · <kbd>Z</kbd><kbd>C</kbd> turn view · wheel zoom
       </div>
       <div class="hud-help hud-pad" hidden>
-        🎮 <kbd>LS</kbd> steer · <kbd>↑</kbd><kbd>↓</kbd> sails · <kbd>LT</kbd><kbd>RT</kbd> fire ·
-        <kbd>X</kbd> shot · <kbd>B</kbd> board · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
+        🎮 <kbd>LS</kbd> steer · <kbd>↑</kbd><kbd>↓</kbd> sails · <kbd>LT</kbd><kbd>RT</kbd> fire · <kbd>X</kbd> shot<br />
+        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
       </div>
       <div class="hud-stats"></div>`;
 
@@ -82,6 +88,7 @@ export class Hud {
         <circle r="46" class="compass-face" />
         <g class="compass-north"><text y="-33">N</text></g>
         <g class="compass-wind"><path d="M0,-40 L10,-22 L3.5,-22 L3.5,34 L-3.5,34 L-3.5,-22 L-10,-22 Z" /></g>
+        <g class="compass-port"><path d="M0,-49 L6,-39 L0,-42 L-6,-39 Z" /></g>
         <g class="compass-ship"><path d="M0,-17 L7,11 L0,6 L-7,11 Z" /></g>
       </svg>
       <div class="nav-lines">
@@ -90,6 +97,7 @@ export class Hud {
         <div>Speed <b data-nav="speed"></b> · <span data-nav="pos"></span></div>
         <div>Sails <span data-nav="sails" class="nav-sails"></span></div>
         <div data-nav="aground" class="nav-warn" hidden>Aground! Turn away</div>
+        <div data-nav="port" class="nav-port"></div>
         <div data-nav="region" class="nav-region"></div>
       </div>`;
 
@@ -105,6 +113,7 @@ export class Hud {
         <span data-ammo="grape"><kbd>3</kbd> Grape</span>
       </div>
       <div class="purse"><b data-c="gold"></b> gold · hold <b data-c="hold"></b></div>
+      <div class="hud-standing" data-c="standing"></div>
       <div class="guns">
         <div><span>Port</span><div class="bar reload"><div data-c="port"></div></div></div>
         <div><span>Starboard</span><div class="bar reload"><div data-c="starboard"></div></div></div>
@@ -130,6 +139,7 @@ export class Hud {
     this.nav = {
       north: nav.querySelector('.compass-north')!,
       windArrow: nav.querySelector('.compass-wind')!,
+      portArrow: nav.querySelector('.compass-port')!,
       ship: nav.querySelector('.compass-ship')!,
       ...Object.fromEntries([...nav.querySelectorAll('[data-nav]')].map((el) => [(el as HTMLElement).dataset.nav!, el])),
     };
@@ -167,6 +177,9 @@ export class Hud {
     this.text(this.nav.sails, `${pips} ${SAIL_LABELS[n.sails] ?? ''}${n.sails === 0 ? ' (W to raise)' : ''}`);
     (this.nav.aground as HTMLElement).hidden = !n.grounded;
     this.text(this.nav.region, n.region);
+    this.text(this.nav.port, n.portText);
+    (this.nav.portArrow as SVGElement).style.display = n.portAngle === null ? 'none' : '';
+    if (n.portAngle !== null) this.rotate(this.nav.portArrow, n.portAngle);
   }
 
   setCombat(c: CombatReadout): void {
@@ -184,8 +197,15 @@ export class Hud {
     }
     this.text(this.combat.gold, `${c.gold}`);
     this.text(this.combat.hold, `${c.cargo}/${c.hold}`);
+    const { imperial, merchant, pirate } = c.standing;
+    const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
+    const standing = `Crown <b class="${tone(imperial)}">${signed(imperial)}</b> · Guild <b class="${tone(merchant)}">${signed(merchant)}</b> · Brethren <b class="${tone(pirate)}">${signed(pirate)}</b>`;
+    if (this.shown.get(this.combat.standing) !== standing) {
+      this.shown.set(this.combat.standing, standing);
+      this.combat.standing.innerHTML = standing;
+    }
     const prompt = this.combat.prompt;
-    const message = c.sinking ? 'Abandon ship!' : c.boardable ? `B / 🎮 B: board the ${c.boardable}` : '';
+    const message = c.sinking ? 'Abandon ship!' : c.boardable ? `B / 🎮 B: board the ${c.boardable}` : (c.dock ?? '');
     prompt.hidden = message === '';
     this.text(prompt, message);
   }
@@ -232,5 +252,7 @@ export class Hud {
     el.setAttribute('transform', `rotate(${((radians * 180) / Math.PI).toFixed(1)})`);
   }
 }
+
+const tone = (standing: number) => (standing <= -25 ? 'bad' : standing >= 20 ? 'good' : '');
 
 const percent = (fraction: number) => `${Math.max(0, Math.min(100, fraction * 100)).toFixed(1)}%`;

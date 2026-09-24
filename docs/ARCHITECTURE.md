@@ -13,10 +13,10 @@ behind the codebase and the plan for the phases still to come.
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
-| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §8. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §9. |
 | Character art | **Tripo** (text to 3D, via ComfyUI) → **voxelizer** → `.vox` | Detailed, consistent captains without hand modelling; they end up as named-part `.vox` files you can restyle. See §7. |
 | Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
-| UI | **Plain DOM overlay** now; React (DOM only) when menus arrive (Phase 4) | Menus are where React pays off; the 3D scene is not. |
+| UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
 | Target | Desktop browsers, including higher-end laptops | Budgets below assume a discrete or recent integrated GPU. |
 
 ### Why not React Three Fiber?
@@ -56,12 +56,12 @@ Scale: **1 voxel = 1 world unit** (read it as a metre). Constants are in `src/co
 - **The sea is not voxels.** The ocean is drawn around the camera (§4), so open water
   costs nothing and the map can be any size.
 - **Islands are voxels.** `VoxelWorld` is a *sparse* map of 32³ chunks keyed by
-  packed chunk coordinates. Only chunks containing something exist; one island is
-  currently 38 chunks.
+  packed chunk coordinates. Only chunks containing something exist: the whole
+  archipelago (5 port islands and ~14 islets across ~4,000 units) is ~230 chunks.
 - **Sea level** is `SEA_LEVEL = 12`: cells below y = 12 are underwater. The water
   surface sits at 11.6 ± 0.3, between voxel boundaries, so it never z-fights terrain.
 - **Compass.** North is −z and east is +x.
-- **Worldgen and weather are deterministic** in their seeds (tested). Saves will
+- **Worldgen, markets and weather are deterministic** in their seeds (tested). Saves will
   store seeds + edits, not voxels or weather.
 
 ## 3. Voxel pipeline
@@ -101,8 +101,9 @@ per frame: ChunkRenderer.update(budget)
   GLSL** from the same constants (`WAVE_GLSL`). Ships ride exactly the surface that
   is drawn. Phases are wrapped in double precision on the CPU, so the waves stay
   accurate after hours of play.
-- **Depth-aware colour.** `SeabedMap` keeps a 256×256 byte map of terrain height,
-  uploaded as a texture. The shader uses it for the turquoise-to-navy ramp,
+- **Depth-aware colour.** `SeabedMap` keeps a 256×256 byte map of terrain height
+  around the camera, uploaded as a texture. It re-centres as you sail, keeping the
+  overlap and reading only the new strip from the world. The shader uses it for the turquoise-to-navy ramp,
   see-through shallows, beach surf, and to collapse columns inside dry land. It
   follows terrain edits, so digging a channel floods it.
 - **Foam.** Ship wakes and shot splashes are points in a pool (`render/Wake.ts`).
@@ -131,13 +132,22 @@ per frame: ChunkRenderer.update(budget)
 - **Heel** (visual) leans away from the wind and outward in turns.
 - Sail settings are furled, half and full.
 
-**Collision.** The hull's **waterline footprint comes from the model itself**. Hull
-voxels from the keel to one voxel above the water become outline samples every half
-voxel. Each tick the proposed pose is checked against solid voxels between keel
-depth and just above the water, so **water shallower than the draft grounds you**,
-and the shore, docks and anything you build all block. On contact: speed is cut
-hard, then the ship tries to slide along the obstacle on one axis, then to push off
-it (for turning into the shore). Aground status holds for 0.5 s so it doesn't flicker.
+**Collision.** The hull's **waterline footprint comes from the model itself**:
+- **Samples.** Hull voxels from the keel to one voxel above the water become samples
+  every half voxel along the edge, plus the middle of every cell inside. Without the
+  interior samples a thin obstacle (a pier, a post) could end up inside the hull
+  unnoticed.
+- **Checking.** Each tick the proposed pose is checked against solid voxels between
+  keel depth and just above the water. So **water shallower than the draft grounds
+  you**, and the shore, piers and anything you build all block.
+- **On contact.** The first fallback that works, in order:
+  1. If she's scraping along something beside her, she carries on straight ahead with
+     a little friction: the leeway pressing her onto it is what gets blocked.
+  2. Otherwise speed is cut hard, and she slides along the obstacle on whichever axis
+     gets her further.
+  3. If that barely moves her (a corner caught on a post), she's pushed off: sideways
+     from a touch along her side, astern from one on her bow.
+- **Aground status** holds for 0.5 s so it doesn't flicker.
 
 **Weather** (`sailing/weather.ts`) is a pure function of `(seed, x, z, time)`:
 - **Trade winds** from the east-north-east, wandering ±20° over minutes.
@@ -165,7 +175,10 @@ tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz 
 | Sails up / down | W / S, ↑ / ↓ | D-pad ↑ ↓, Y / A |
 | Fire port / starboard broadside | Q / E | LT / RT |
 | Round / chain / grape shot | 1 / 2 / 3 (R cycles) | X cycles |
-| Board | B | B |
+| Board / go ashore in a harbour | B | B |
+| Sea chart | M | View (Back) |
+| *Menus:* move / choose | arrows or WASD / Enter | d-pad or left stick / A |
+| *Menus:* switch place / back | Q / E, Esc | LB / RB, B |
 | *Duel:* move | A / D | Left stick |
 | *Duel:* cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
 | *Duel:* block (tap to parry) | hold L or right mouse | LB or LT |
@@ -285,10 +298,8 @@ half her crew if there's room). Lose, or have your crew overrun at sea, and you'
 again at your **last port** with a fresh sloop. Sinking also puts you back at the
 last port; the cargo goes down with the ship, but your purse survives.
 
-**Economy stub, until Phase 4:** the captain carries gold (starting at 200). Each ship
-type has a hold capacity (sloop 30, brig 60, merchant brig 80). Merchants carry 2–3
-kinds of goods (sugar, rum, tobacco, cloth, spice) and warships a paymaster's chest.
-The only port so far is Haven, the home island; Phase 4 adds ports, prices and docking.
+**Plunder:** merchants carry 2–3 kinds of goods and warships a paymaster's chest.
+What you do with it is §8.
 
 ### Character pipeline
 
@@ -312,7 +323,124 @@ To restyle a captain, open its `.vox` in MagicaVoxel, keep the six object names 
 the T-pose, and save. Known limit: a model with its arms up by its ears (the pirate)
 keeps its lower face in the torso part; head motion is a small nod, so it doesn't show.
 
-## 8. Ship art: MagicaVoxel authoring guide
+## 8. Ports, trade and reputation (Phase 4)
+
+**The archipelago** (`worldgen/archipelago.ts`, `harbour.ts`) is planned from the
+world seed:
+- Haven at the centre, a free port on the home-waters ring, a pirate haven and an
+  Imperial outpost in contested waters, and the Imperial capital beyond.
+- About 14 uninhabited islets as landmarks.
+- Ports at least 380 apart, and islets kept clear of harbours.
+
+Each port island gets a harbour:
+- **Pier.** The builder walks out from the island's centre (square to the grid first,
+  then diagonals, so piers come out clean). It picks a spot where deep water comes
+  close to the beach with open sea beyond, then runs a pier of planks on pilings out
+  past the drop-off.
+- **Town.** Built behind the landing, in the faction's style:
+  - free ports: plaster and slate;
+  - Imperial ports: plaster and terracotta, plus a stone watchtower;
+  - the pirate haven: plank shacks with thatch.
+- **Berth.** Alongside the pier head, bow out to sea: where ships dock, leave and
+  respawn.
+
+The whole world generates in about 0.3 s. The home island is meshed before the first
+frame; the rest follows nearest-first, two chunks a frame.
+
+**Docking.** In a harbour (within 45 of a berth), slower than 3 u/s, and with nobody
+fighting you within 90, B puts you alongside; the same button boards ships. The port
+must also be open to you. Ashore, the sea waits, as it does in a duel. The menus act
+on the simulation directly: each order is a discrete command, and nothing ticks until
+you set sail.
+
+**Markets** (`economy/market.ts`):
+- **Routes.** Each staple (sugar, rum, tobacco, cloth, spice) is produced in two
+  ports (0.62× its base price, big stocks) and wanted in two others (1.5×, thin
+  stocks). The roles are assigned from the seed so every good has somewhere to go:
+  those pairings are the trade routes.
+- **Pricing.** Price follows stock: `base × (target / stock)^0.45`. Every unit
+  bought or sold moves the stock, so a full hold moves the price. Stocks recover over
+  about 4 minutes, and buying costs 10% more than selling fetches.
+- **Shocks.** Every few minutes a shortage or a glut may hit one port's good for
+  9 minutes.
+- **Contraband.** Muskets are made in free ports and wanted in pirate havens. In
+  Imperial ports they are contraband: only the tavern's back room buys them, at about
+  1.9×.
+- **Customs.** An Imperial port searches a hold carrying muskets 40% of the time
+  (60% if the Crown dislikes you). If found, the muskets are seized, the fine is 15
+  gold a musket, and standing with the Crown drops by 8.
+
+**The price book** (`logbook.ts`) records every price the captain sees (each visit,
+each trade) or hears (tavern rumours). The market shows the best known price
+elsewhere for each good. The harbour tab and the chart list the most profitable runs
+the book knows of.
+
+**Reputation** (`reputation.ts`) is kept with the Crown, the Guild (merchants) and the
+Brethren (pirates), from -100 to 100. You start at Crown 0, Guild +15, Brethren -30.
+Firing first on a ship that wasn't already fighting you is an attack (returning fire
+isn't). Sinking or taking her counts again:
+
+| Victim | Attack | Sink | Take |
+|---|---|---|---|
+| Imperial | Crown -12, Brethren +4 | Crown -8, Brethren +4 | Crown -8, Brethren +6 |
+| Merchant | Guild -8, Crown -4, Brethren +2 | Guild -8, Crown -3, Brethren +2 | Guild -6, Crown -3, Brethren +3 |
+| Pirate | Brethren -5 | Brethren -5, Crown and Guild +5 | Brethren -5, Crown and Guild +6 |
+
+| Standing | Effect |
+|---|---|
+| ≤ -50 (pirates: ≤ -80) | that faction's ports turn you away |
+| below 0 | up to 18% worse prices in its ports (never in pirate havens: they take anyone's gold) |
+| ≥ 20 / ≥ 50 | 3% / 6% better prices |
+| Crown ≤ -25 | Imperial warships attack on sight |
+| Brethren ≥ 20 | pirates leave you alone |
+| Guild ≥ 20 | merchants stop running from you |
+
+Crossing any of these lines is announced.
+
+**The fixer** in every tavern mends your name with any faction: +15 per favour, up to
++25. Each favour costs 150 gold plus 8 per point your standing is from neutral. A
+port that's closed to you can be reopened from another port's tavern.
+
+**Jobs** (`contracts.ts`), three at most at once:
+- **Freight** (governor, guildhall or pirate lord): goods loaded here for another
+  friendly port. The captain posts a bond worth the cargo, returned with the fee on
+  delivery, so the goods can't simply be sold off.
+- **Bounties:** sink or take one or two pirate ships (Imperial and free ports), or
+  merchant or Imperial ships (the pirate lord). Collected where they were posted.
+- **Smuggling runs** (from the fixer, in free ports and the haven): muskets into an
+  Imperial port's back room. Bonded like freight, and paying more for the customs risk.
+
+Missing a deadline costs 5 standing with the issuer, plus any bond. Boards are
+refreshed every 5 minutes.
+
+**The shipyard** (`shipyard.ts`):
+- **Repairs:** 3 gold a hull point, 2 a sail point.
+- **Refits:** copper sheathing, a reinforced hull, an expanded hold, and gun drill.
+  They produce a derived ship class (`withUpgrades`); the design, and so the art, is
+  unchanged.
+- **New ships** in part-exchange: sloops everywhere, brigs in Imperial and pirate
+  yards, merchant brigs in free ports. Losing your ship always leaves you a plain
+  sloop.
+
+**The tavern:** sailors drift in over time, and the haven has the most and the
+cheapest. A round for the house (10 gold) brings two rumours.
+
+**Encounters** near a port favour its own ships: Imperial patrols off the Crown's
+harbours, raiders off the haven.
+
+**Menus** are React, DOM only, drawn over the 3D view (`ui/Overlay.ts`, `ui/port/*`,
+`ui/ChartView.tsx`):
+- Arrow keys and the controller move focus spatially (`menuNav.ts`: the nearest
+  button in that direction). When a button disables itself, focus lands nearby.
+- A or Enter clicks; LB/RB or Q/E switch places; B or Esc goes back.
+- React keeps the DOM nodes across re-renders, so focus survives every purchase.
+
+**The chart** (M, or a tab in port) draws the coastlines from the voxel world once,
+into an offscreen canvas. Over that it draws the ports (crossed out if they're closed
+to you), your ship, the danger rings and your course. Choosing a port sets the
+course: the compass shows a gold pointer, and the nav panel its distance and bearing.
+
+## 9. Ship art: MagicaVoxel authoring guide
 
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
@@ -339,7 +467,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 9. Simulation, physics and time
+## 10. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -350,6 +478,11 @@ rate**, interpolating with `alpha`. The rule, enforced by structure in `Game.ts`
 
 Camera easing, wave riding, sail bracing, the wake, streaks and the HUD are
 presentation, so they run on frame time.
+
+Orders given in the port menus (buy, sell, hire, take a job) are the one place sim
+state changes from outside `update()`. They arrive as DOM events while the sea is
+paused, and each is a discrete command, like an order at the helm. Nothing
+time-dependent happens until you set sail.
 
 **Cannonballs** are ballistic points integrated per tick, inheriting the firing
 ship's velocity. Each step's segment is tested against every other hull's box
@@ -371,7 +504,7 @@ consistently with the ledger.
 **Saves (designed now, built in Phase 5).** Seeds, modified chunks (run-length
 encoded) and the `sim` state as JSON, in IndexedDB.
 
-## 10. Module map
+## 11. Module map
 
 ```
 src/
@@ -393,16 +526,19 @@ src/
                        AI captains, encounters
   duel/                captains' duel: moves, fighters, AI swordsmen, character
                        models (.vox parts → joints), cutlass
-  economy/             goods, cargo and plunder (Phase 4 builds on this)
+  economy/             goods and cargo, markets, reputation, contracts, the price
+                       book, the shipyard, the captain; Economy ties them together
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
-  worldgen/            seeded noise, island generator
+  worldgen/            seeded noise, island generator, archipelago plan, harbours
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
   render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
                        Wake, WindStreaks, voxelGeometry, DuelView, CharacterView
   tools/TerrainTool.ts dig / place dev tool
   ui/                  Hud (help, compass, combat panel, prompts, messages),
-                       ShipLabels (name tags over ships), DuelHud
+                       ShipLabels (name tags over ships), DuelHud; Overlay and
+                       menuNav (React menus, controller focus), port/ (the port
+                       screen and its tabs), ChartView / ChartScreen
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -410,17 +546,17 @@ public/models/         ship and character .vox files
 ```
 
 `voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
-next to the code). The browser-bound `Input` and `GameLoop`, and `SeabedMap`, are
+next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 11. Roadmap (proposed)
+## 12. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
 3. ✅ **Naval combat:** broadsides, three shot types, damage and surrender, boarding, merchant barrels, AI captains, regional encounters and convoys.
    - ✅ **3b. Captains' duel:** side-view sword fight on deck (parries with a cue, blocks, rolls, kicks, red thrusts), Tripo-generated voxel captains, jail and plunder.
-4. **Ports & economy:** docking, supply/demand trade, shipyard and upgrades, crew hiring; React DOM menus.
+4. ✅ **Ports & economy:** a seeded five-port archipelago with harbours and towns; supply-and-demand markets, the price book and rumours; freight, bounties and smuggling; reputation with three factions and a fixer; shipyard refits and ships; crew hiring; the chart; React menus driven by keyboard or controller.
 5. **On foot & base building:** captain controller, dig/flatten/build with inventory, claiming land, save/load.
 6. **Crew automation & farming:** job system, voxel-surface pathfinding, production chains, off-screen ledger, day/night.
 7. **Treasure hunting:** hand-drawn-style maps of real terrain, riddles generated from landmarks, dig sites.

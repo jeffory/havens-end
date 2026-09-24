@@ -47,8 +47,14 @@ export class FleetView {
     for (const v of sea.vessels) {
       alive.add(v.id);
       let view = this.views.get(v.id);
+      if (view && view.model !== this.models.get(v.cls.design)) {
+        // A new ship from the yard under the same id: rebuild her.
+        this.group.remove(view.root);
+        view.dispose();
+        view = undefined;
+      }
       if (!view) {
-        view = new ShipView(this.models.get(v.cls.type)!, LIVERIES[v.faction]);
+        view = new ShipView(this.models.get(v.cls.design)!, LIVERIES[v.faction]);
         this.views.set(v.id, view);
         this.group.add(view.root);
         if (v.faction === 'player') view.root.add(this.arcs.mesh);

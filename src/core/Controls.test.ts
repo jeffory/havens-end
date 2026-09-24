@@ -57,3 +57,20 @@ describe('readPad in a duel', () => {
     expect(readPad(pad(), new Set(), 'duel').block).toBe(false);
   });
 });
+
+describe('readPad in menus', () => {
+  it('maps the face buttons, shoulders and d-pad to menu actions', () => {
+    const read = (pressed: number[]) => readPad(pad([0, 0, 0, 0], pressed), new Set(), 'menu').actions;
+    expect(read([PAD.A])).toEqual(['confirm']);
+    expect(read([PAD.B])).toEqual(['back']);
+    expect(read([PAD.RB])).toEqual(['tabNext']);
+    expect(read([PAD.DOWN])).toEqual(['navDown']);
+    expect(read([PAD.BACK])).toEqual(['chart']);
+  });
+
+  it('turns a pushed stick into a direction, and a resting one into none', () => {
+    expect(readPad(pad([0, 0.9, 0, 0]), new Set(), 'menu').stickNav).toBe('navDown');
+    expect(readPad(pad([-0.8, 0.2, 0, 0]), new Set(), 'menu').stickNav).toBe('navLeft');
+    expect(readPad(pad([0.2, -0.3, 0, 0]), new Set(), 'menu').stickNav).toBeNull();
+  });
+});

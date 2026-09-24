@@ -19,7 +19,7 @@ npm run characters:generate    # Tripo via ComfyUI -> art-source/characters/*.gl
 npm run characters:voxelize    # -> public/models/characters/*.vox
 ```
 
-## Controls (Phase 3: naval combat)
+## Controls (Phase 4: ports and trade)
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
@@ -27,7 +27,10 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | Sails up / down (furled, half, full) | W / S, ↑ / ↓ | D-pad ↑ ↓, Y / A |
 | Fire port / starboard broadside | Q / E | LT / RT |
 | Round / chain / grape shot | 1 / 2 / 3 (R cycles) | X cycles |
-| Board a ship alongside | B | B |
+| Board a ship alongside / go ashore in a harbour | B | B |
+| Sea chart | M | View (Back) |
+| **Menus:** move / choose | arrows or WASD / Enter | d-pad or left stick / A |
+| **Menus:** switch place / back | Q / E, Esc | LB / RB, B |
 | **Duel:** move | A / D | Left stick |
 | **Duel:** cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
 | **Duel:** block, tap to parry | hold L or right mouse | LB or LT |
@@ -47,6 +50,24 @@ they strike their colours. Then come alongside and board. Merchants run, and dro
 powder kegs behind them. The further from home you sail, the more warships there
 are, and merchants travel in escorted convoys.
 
+The archipelago has five ports: Haven (home, a free port), a second free port, a
+pirate haven and two Imperial ports, with the Imperial capital furthest out. Come
+into a harbour slowly and press B to go ashore. Each port has a **market** (buy
+cheap where a good is produced, sell dear where it's wanted; prices move as you
+trade and recover over minutes), a **shipyard** (repairs, refits, new ships in
+part-exchange), a **tavern** (sailors for hire, gossip about prices elsewhere for the
+price of a round, and a **fixer** who'll mend your name with any faction for gold,
+or offer a smuggling run), and the port's **governor** (or guildhall, or pirate lord)
+with freight and bounty jobs. Your price book remembers every price you've seen or
+heard; the chart (M) shows where everything is and the best runs you know of.
+
+**Reputation:** firing first on a ship, sinking her or taking her changes how every
+flag sees you. Outlaws are hunted by Imperial warships; a bad name raises prices and,
+at rock bottom, closes a faction's ports. Pirates leave their friends alone, and
+merchants stop running from captains they trust. Pirate havens take almost anyone.
+Muskets are contraband in Imperial ports: the tavern's back room pays well for them,
+but customs officers search holds.
+
 Board a ship that hasn't struck and her captain fights you on deck. Watch the ring on
 their blade: white can be blocked, and tapped block **as it turns gold** is a parry;
 red can only be dodged with a roll. Kicks break a raised guard. Win and she's yours,
@@ -60,9 +81,9 @@ e.g. `game.ship`, `game.sea.vessels` or `game.weather.windAt(0, 0, 0)`.
 
 Ships are MagicaVoxel `.vox` files in `public/models/ships/`. The authoring
 conventions (axes, naming the `hull` / `sail` / `flag` objects) are in
-[docs/ARCHITECTURE.md §8](docs/ARCHITECTURE.md#8-ship-art-magicavoxel-authoring-guide).
+[docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md#9-ship-art-magicavoxel-authoring-guide).
 
 ## Docs
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
-model, voxel/ocean/sailing/combat/duel pipelines, the character art pipeline, simulation rules and roadmap.
+model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, the character art pipeline, simulation rules and roadmap.

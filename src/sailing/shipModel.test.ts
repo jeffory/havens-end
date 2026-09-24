@@ -43,9 +43,9 @@ describe('buildShipModel', () => {
   it('outlines the waterline footprint for collisions', () => {
     const xs: number[] = [];
     const zs: number[] = [];
-    for (let i = 0; i < model.outline.length; i += 2) {
-      xs.push(model.outline[i]);
-      zs.push(model.outline[i + 1]);
+    for (let i = 0; i < model.footprint.length; i += 2) {
+      xs.push(model.footprint[i]);
+      zs.push(model.footprint[i + 1]);
     }
     expect(Math.min(...xs)).toBe(-1.5);
     expect(Math.max(...xs)).toBe(1.5);

@@ -1,5 +1,5 @@
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
-import { outlineFromFootprint } from './hull';
+import { footprintSamples } from './hull';
 
 export interface Point3 {
   x: number;
@@ -24,8 +24,8 @@ export interface ShipModel {
   palette: Uint8Array;
   /** Model-space point that becomes the ship's origin: middle of the hull, at the waterline. */
   origin: Point3;
-  /** Waterline footprint boundary in ship-local (x, z), for collision. */
-  outline: Float32Array;
+  /** Samples covering the waterline footprint in ship-local (x, z), for collision. */
+  footprint: Float32Array;
   /** Ship-local z of the bow tip and stern, and the half-width of the hull. */
   bow: number;
   stern: number;
@@ -86,7 +86,7 @@ export function buildShipModel(file: VoxFile, draft: number): ShipModel {
     }),
     palette: file.palette,
     origin,
-    outline: outlineFromFootprint(footprint.values()),
+    footprint: footprintSamples(footprint.values()),
     bow: hullBox.maxZ + 1 - origin.z,
     stern: hullBox.minZ - origin.z,
     halfBeam: (hullBox.maxX + 1 - hullBox.minX) / 2,
