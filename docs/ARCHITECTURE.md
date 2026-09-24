@@ -542,6 +542,8 @@ src/
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
+  assetgen/            prompt → art via ComfyUI: pixel textures, sprites, icons,
+                       HD materials, .vox models (see its README)
 public/models/         ship and character .vox files
 ```
 

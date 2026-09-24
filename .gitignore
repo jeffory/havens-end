@@ -6,3 +6,4 @@ dist
 .venv
 art-source
 __pycache__
+.assetgen

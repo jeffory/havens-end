@@ -83,6 +83,13 @@ Ships are MagicaVoxel `.vox` files in `public/models/ships/`. The authoring
 conventions (axes, naming the `hull` / `sail` / `flag` objects) are in
 [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md#9-ship-art-magicavoxel-authoring-guide).
 
+## Generated art
+
+`npm run asset` generates pixel-art block textures, voxel colour patterns, sprites,
+icons, HD materials and `.vox` props through the ComfyUI server. It needs
+`COMFY_API_KEY` in `.env` for the paid models. See
+[scripts/assetgen/README.md](scripts/assetgen/README.md).
+
 ## Docs
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
