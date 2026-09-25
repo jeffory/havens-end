@@ -521,6 +521,7 @@ export class Game {
     this.fog.near = rig.distance * 1.4 * (1 - 0.5 * dark);
     this.fog.far = rig.distance * 3.5 * (1 - 0.45 * dark);
     this.terrain.setGlow(0.2 + 2.2 * dark);
+    this.terrain.setZone(walker ? this.shore.townLand() : null);
     this.nightLights.update(this.lightSources(), focus, dark, time);
     this.people.update(this.land, paused ? 1 : alpha, paused ? 0 : frameSeconds, time, focus);
     this.drops.update(this.land.drops, paused ? 1 : alpha, time, focus);

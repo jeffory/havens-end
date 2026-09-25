@@ -5,7 +5,7 @@ import type { Input } from './core/Input';
 import { PACK_SIZE } from './economy/captain';
 import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
-import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool } from './land/Land';
+import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
 import { PLANTABLE } from './land/crops';
 import { type Building, STRUCTURES, type Structure } from './land/structures';
 import type { CameraRig } from './render/CameraRig';
@@ -34,6 +34,10 @@ export interface ShoreHost {
 const TOOL_LABELS: Record<Tool, string> = { axe: 'Axe', pickaxe: 'Pickaxe', shovel: 'Shovel', hoe: 'Hoe' };
 const SWING_SECONDS = 0.38;
 const HINT_SECONDS = 2.5;
+/** How long a town's land stays marked out after you try to work it, fading in and out. */
+const TOWN_SECONDS = 5;
+const TOWN_FADE_IN = 0.25;
+const TOWN_FADE_OUT = 1.2;
 /** How far away the mouse can place a building. */
 const PLACE_REACH = 18;
 const PLACE_LABELS: Record<PortPlace['kind'], string> = { market: 'Market', tavern: 'Tavern', shipyard: 'Shipyard', office: 'Governor' };
@@ -48,6 +52,8 @@ export class Shore {
   placing: { kind: Structure; rot: number } | null = null;
   private swing: number | null = null;
   private hint: { text: string; until: number; ok: boolean; tally?: boolean } | null = null;
+  /** A town whose land is marked out on the ground (you tried to work it), and when. */
+  private town: { port: Port; at: number } | null = null;
   /** What's been picked up lately, for the hint ("+3 timber, +1 sapling"). */
   private gains = new Map<Good, number>();
   /** The cell under the mouse, while the mouse is being used. */
@@ -176,6 +182,7 @@ export class Shore {
       if (!spot) return;
       const result = this.land.build(this.placing.kind, spot.x, spot.z, this.placing.rot);
       this.report(result);
+      this.markTown(spot);
       if (result.ok && !STRUCTURES[this.placing.kind].freeform) this.placing = null;
       return;
     }
@@ -183,6 +190,7 @@ export class Shore {
     if (!target) return;
     this.swing = 0;
     this.report(this.land.use(this.held, target));
+    this.markTown(target);
   }
 
   /** The shovel puts earth down: against the face under the mouse, or on the ground in front. */
@@ -193,6 +201,24 @@ export class Shore {
     if (!target) return;
     this.swing = 0;
     this.report(this.land.place(target));
+    this.markTown(target);
+  }
+
+  /** Trying to work a town's land marks it out on the ground for a while, so you can see where yours could start. */
+  private markTown(spot: { x: number; z: number }): void {
+    const port = this.land.townAt(spot.x, spot.z);
+    if (port) this.town = { port, at: this.clock };
+  }
+
+  /** The town's land to mark out on the ground now, and how strongly, if any. */
+  townLand(): { x: number; z: number; radius: number; amount: number } | null {
+    const t = this.town;
+    const age = t ? this.clock - t.at : Infinity;
+    if (!t || age > TOWN_SECONDS || !this.land.walker) {
+      this.town = null;
+      return null;
+    }
+    return { x: t.port.x, z: t.port.z, radius: TOWN_RADIUS, amount: Math.min(1, age / TOWN_FADE_IN, (TOWN_SECONDS - age) / TOWN_FADE_OUT) };
   }
 
   private report(result: { ok: boolean; message: string }): void {

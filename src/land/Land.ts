@@ -4,7 +4,7 @@ import { SEA_LEVEL } from '../config';
 import { isNight } from '../core/clock';
 import { PACK_SIZE, PASSENGER_BERTHS } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, type Good, loadCargo, unload } from '../economy/goods';
-import type { PortPlace } from '../economy/ports';
+import type { Port, PortPlace } from '../economy/ports';
 import { Block, blocksWalker } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight, levelGround, clearSite, overlaps, TREE_BLOCKS, type Footprint } from '../worldgen/buildings';
@@ -571,7 +571,7 @@ export class Land {
     const w = this.walker;
     if (!w) return { ok: false, reason: 'You’re aboard ship.' };
     const { x, z } = t;
-    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land: work it in your own camp.' };
+    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land (marked on the ground): work it in your own camp.' };
 
     const crop = this.cropAt(x, z);
     if (crop && stageOf(crop, this.sea.time) === 2 && this.reaches(x, crop.y, z)) return { ok: true, action: 'harvest', x, y: crop.y, z };
@@ -685,7 +685,7 @@ export class Land {
       y = ground.y + 1;
     }
     const no = (reason: string): Aim => ({ ok: false, reason, x, y, z });
-    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land: work it in your own camp.' };
+    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land (marked on the ground): work it in your own camp.' };
     if (!this.reaches(x, y, z)) return { ok: false, reason: 'Out of reach.' };
     if (this.world.getVoxel(x, y, z) !== Block.Air) return no('There’s no room there.');
     // Holes can be filled as deep as the shovel digs; any deeper is the sea.
@@ -868,7 +868,12 @@ export class Land {
   }
 
   inTown(x: number, z: number): boolean {
-    return this.sea.ports.some((p) => Math.hypot(p.x - x, p.z - z) < TOWN_RADIUS);
+    return this.townAt(x, z) !== undefined;
+  }
+
+  /** The port whose town this point is in, if any. */
+  townAt(x: number, z: number): Port | undefined {
+    return this.sea.ports.find((p) => Math.hypot(p.x - x, p.z - z) < TOWN_RADIUS);
   }
 
   cropAt(x: number, z: number): Crop | undefined {
@@ -892,7 +897,7 @@ export class Land {
     const plot = plotFor(kind, cx, cz, rot);
     const verdict = (ok: boolean, reason: string, y = groundHeight(this.world, cx, cz)): Placement => ({ plot, y, ok, reason });
     if (!this.walker) return verdict(false, 'Go ashore to build.');
-    if (this.inTown(cx, cz)) return verdict(false, 'Not in town: build on your own land.');
+    if (this.inTown(cx, cz)) return verdict(false, 'Not in town (its land is marked on the ground): build on your own.');
     if (kind !== 'campfire' && !this.claimed(cx, cz)) return verdict(false, 'Build a campfire first: it claims the land around it.');
     if (this.buildings.some((b) => overlaps(b, plot, spec.freeform ? 0 : 1))) return verdict(false, 'Too close to another building.');
     if (this.crops.some((c) => c.x >= plot.x0 - 1 && c.x <= plot.x0 + plot.w && c.z >= plot.z0 - 1 && c.z <= plot.z0 + plot.d)) return verdict(false, 'There are crops in the way.');

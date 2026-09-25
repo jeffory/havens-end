@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshLambertMaterial, Vector3, Vector4 } from 'three';
+import { Color, Group, Mesh, MeshLambertMaterial, Vector3, Vector4 } from 'three';
 import { BLOCK_PALETTE, type BlockId } from '../voxel/blocks';
 import type { Chunk } from '../voxel/Chunk';
 import { CHUNK_SIZE } from '../voxel/Chunk';
@@ -6,6 +6,9 @@ import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { toGeometry } from './voxelGeometry';
+
+/** The colour land is marked out in: a warm red, "not yours". */
+const ZONE_COLOR = 0xe0583a;
 
 /**
  * Keeps one Three.js mesh per non-empty chunk in sync with the voxel data. It never
@@ -21,6 +24,9 @@ export class ChunkRenderer {
   private readonly cutView = { value: new Vector3(0, 1, 1) };
   /** How brightly embers, lanterns and windows glow: faintly by day, strongly at night. */
   private readonly glow = { value: 0.2 };
+  /** Land marked out on the ground (a town's): centre x, z, radius, and how strongly it shows (0 = not at all). */
+  private readonly zone = { value: new Vector4(0, 0, 0, 0) };
+  private readonly zoneColor = { value: new Color(ZONE_COLOR) };
 
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
@@ -28,16 +34,34 @@ export class ChunkRenderer {
       shader.uniforms.uCut = this.cut;
       shader.uniforms.uCutView = this.cutView;
       shader.uniforms.uGlow = this.glow;
+      shader.uniforms.uZone = this.zone;
+      shader.uniforms.uZoneColor = this.zoneColor;
       // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;')
+        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec4 uCut;\nuniform vec3 uCutView;\nuniform float uGlow;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
+        .replace(
+          '#include <common>',
+          '#include <common>\nuniform vec4 uCut;\nuniform vec3 uCutView;\nuniform float uGlow;\nuniform vec4 uZone;\nuniform vec3 uZoneColor;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;',
+        )
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
+// Marked-out land: stripes across the ground inside it, and a line along its edge.
+float zoneEdge = 0.0;
+if (uZone.w > 0.0) {
+  float d = distance(vCutWorld.xz, uZone.xy);
+  zoneEdge = (1.0 - smoothstep(0.0, 0.9, abs(d - uZone.z))) * uZone.w;
+  float stripe = step(0.5, fract((vCutWorld.x + vCutWorld.z) * 0.2));
+  float inside = step(d, uZone.z) * step(0.5, vUp) * (0.22 + 0.2 * stripe) * uZone.w;
+  diffuseColor.rgb = mix(diffuseColor.rgb, uZoneColor, max(zoneEdge, inside));
+}`,
+        )
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow + uZoneColor * zoneEdge * 0.5;')
         .replace(
           '#include <clipping_planes_fragment>',
           /* glsl */ `#include <clipping_planes_fragment>
@@ -52,6 +76,12 @@ if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut
         );
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
+  }
+
+  /** Marks out a circle of land on the ground (a town's), `amount` 0 to 1; null hides it. */
+  setZone(zone: { x: number; z: number; radius: number; amount: number } | null): void {
+    if (zone) this.zone.value.set(zone.x, zone.z, zone.radius, zone.amount);
+    else this.zone.value.w = 0;
   }
 
   /** How strongly glowing blocks light themselves: 0 not at all, ~2 on a dark night. */

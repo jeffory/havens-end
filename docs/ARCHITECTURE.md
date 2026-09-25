@@ -525,7 +525,9 @@ straight into the storehouses.
 **Camps** (`land/structures.ts`):
 - **Claims.** A campfire (5 timber) claims everything within 32 voxels of it.
   Nothing else can be built without one, and nothing at all within 80 of a port's
-  berth.
+  berth. Try to dig, build or put earth down on a town's land and that land is
+  marked out on the ground for five seconds: stripes across it and a glowing line
+  at its edge. The terrain shader draws the marking (`ChunkRenderer.setZone`).
 - **Buildings** go on the grid, turned in quarter turns:
   - a hut (rest here to save);
   - a storehouse (150 goods);
