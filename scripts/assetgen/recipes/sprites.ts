@@ -18,7 +18,7 @@ import type { Candidate, Client, GenOptions, Item, Recipe } from './types';
 const ICON_MARGIN = 0.12;
 
 /** Uploads comma-separated reference image paths and returns their LoadImage outputs. */
-async function referenceImages(client: Client, g: Graph, paths: string): Promise<Ref[] | undefined> {
+export async function referenceImages(client: Client, g: Graph, paths: string): Promise<Ref[] | undefined> {
   const list = paths.split(',').map((p) => p.trim()).filter(Boolean);
   if (list.length === 0) return undefined;
   const refs: Ref[] = [];

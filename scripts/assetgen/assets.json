@@ -1,0 +1,104 @@
+{
+  "illustration/epilogue": {
+    "recipe": "illustration",
+    "prompt": "Victory at sunset: a great crimson Imperial flagship with a torn black-and-gold admiral's pennant strikes her colours amid drifting smoke, while a small sloop lies alongside and its young captain, the grown-up child of the reference image in a long black coat and tricorn, stands at the rail looking toward the horizon. Bittersweet golden light. Same painting style as the reference image.",
+    "model": "nano-banana-pro",
+    "seed": 193387425,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ".assetgen/candidates/illustration/intro-1-foundling/1/raw.png"
+    },
+    "files": [
+      "public/story/epilogue.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:52:17.436Z"
+  },
+  "illustration/intro-1-foundling": {
+    "recipe": "illustration",
+    "prompt": "A stormy night on a Caribbean harbour quay: a small barefoot orphan child, soaked through, huddles against a stack of barrels under a swinging lantern, while a tall, kindly merchant sea captain with a grey-streaked beard, in a weathered navy-blue coat and tricorn hat, kneels to offer a hand. A merchant brig is moored behind them in the rain. Warm lantern light against the cold blue storm.",
+    "model": "nano-banana-pro",
+    "seed": 73160213,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ""
+    },
+    "files": [
+      "public/story/intro-1-foundling.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:49:04.834Z"
+  },
+  "illustration/intro-2-aboard": {
+    "recipe": "illustration",
+    "prompt": "Years later, aboard the same merchant brig at golden sunset: the same captain, now greyer, teaches the same child, now about twelve, to read a sea chart with brass dividers spread on a barrel head on deck, full sails glowing above, calm sea and gulls. Warm and tender. Same painting style and the same two characters as the reference image.",
+    "model": "nano-banana-pro",
+    "seed": 193387425,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ".assetgen/candidates/illustration/intro-1-foundling/1/raw.png"
+    },
+    "files": [
+      "public/story/intro-2-aboard.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:52:15.461Z"
+  },
+  "illustration/intro-3-attack": {
+    "recipe": "illustration",
+    "prompt": "At a cold grey-pink dawn, three tall Imperial warships with crimson hulls and gold trim, the leader flying a long black-and-gold admiral's pennant, close on the small merchant brig and fire a thundering broadside: smoke, flame, flying splinters. Seen from the brig's deck. Same painting style as the reference image.",
+    "model": "nano-banana-pro",
+    "seed": 193387425,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ".assetgen/candidates/illustration/intro-1-foundling/1/raw.png"
+    },
+    "files": [
+      "public/story/intro-3-attack.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:52:15.925Z"
+  },
+  "illustration/intro-4-burning": {
+    "recipe": "illustration",
+    "prompt": "The merchant brig burning and sinking at dawn. In the foreground among floating wreckage, the wounded old captain from the reference image grips the arm of the young sailor, now about seventeen, and whispers urgently; flames reflected in the dark water, the warships' silhouettes beyond. Same painting style as the reference image.",
+    "model": "nano-banana-pro",
+    "seed": 193387425,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ".assetgen/candidates/illustration/intro-1-foundling/1/raw.png"
+    },
+    "files": [
+      "public/story/intro-4-burning.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:52:16.443Z"
+  },
+  "illustration/intro-5-haven": {
+    "recipe": "illustration",
+    "prompt": "The morning after: the young survivor from the reference image, now about seventeen, wet and exhausted, wakes on a sunny tropical beach beside a small harbour town of white and colourful houses. A stout weathered woman harbourmaster with grey braids and a leather apron offers a hand; a small single-masted sloop waits at the pier behind. Hopeful golden light. Same painting style as the reference image.",
+    "model": "nano-banana-pro",
+    "seed": 193387425,
+    "flags": {
+      "width": 1600,
+      "height": 900,
+      "quality": 82,
+      "ref": ".assetgen/candidates/illustration/intro-1-foundling/1/raw.png"
+    },
+    "files": [
+      "public/story/intro-5-haven.webp"
+    ],
+    "pickedFrom": 1,
+    "pickedAt": "2026-09-25T00:52:16.957Z"
+  }
+}

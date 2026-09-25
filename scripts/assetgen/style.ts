@@ -85,6 +85,18 @@ export function materialPrompt(description: string): string {
   );
 }
 
+/**
+ * A painted story picture (the intro's panels): golden-age book illustration, cinematic
+ * and wide. The scene brings its own mood; the world's sunny palette isn't forced on it.
+ */
+export function illustrationPrompt(description: string): string {
+  return (
+    `Painted storybook illustration for a pirate adventure game set in the Caribbean in the age of sail: ${description}. ` +
+    `Oil painting in the manner of golden-age book illustration (Howard Pyle, N. C. Wyeth): rich colour, dramatic ` +
+    `light, visible painterly brushwork, a clear cinematic wide composition. No text, no lettering, no borders, no frame.`
+  );
+}
+
 /** Concept art that image-to-3D models turn into clean, voxel-friendly shapes. */
 export function voxConceptPrompt(description: string): string {
   return (

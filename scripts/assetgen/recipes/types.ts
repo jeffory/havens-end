@@ -3,7 +3,7 @@ import type { Graph } from '../comfy/graph';
 import type { ModelId } from '../comfy/models';
 import type { Raster } from '../image/raster';
 
-export type RecipeId = 'block' | 'pattern' | 'sprite' | 'icons' | 'material' | 'vox';
+export type RecipeId = 'block' | 'pattern' | 'sprite' | 'icons' | 'material' | 'vox' | 'illustration';
 
 /** What recipes need from ComfyClient (a stub in tests). */
 export interface Client {
