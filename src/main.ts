@@ -1,8 +1,10 @@
 import './style.css';
 import { Game } from './Game';
 import { AUTOSAVE, readSave } from './save/storage';
+import { buildStamp } from './ui/buildStamp';
 
 const container = document.getElementById('app')!;
+buildStamp(container);
 
 async function main(): Promise<void> {
   const game = await Game.create(container);

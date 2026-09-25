@@ -120,6 +120,20 @@ canvas {
   }
 }
 
+/* When the game was built: small and faint, bottom right. */
+.build-stamp {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  z-index: 1;
+  color: #fff;
+  font: 10px/1 ui-monospace, monospace;
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
 .fatal {
   position: absolute;
   top: 40%;
