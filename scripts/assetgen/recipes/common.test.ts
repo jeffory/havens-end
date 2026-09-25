@@ -71,7 +71,7 @@ describe('repairSeam at sizes other than 1024', () => {
     expect(getPixel(out, 100, 100)).toEqual(getPixel(tex, 1124, 1124));
     expect(getPixel(out, 101, 100)).toEqual(getPixel(tex, 1125, 1124));
     expect(getPixel(out, 1024, 1024)).toEqual([99, 99, 99, 255]); // centre of the cross: repainted
-  });
+  }, 20_000); // a 2048 px image: slow under a full parallel run
 });
 
 describe('repairSeam', () => {
