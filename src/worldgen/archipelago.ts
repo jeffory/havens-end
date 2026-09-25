@@ -117,7 +117,8 @@ export function buildArchipelago(world: VoxelWorld, plans: readonly IslandPlan[]
   for (const plan of plans) {
     generateIsland(world, plan);
     if (!plan.port) continue;
-    const berth = buildHarbour(world, plan, plan.port.faction);
+    // The town's layout stays behind: a port needs its berth, pier, doors and lamps.
+    const { town, ...berth } = buildHarbour(world, plan, plan.port.faction, plan === plans[0]);
     ports.push({ id: ports.length, ...plan.port, ...berth, islandX: plan.centerX, islandZ: plan.centerZ });
   }
   return ports;

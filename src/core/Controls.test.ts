@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PAD, readPad, type PadSnapshot } from './Controls';
+import { Controls, PAD, readPad, type PadSnapshot } from './Controls';
+import type { Input } from './Input';
 
 function pad(axes: number[] = [0, 0, 0, 0], pressed: number[] = []): PadSnapshot {
   return { axes, buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i) })) };
@@ -89,5 +90,36 @@ describe('readPad on foot', () => {
     const diagonal = readPad(pad([0.7, 0.7, 0, 0]), new Set(), 'foot');
     expect(Math.hypot(diagonal.walkX, diagonal.walkY)).toBeCloseTo(1, 1);
     expect(readPad(pad([0.1, 0.1, 0, 0]), new Set(), 'foot').walkX).toBe(0);
+  });
+});
+
+describe('Controls on the keyboard', () => {
+  /** A keyboard on which just these keys went down this frame. */
+  const pressing = (...codes: string[]) =>
+    ({
+      isHeld: () => false,
+      isMouseHeld: () => false,
+      presses: (code: string) => (codes.includes(code) ? 1 : 0),
+      takeClicks: () => [],
+      takeWheel: () => 0,
+    }) as unknown as Input;
+
+  it('shows or tucks away the controls legend on H, at sea and on foot', () => {
+    for (const mode of ['sea', 'foot'] as const) {
+      const controls = new Controls(pressing('KeyH'));
+      controls.setMode(mode);
+      controls.poll();
+      expect(controls.take('help'), mode).toBe(1);
+      expect(controls.take('help'), mode).toBe(0);
+    }
+  });
+
+  it('leaves H alone in menus and duels', () => {
+    for (const mode of ['menu', 'duel'] as const) {
+      const controls = new Controls(pressing('KeyH'));
+      controls.setMode(mode);
+      controls.poll();
+      expect(controls.take('help'), mode).toBe(0);
+    }
   });
 });

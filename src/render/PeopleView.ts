@@ -1,5 +1,5 @@
 import { type BufferGeometry, Group, Mesh, MeshLambertMaterial } from 'three';
-import { buildSettlerModel } from '../duel/settlerModel';
+import { buildSettlerModel, musketCells } from '../duel/settlerModel';
 import type { CreatureKind } from '../land/creatures';
 import type { Land } from '../land/Land';
 import { indoors, JOB_LABELS, type Settler } from '../land/settlers';
@@ -18,9 +18,12 @@ const CREATURE_SCALE = 0.12;
 
 const TOOL: Record<Settler['job'], HeldModel | null> = { idle: null, farmer: 'hoe', woodcutter: 'axe', miner: 'pickaxe', fisher: 'rod', worker: 'hammer' };
 
+/** What someone has in hand: a tool, or a soldier's musket. */
+type InHand = HeldModel | 'musket';
+
 interface Figure {
   view: CharacterView;
-  held: HeldModel | null;
+  held: InHand | null;
 }
 
 /**
@@ -76,6 +79,34 @@ export class PeopleView {
         dt,
         time,
       );
+    }
+    // Townsfolk (by negative keys, clear of the settlers'), dressed for their port:
+    // strolling, lingering, and at the shipyard, hammering. Soldiers carry their muskets.
+    for (const f of land.townsfolk) {
+      const w = f.walker;
+      const x = w.prev.x + (w.x - w.prev.x) * alpha;
+      const y = w.prev.y + (w.y - w.prev.y) * alpha;
+      const z = w.prev.z + (w.z - w.prev.z) * alpha;
+      if (Math.hypot(x - focus.x, z - focus.z) > DRAW_RANGE) continue;
+      const key = -f.id;
+      seen.add(key);
+      let figure = this.figures.get(key);
+      if (!figure) {
+        figure = { view: new CharacterView(buildSettlerModel(f.look, f.dress)), held: null };
+        figure.view.hold(null);
+        figure.view.lift(0.05);
+        this.figures.set(key, figure);
+        this.group.add(figure.view.root);
+      }
+      const working = !f.dress.soldier && f.task.kind === 'linger' && f.task.spot.kind === 'yard';
+      const held: InHand | null = f.dress.soldier ? 'musket' : working ? 'hammer' : null;
+      if (held !== figure.held) {
+        figure.held = held;
+        figure.view.hold(held === 'musket' ? musketCells() : held ? heldCells(held) : null);
+      }
+      figure.view.root.position.set(x, y, z);
+      figure.view.root.rotation.y = w.facing;
+      figure.view.walk({ speed: Math.hypot(w.vx, w.vz), swing: working ? (time * 1.1 + f.id * 0.37) % 1 : null, lying: false, fishing: false }, dt, time);
     }
     for (const [id, figure] of this.figures) {
       if (seen.has(id)) continue;

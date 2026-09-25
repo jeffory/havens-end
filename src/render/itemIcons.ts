@@ -1,5 +1,6 @@
 import type { BufferGeometry } from 'three';
 import type { Good } from '../economy/goods';
+import type { Tool } from '../land/Land';
 import { paletteFromRgba } from '../voxel/palette';
 import { meshCells } from './voxelGeometry';
 
@@ -59,10 +60,10 @@ export const ICONS: Partial<Record<Good, Icon>> = {
     colors: { a: 0x4d6b2a, b: 0x7fa046, c: 0xc9d58a },
     rows: ['............', '......aa....', '....aabbaa..', '...abbcbbba.', '..abbbcbbba.', '..abbcbbba..', '.abbbcbbba..', '.abbcbbba...', '.abcbbaa....', '..cca.......', '.c..........', '............'],
   },
-  // A cob in its husk.
+  // A cob standing in its husk, the leaves peeled back either side: rows of yellow kernels, silk at the tip.
   maize: {
-    colors: { y: 0xe8c64a, Y: 0xf6de7a, g: 0x6f9a3a, G: 0x8fbf55 },
-    rows: ['.......gg...', '......gyyg..', '.....gyYyg..', '....gyYyyg..', '...gyyYyg...', '..gyYyyg....', '..gyyYg.....', '.ggyyg......', '.gGgg.......', 'gG..........', '............', '............'],
+    colors: { Y: 0xfbe06a, y: 0xe8b92c, k: 0xb8841a, s: 0x9a6a34, g: 0x3f6e24, G: 0x78aa44 },
+    rows: ['.....ss.....', '.....YY.....', '....YyYk....', '.g..yYyk..g.', '.Gg.YyYk.gG.', '.GGgyYykgGG.', '..GGYyYkGG..', '..gGGyYGGg..', '...gGGGGg...', '....gGGg....', '.....gg.....', '............'],
   },
   // A red pepper.
   spice: {
@@ -77,6 +78,39 @@ export const ICONS: Partial<Record<Good, Icon>> = {
   meat: {
     colors: { a: 0x7a2b22, r: 0xb5473a, R: 0xd9725f, w: 0xf2ead8 },
     rows: ['............', '......aaa...', '....aarrraa.', '...arrRrrra.', '..arRrrrrra.', '..arrrrrra..', '..arrrrraa..', '...aarraa...', '....aww.....', '...wwww.....', '...ww.......', '............'],
+  },
+  // Three short lengths of cane, tied with twine, for planting.
+  caneCuttings: {
+    colors: { a: 0xa9c75a, b: 0x7d9a3a, c: 0xd8d08a, j: 0x5f7a2a, t: 0xc9ab74 },
+    rows: ['............', '.....cc.....', '..cc.ab.....', '..ab.ab.cc..', '..ab.jj.ab..', '..jj.ab.ab..', '..ab.ab.jj..', '.tttttttttt.', '..ab.ab.ab..', '..ab.jj.ab..', '..cc.cc.cc..', '............'],
+  },
+  // Tobacco seed: a tall green packet with a pale tobacco leaf on the front.
+  tobaccoSeed: {
+    colors: { o: 0x2c4a1c, p: 0x55903a, q: 0x92c65e, b: 0xe8eaaa, c: 0x9cbd58 },
+    rows: ['............', '..oooooooo..', '..oqqqqqqo..', '..oooooooo..', '..oppppbbo..', '..opppbbbo..', '..oppbbcbo..', '..opbbcbpo..', '..opbcbbpo..', '..occbpppo..', '..oooooooo..', '............'],
+  },
+  // Pepper seed: not a packet but a round red pouch, tied at the neck with a cord, the seed showing at its mouth.
+  pepperSeed: {
+    colors: { a: 0x5e1712, r: 0xbf3326, R: 0xec7a60, t: 0xd8b56f, T: 0x9c7a3e, s: 0xf6e4a4 },
+    rows: ['............', '...assssa...', '..arRsRrra..', '...arrrra...', '....tttt....', '...arRrrat..', '..arRRrrraT.', '.arRRrrrrra.', '.arRrrrrrra.', '.arrrrrrrra.', '..aaaaaaaa..', '............'],
+  },
+};
+
+const TOOL_COLORS = { d: 0x3d4247, m: 0x6c7278, s: 0x9aa0a6, S: 0xdde2e6, h: 0xb07f45, e: 0x6b4526 };
+
+/** The tools as the hotbar shows them: iron heads on ash hafts, handle to the bottom left. */
+export const TOOL_ICONS: Record<Tool, Icon> = {
+  axe: {
+    colors: TOOL_COLORS,
+    rows: ['............', '..ddd.......', '.dSssd......', 'dSsssmd..he.', 'dSssssmdhe..', 'dSsssssde...', '.dSssmdhe...', '..dddd.he...', '.....he.....', '....he......', '...he.......', '..he........'],
+  },
+  pickaxe: {
+    colors: TOOL_COLORS,
+    rows: ['............', '..dddddd....', '.dSSSSssdd..', 'dSsdddddssd.', 'dsd...hedsd.', 'dd...he..dd.', '....he......', '...he.......', '..he........', '.he.........', 'he..........', '............'],
+  },
+  hoe: {
+    colors: TOOL_COLORS,
+    rows: ['............', '..ddddd..he.', '.dSSmmmd.he.', 'dSSddddmhe..', 'dSd...dhe...', 'dd....he....', '.....he.....', '....he......', '...he.......', '..he........', '.he.........', 'he..........'],
   },
 };
 

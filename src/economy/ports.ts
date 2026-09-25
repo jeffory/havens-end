@@ -23,6 +23,19 @@ export interface Port {
   places: PortPlace[];
   /** Lamps on the pier and beacons on towers: they light the way in after dark. */
   lamps: Array<{ x: number; y: number; z: number }>;
+  /** Where townsfolk go about the town (none for a port with no town of its own). */
+  spots?: TownSpot[];
+}
+
+/** What a spot in town is: where townsfolk come and go, and where they linger. */
+export type SpotKind = 'square' | 'stall' | 'yard' | 'tavern' | 'street' | 'well' | 'door';
+
+/** A spot in town, at floor height: a cell's middle. */
+export interface TownSpot {
+  x: number;
+  y: number;
+  z: number;
+  kind: SpotKind;
 }
 
 export type PlaceKind = 'market' | 'tavern' | 'office' | 'shipyard';
@@ -33,6 +46,8 @@ export interface PortPlace {
   x: number;
   y: number;
   z: number;
+  /** Where its sign hangs: on the building, over the door (older layouts put it over the door step). */
+  sign?: { x: number; y: number; z: number };
 }
 
 export const FACTION_NAMES: Record<PortFaction, string> = {

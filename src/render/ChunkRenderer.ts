@@ -1,4 +1,4 @@
-import { Color, Group, Mesh, MeshLambertMaterial, Vector3, Vector4 } from 'three';
+import { Color, Group, Mesh, MeshLambertMaterial, Vector4 } from 'three';
 import { glslFloat, WATER_LEVEL } from '../ocean/waves';
 import { BLOCK_PALETTE, type BlockId } from '../voxel/blocks';
 import type { Chunk } from '../voxel/Chunk';
@@ -6,10 +6,14 @@ import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
+import { MAX_LIFTS } from './RoofLifter';
 import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
 const ZONE_COLOR = 0xe0583a;
+/** How many boxes can be lifted away at once (the roof lifter's limit), and the height of one that isn't in use. */
+const LIFTS = MAX_LIFTS;
+const NEVER = 1e6;
 
 /**
  * Keeps one Three.js mesh per non-empty chunk in sync with the voxel data. It never
@@ -20,9 +24,13 @@ export class ChunkRenderer {
   private readonly meshes = new Map<Chunk, Mesh>();
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
   private readonly scratch = new Uint8Array(PADDED ** 3);
-  /** The cutaway: feet position and radius (0 = off), and the horizontal way to the camera plus its slope. */
-  private readonly cut = { value: new Vector4(0, 0, 0, 0) };
-  private readonly cutView = { value: new Vector3(0, 1, 1) };
+  /**
+   * Lifted away on foot (roofs, upper storeys, canopies in the captain's way): up to
+   * `LIFTS` boxes, each (x0, z0, x1, z1), and the height above which a tree's or a
+   * building's blocks in it go. An unused box sits under an impossible height.
+   */
+  private readonly liftBoxes = { value: Array.from({ length: LIFTS }, () => new Vector4()) };
+  private readonly liftFrom = { value: new Array<number>(LIFTS).fill(NEVER) };
   /** How brightly embers, lanterns and windows glow: faintly by day, strongly at night. */
   private readonly glow = { value: 0.2 };
   /** Land marked out on the ground (a town's): centre x, z, radius, and how strongly it shows (0 = not at all). */
@@ -34,30 +42,31 @@ export class ChunkRenderer {
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
     this.material.onBeforeCompile = (shader) => {
-      shader.uniforms.uCut = this.cut;
-      shader.uniforms.uCutView = this.cutView;
+      shader.uniforms.uLiftBox = this.liftBoxes;
+      shader.uniforms.uLiftFrom = this.liftFrom;
       shader.uniforms.uGlow = this.glow;
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
       shader.uniforms.uTime = this.time;
       // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;')
+        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying vec3 vFace;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvFace = normalize(mat3(modelMatrix) * objectNormal);\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);\nvUp = vFace.y;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
           /* glsl */ `#include <common>
-uniform vec4 uCut;
-uniform vec3 uCutView;
+uniform vec4 uLiftBox[${LIFTS}];
+uniform float uLiftFrom[${LIFTS}];
 uniform float uGlow;
 uniform vec4 uZone;
 uniform vec3 uZoneColor;
 uniform float uTime;
 varying vec3 vCutWorld;
+varying vec3 vFace;
 varying float vCutaway;
 varying float vGlow;
 varying float vUp;
@@ -105,13 +114,17 @@ if (under > 0.0) {
         .replace(
           '#include <clipping_planes_fragment>',
           /* glsl */ `#include <clipping_planes_fragment>
-// Anything above head height on the camera's line of sight to the captain is cut away.
-float cutHeight = vCutWorld.y - uCut.y;
-// Only trees and buildings (the ground is solid inside, and would show hollow), and
-// only on the camera's side of them.
-if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut.xz, uCutView.xy) > 0.5) {
-  vec2 onSightLine = uCut.xz + uCutView.xy * cutHeight * uCutView.z;
-  if (distance(vCutWorld.xz, onSightLine) < uCut.w) discard;
+// Roofs, upper storeys and canopies in the captain's way lift away whole, block by
+// block: only trees and buildings (the ground is solid inside, and would show hollow).
+// The voxel a fragment belongs to: half a block back into it from its face. (Per
+// fragment: a face's corners sit in different cells, so a per-vertex cell would drift
+// across the face, and cut the last row under a lift away but for its top.)
+if (vCutaway > 0.5) {
+  vec3 cell = floor(vCutWorld - vFace * 0.5) + 0.5;
+  for (int k = 0; k < ${LIFTS}; k++) {
+    vec4 b = uLiftBox[k];
+    if (cell.y > uLiftFrom[k] && cell.x > b.x && cell.x < b.z && cell.z > b.y && cell.z < b.w) discard;
+  }
 }`,
         );
     };
@@ -136,28 +149,27 @@ if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut
   }
 
   /**
-   * Cuts a hole through canopies and roofs between the camera and someone on foot, so
-   * they're never lost under a tree. `toward` is the horizontal direction to the camera;
-   * `slope` is its horizontal run per unit of height. Radius 0 turns it off.
+   * Lifts away the trees' and buildings' blocks in each box (on the grid, from x0, z0 up
+   * to but not including x1, z1) from the height `from` up: roofs and canopies in the
+   * captain's way. An empty list lifts nothing.
    */
-  setCutaway(x: number, y: number, z: number, radius: number, towardX = 0, towardZ = 1, slope = 1): void {
-    this.cut.value.set(x, y, z, radius);
-    this.cutView.value.set(towardX, towardZ, slope);
+  setLifts(lifts: ReadonlyArray<{ x0: number; z0: number; x1: number; z1: number; from: number }>): void {
+    for (let k = 0; k < LIFTS; k++) {
+      const l = lifts[k];
+      this.liftBoxes.value[k].set(l?.x0 ?? 0, l?.z0 ?? 0, l?.x1 ?? 0, l?.z1 ?? 0);
+      this.liftFrom.value[k] = l ? l.from : NEVER;
+    }
   }
 
-  /**
-   * Is this voxel cut away from view, so the mouse should pick through it? The same
-   * test as the shader's, made at the voxel's centre.
-   */
+  /** Is this voxel lifted away, so the mouse should pick through it? The shader's test, at the voxel's centre. */
   hides(x: number, y: number, z: number, id: BlockId): boolean {
-    const cut = this.cut.value;
-    const view = this.cutView.value;
-    if (cut.w <= 0 || ((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) === 0) return false;
-    const cx = x + 0.5;
-    const cz = z + 0.5;
-    const height = y + 0.5 - cut.y;
-    if (height <= 2.3 || (cx - cut.x) * view.x + (cz - cut.z) * view.y <= 0.5) return false;
-    return Math.hypot(cx - (cut.x + view.x * height * view.z), cz - (cut.z + view.y * height * view.z)) < cut.w;
+    if (((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) === 0) return false;
+    const boxes = this.liftBoxes.value;
+    for (let k = 0; k < LIFTS; k++) {
+      const b = boxes[k];
+      if (y + 0.5 > this.liftFrom.value[k] && x + 0.5 > b.x && x + 0.5 < b.z && z + 0.5 > b.y && z + 0.5 < b.w) return true;
+    }
+    return false;
   }
 
   get meshCount(): number {
