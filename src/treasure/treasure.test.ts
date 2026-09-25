@@ -5,6 +5,7 @@ import { SEA_LEVEL } from '../config';
 import { phaseOf } from '../core/clock';
 import { Economy } from '../economy/economy';
 import type { Port } from '../economy/ports';
+import { type Deposit, Deposits } from '../land/deposits';
 import { Land } from '../land/Land';
 import { createWalker } from '../land/walker';
 import { footprintSamples } from '../sailing/hull';
@@ -176,6 +177,21 @@ describe('digging for treasure', () => {
     const dug = t.land.dig();
     expect(dug).toMatchObject({ ok: true, message: expect.stringMatching(/chest/) });
     expect(t.world.getVoxel(x, SEA_LEVEL + 1, z)).toBe(Block.Chest);
+  });
+
+  it('buries chests clear of outcrops', () => {
+    const covered = setup();
+    // Outcrops (registered, no blocks needed) every 4 blocks across Gull Cay, the only near islet.
+    const list: Deposit[] = [];
+    for (let x = 385; x <= 415; x += 4) for (let z = -15; z <= 15; z += 4) list.push({ id: list.length + 1, kind: 'stone', x, z, cells: [] });
+    covered.land.deposits = new Deposits(list);
+    night(covered.sea);
+    let near = false;
+    for (let n = 0; n < 40; n++) {
+      covered.sea.clock.day = 100 + n;
+      if (covered.treasure.offersFor(PIRATE_PORT).some((o) => o.map.tier === 'near')) near = true;
+    }
+    expect(near).toBe(false);
   });
 
   it('won’t give up a cursed hoard by day; at night its guardian rises, and must be beaten', () => {

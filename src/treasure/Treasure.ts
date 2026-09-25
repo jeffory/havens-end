@@ -336,7 +336,7 @@ export class Treasure {
       const { i } = candidates.splice(Math.floor(this.random() * candidates.length), 1)[0];
       const tier = tiers.includes('legend') ? 'legend' : this.tierOf(i);
       const legs = tier === 'near' || tier === 'mid' ? 1 : 2;
-      const site = planSite(this.world, this.islands, i, legs, this.random, (x, z) => this.land.claimed(x, z) || this.land.inTown(x, z));
+      const site = planSite(this.world, this.islands, i, legs, this.random, (x, z) => this.land.claimed(x, z) || this.land.inTown(x, z) || this.land.deposits.near(x, z, 3));
       if (!site) continue;
       const clueStyle = tier === 'near' ? 'chart' : tier === 'mid' ? 'sketch' : tier === 'far' ? 'riddle' : tier;
       return { id: this.nextId++, tier, site, from, clue: clueFor(site, this.islands, clueStyle), loot: this.rollLoot(tier) };

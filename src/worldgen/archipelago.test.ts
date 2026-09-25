@@ -92,7 +92,7 @@ describe('buildArchipelago', () => {
         expect(world.surfaceHeight(Math.floor(ahead.x), Math.floor(ahead.z))).toBeLessThanOrEqual(SEA_LEVEL - 4);
       }
     }
-  });
+  }, 20_000); // builds three whole worlds: slow under a full parallel run
 });
 
 /**

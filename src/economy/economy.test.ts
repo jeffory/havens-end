@@ -9,7 +9,7 @@ import { VoxelWorld } from '../voxel/VoxelWorld';
 import { PASSENGER_BERTHS } from './captain';
 import { contractTitle, type Delivery } from './contracts';
 import { Economy, ROOM_COST } from './economy';
-import { cargoCount, STAPLES } from './goods';
+import { cargoCount, GOOD_INFO, STAPLES } from './goods';
 import { knownRoutes } from './logbook';
 import { buyCost, findLine, sellValue, stepMarket, unitPrice } from './market';
 import type { Port } from './ports';
@@ -148,6 +148,23 @@ describe('camp goods', () => {
     const lines = economy.lines(economy.ports[0]);
     expect(lines.slice(0, 5).map((l) => l.good)).toEqual(['sugar', 'rum', 'tobacco', 'cloth', 'spice']);
     expect(lines.findIndex((l) => l.good === 'pepperSeed')).toBeLessThan(lines.findIndex((l) => l.good === 'planks'));
+  });
+
+  it('deal in the new ores: the Guild’s foundries want copper, the Crown’s mint silver and gold, the Brethren gold', () => {
+    const { economy } = setup();
+    const role = (port: Port, good: string) => economy.lines(port).find((l) => l.good === good)?.role;
+    const free = economy.ports.find((p) => p.faction === 'merchant')!;
+    const nest = economy.ports.find((p) => p.faction === 'pirate')!;
+    const crown = economy.ports.find((p) => p.faction === 'imperial')!;
+    expect(role(free, 'copperOre')).toBe('demands');
+    expect(role(crown, 'silverOre')).toBe('demands');
+    expect(role(crown, 'goldOre')).toBe('demands');
+    expect(role(nest, 'goldOre')).toBe('demands');
+    // They come after every older line, so earlier saves' stocks still line up.
+    const lines = economy.lines(free).map((l) => l.good);
+    expect(lines.slice(-3)).toEqual(['copperOre', 'silverOre', 'goldOre']);
+    expect(GOOD_INFO.goldOre.price).toBeGreaterThan(GOOD_INFO.silverOre.price);
+    expect(GOOD_INFO.silverOre.price).toBeGreaterThan(GOOD_INFO.copperOre.price);
   });
 });
 

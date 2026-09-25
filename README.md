@@ -79,8 +79,10 @@ but customs officers search holds.
 signs say which is the market, tavern, governor and shipyard) to go in. Anywhere else,
 bring the ship close to a beach, slow down and press B to row ashore; she waits at
 anchor. On any island, the axe fells trees (a few blows each, more for a big one) and
-the pickaxe breaks stone. What comes loose drops at your feet and is picked up when you
-walk over it: timber and saplings from a tree, stone. Saplings grow into new trees.
+the pickaxe breaks outcrops of stone and ore (copper, and further out silver and gold),
+which grow back a few days later. What comes loose drops at your feet and is picked up
+when you walk over it: timber and saplings from a tree, stone and ore. Saplings grow
+into new trees.
 **Build a campfire** (5 timber) to claim the land around it; then you can build huts,
 storehouses, fences, paths and torches, and farm:
 till with the hoe and plant cane cuttings, tobacco or pepper seed (sold in every port)
@@ -91,7 +93,7 @@ few minutes and when you dock, and Esc opens the menu for named saves.
 **Crews and production.** Hire settlers in a tavern; they sail as passengers until
 you bring them ashore at a camp with a hut for them (two to a hut). At the campfire
 (E) give each a job: **farmers** harvest and resow your fields, **woodcutters** fell
-trees and plant saplings, **fishers** work the shore, and **workshop hands** run the
+trees and plant saplings, **miners** break up outcrops near the camp, **fishers** work the shore, and **workshop hands** run the
 sawpit (planks), sugar mill (sugar and molasses), distillery (rum), curing shed
 (tobacco), smokehouse (provisions) and forge (iron, cutlasses, muskets). Workshops
 draw on the camp's storehouses and fill them. Settlers eat one food each at sunrise

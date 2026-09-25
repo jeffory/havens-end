@@ -16,7 +16,8 @@ import { type Creature, CREATURES, stepCreatures, strike } from './creatures';
 import { type Drop, dropItem, stepDrops } from './drops';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
 import { type Building, doorOf, isWorkshop, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
-import { createWalker, groundBelow, standable, stepWalker, type Walker } from './walker';
+import { DEPOSITS, Deposits, type DepositsSnapshot } from './deposits';
+import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, type Walker } from './walker';
 
 export type Tool = 'axe' | 'pickaxe' | 'hoe';
 export const TOOL_LIST: readonly Tool[] = ['axe', 'pickaxe', 'hoe'];
@@ -62,7 +63,7 @@ export type LandEvent =
   | { kind: 'made'; building: number; x: number; y: number; z: number }
   | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' };
 
-export type Action = 'fell' | 'chop' | 'mine' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
+export type Action = 'fell' | 'chop' | 'mine' | 'break' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
 
 /**
  * What a tool is pointed at: a column (the one in front of the captain), or a block
@@ -79,7 +80,10 @@ export interface Target {
 
 /** Where the captain can dig for treasure: soft ground. */
 const SOFT: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand, Block.Soil];
-const ROCK: readonly number[] = [Block.Stone, Block.IronOre];
+/** Rock the pickaxe can only break as part of an outcrop. */
+const ROCK: readonly number[] = [Block.Stone, Block.IronOre, Block.Boulder, Block.CopperOre, Block.SilverOre, Block.GoldOre];
+/** Ground an outcrop grows back on: as the island made it, not dug, tilled or paved. */
+const NATURAL_GROUND: readonly number[] = [Block.Grass, Block.Dirt, Block.Stone];
 /** Where saplings take root. */
 const ROOTING: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand];
 
@@ -110,6 +114,8 @@ export interface LandSnapshot {
   fallow?: Fallow[];
   saplings?: Sapling[];
   drops?: Array<{ good: Good; amount: number; x: number; y: number; z: number; age: number }>;
+  /** Worked-out outcrops (version 5). */
+  deposits?: DepositsSnapshot;
 }
 
 /** A tree a woodcutter could fell: the bottom of its trunk. */
@@ -159,6 +165,8 @@ export class Land {
   fullToldAt = -Infinity;
   /** Buried treasure, asked about every spot the captain digs (the ground block): returns what to tell them, if anything. */
   buried: { search(x: number, y: number, z: number): string | null } | null = null;
+  /** The islands' outcrops of stone and ore (the game hands over the ones it placed). */
+  deposits = new Deposits();
   nextId = 1;
   private events: LandEvent[] = [];
   private readonly random: () => number;
@@ -195,6 +203,7 @@ export class Land {
       fallow: structuredClone(this.fallow),
       saplings: structuredClone(this.saplings),
       drops: this.drops.map(({ good, amount, x, y, z, age }) => ({ good, amount, x, y, z, age })),
+      deposits: this.deposits.snapshot(),
     };
   }
 
@@ -211,6 +220,8 @@ export class Land {
     this.growIn = 0;
     this.fedOn = this.sea.clock.day;
     this.surveys.clear();
+    if (s.deposits) this.deposits.restore(s.deposits);
+    this.deposits.reconcile(this.world, this.day(), (x, z) => this.claimed(x, z));
   }
 
   takeEvents(): LandEvent[] {
@@ -528,6 +539,11 @@ export class Land {
 
   // ---- Working the land ----
 
+  /** The sea clock's day with its fraction: what outcrops time their growing back by. */
+  day(): number {
+    return this.sea.clock.day + this.sea.clock.phase;
+  }
+
   /** The column in front of the captain's feet. */
   front(): Target | null {
     const w = this.walker;
@@ -586,18 +602,19 @@ export class Land {
     const block = ground ? this.world.getVoxel(x, ground.y, z) : Block.Air;
 
     if (held === 'axe' || held === 'pickaxe') {
-      // A tree or a fence: the block picked, or the first in the column from the ground in front up.
+      // A tree, an outcrop or a fence: the block picked, or the first in the column from the ground in front up.
       const feet = Math.round(w.y);
       const column = t.y !== undefined && this.reaches(x, t.y, z) ? [t.y] : Array.from({ length: REACH_UP + 2 }, (_, i) => feet - 1 + i);
       for (const y of column) {
         const mine = this.buildingAt(x, y, z);
         if (mine) return STRUCTURES[mine.kind].freeform ? { ok: true, action: 'unbuild', x, y, z } : cell('Take buildings down from the build menu (B).', y);
         if (held === 'axe' && TREE_BLOCKS.has(this.world.getVoxel(x, y, z))) return { ok: true, action: 'fell', x, y, z };
+        if (held === 'pickaxe' && this.deposits.at(x, y, z)) return { ok: true, action: 'mine', x, y, z };
       }
       if (held === 'axe') return cell('No tree there to fell.');
       if (!ground) return cell('Nothing within reach to break.');
-      if (!ROCK.includes(block)) return cell('No rock there to break.');
-      return { ok: true, action: 'mine', x, y: ground.y, z };
+      if (ROCK.includes(block)) return cell('Only outcrops can be broken: look for stone and ore.');
+      return cell('No outcrop there to break.');
     }
 
     const sapling = held === 'sapling';
@@ -639,9 +656,7 @@ export class Land {
       case 'unbuild':
         return this.demolish(this.buildingAt(x, y, z)!.id);
       case 'mine':
-        this.drop(world.getVoxel(x, y, z) === Block.IronOre ? 'ore' : 'stone', x + 0.5, y + 0.5, z + 0.5);
-        world.setVoxel(x, y, z, Block.Air);
-        break;
+        return this.quarry(x, y, z);
       case 'till':
         world.setVoxel(x, y, z, Block.Soil);
         break;
@@ -734,6 +749,43 @@ export class Land {
     // A few leaves shaken loose from the crown.
     const shaken = Array.from({ length: Math.min(3, leaves.length) }, () => leaves[Math.floor(this.random() * leaves.length)]);
     this.events.push({ kind: 'work', action: 'chop', x, y, z, leaves: shaken.flat() });
+  }
+
+  /** A pickaxe blow on an outcrop: it takes the blow, and breaks up with the last one it can stand. */
+  private quarry(x: number, y: number, z: number): Outcome {
+    const d = this.deposits.at(x, y, z);
+    if (!d) return fail('No outcrop there to break.');
+    const spec = DEPOSITS[d.kind];
+    if (this.deposits.blow(d) < spec.blows) {
+      this.events.push({ kind: 'work', action: 'mine', x, y, z });
+      return done('');
+    }
+    const cells = this.deposits.workOut(this.world, d, this.day());
+    const amount = spec.yield[0] + Math.floor(this.random() * (spec.yield[1] - spec.yield[0] + 1));
+    for (let i = 0; i < amount; i++) {
+      const [cx, cy, cz] = cells[i % cells.length];
+      this.drop(spec.good, cx + 0.5, cy + 0.5, cz + 0.5);
+    }
+    this.events.push({ kind: 'work', action: 'break', x, y, z });
+    return done('');
+  }
+
+  /** A miner's work: the whole outcrop broken up at once, its yield for the camp's stores. Null if it's gone. */
+  mineDeposit(id: number): { good: Good; amount: number; x: number; y: number; z: number } | null {
+    const d = this.deposits.byId(id);
+    if (!d || !this.deposits.standing(d)) return null;
+    const spec = DEPOSITS[d.kind];
+    const [[x, y, z]] = this.deposits.workOut(this.world, d, this.day());
+    const amount = spec.yield[0] + Math.floor(this.random() * (spec.yield[1] - spec.yield[0] + 1));
+    return { good: spec.good, amount, x, y, z };
+  }
+
+  /** Is anyone (the captain, a settler, a beast) in the way of this cell? */
+  private bodyIn(x: number, y: number, z: number): boolean {
+    const walkers = [this.walker, ...this.settlers.map((s) => s.walker), ...this.creatures.map((c) => c.walker)];
+    return walkers.some(
+      (w) => !!w && w.x + HALF_WIDTH > x && w.x - HALF_WIDTH < x + 1 && w.z + HALF_WIDTH > z && w.z - HALF_WIDTH < z + 1 && w.y + HEIGHT > y && w.y < y + 1,
+    );
   }
 
   /** The captain fells a tree: it comes apart into timber, and a sapling or two from its leaves. */
@@ -888,6 +940,7 @@ export class Land {
     if (this.inTown(cx, cz)) return verdict(false, 'Not in town (its land is marked on the ground): build on your own.');
     if (kind !== 'campfire' && !this.claimed(cx, cz)) return verdict(false, 'Build a campfire first: it claims the land around it.');
     if (this.buildings.some((b) => overlaps(b, plot, spec.freeform ? 0 : 1))) return verdict(false, 'Too close to another building.');
+    if (this.deposits.inPlot(plot, spec.freeform ? 0 : 1)) return verdict(false, 'An outcrop is in the way: mine it first.');
     if (this.crops.some((c) => c.x >= plot.x0 - 1 && c.x <= plot.x0 + plot.w && c.z >= plot.z0 - 1 && c.z <= plot.z0 + plot.d)) return verdict(false, 'There are crops in the way.');
     let y: number;
     if (spec.freeform) {
@@ -1015,6 +1068,11 @@ export class Land {
         this.surveys.delete(`trees-${this.fireAt(sapling.x, sapling.z)?.id}`);
       }
     }
+    // Outcrops due back grow where nothing stands in the way.
+    const clear = (x: number, y: number, z: number) => this.world.getVoxel(x, y, z) === Block.Air && !this.buildingAt(x, y, z) && !this.bodyIn(x, y, z);
+    // Only on the ground as it lay: not over a hole, a field or a path.
+    const firm = (x: number, y: number, z: number) => NATURAL_GROUND.includes(this.world.getVoxel(x, y, z));
+    this.deposits.regrow(this.world, this.day(), clear, firm);
   }
 }
 

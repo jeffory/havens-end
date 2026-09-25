@@ -1,15 +1,16 @@
 import { isNight } from '../core/clock';
 import { FOOD, GOOD_INFO, type Good } from '../economy/goods';
 import { hash2 } from '../util/hash';
-import { campHuts, campStores, fireAt, fireCentre, put, stock, storeRoom, take } from './camps';
+import { campHuts, campStores, CLAIM_RADIUS, fireAt, fireCentre, put, stock, storeRoom, take } from './camps';
 import { CROPS, type CropKind, stageOf } from './crops';
+import { DEPOSITS, depositCentre } from './deposits';
 import type { Land } from './Land';
 import { findPath, type PathPoint, pathLength } from './paths';
 import { type Building, doorOf, isWorkshop, STRUCTURES } from './structures';
 import { createWalker, stepWalker, WALK_SPEED, type Walker } from './walker';
 
-export type Job = 'idle' | 'farmer' | 'woodcutter' | 'fisher' | 'worker';
-export const JOB_LABELS: Record<Job, string> = { idle: 'Idle', farmer: 'Farmer', woodcutter: 'Woodcutter', fisher: 'Fisher', worker: 'Workshop hand' };
+export type Job = 'idle' | 'farmer' | 'woodcutter' | 'miner' | 'fisher' | 'worker';
+export const JOB_LABELS: Record<Job, string> = { idle: 'Idle', farmer: 'Farmer', woodcutter: 'Woodcutter', miner: 'Miner', fisher: 'Fisher', worker: 'Workshop hand' };
 
 /** What a settler is doing right now. Plain data, so it saves as it is. */
 export type Task =
@@ -19,6 +20,7 @@ export type Task =
   | { kind: 'harvest'; x: number; z: number; left: number }
   | { kind: 'plant'; x: number; z: number; left: number }
   | { kind: 'fell'; x: number; y: number; z: number; left: number }
+  | { kind: 'mine'; deposit: number; x: number; z: number; left: number }
   | { kind: 'fish'; toward: number; left: number }
   | { kind: 'sleep'; hut: number | null };
 
@@ -53,7 +55,9 @@ const PACE = 0.6;
 const SPEED = WALK_SPEED * PACE;
 /** Mornings without food before a settler gives up and leaves. */
 export const LEAVE_HUNGRY = 2;
-const SECONDS = { harvest: 2, plant: 1.5, fell: 14, fish: 24, idle: 4 } as const;
+const SECONDS = { harvest: 2, plant: 1.5, fell: 14, mine: 20, fish: 24, idle: 4 } as const;
+/** Miners look this far past the edge of the claim for outcrops: they're sparser than trees. */
+const MINE_MARGIN = 16;
 /** Paths searched for a settler's errands are kept short: the camp and a little beyond. */
 const PATH_NODES = 3000;
 const ARRIVED = 0.3;
@@ -208,6 +212,8 @@ export function think(land: Land, s: Settler): void {
       return farm(land, s, fire);
     case 'woodcutter':
       return cutWood(land, s, fire);
+    case 'miner':
+      return mine(land, s, fire);
     case 'fisher':
       return fish(land, s, fire);
     case 'worker': {
@@ -234,7 +240,7 @@ function spoken(land: Land, s: Settler, x: number, z: number): boolean {
   return land.settlers.some((o) => {
     if (o === s) return false;
     const t = o.task.kind === 'walk' ? o.task.then : o.task;
-    return (t.kind === 'harvest' || t.kind === 'plant' || t.kind === 'fell') && t.x === x && t.z === z;
+    return (t.kind === 'harvest' || t.kind === 'plant' || t.kind === 'fell' || t.kind === 'mine') && t.x === x && t.z === z;
   });
 }
 
@@ -261,15 +267,42 @@ function farm(land: Land, s: Settler, fire: Building): void {
   wander(land, s, fire, waiting ? 'Needs seed in the storehouse to sow' : land.crops.some((c) => inCamp(c.x, c.z)) ? 'Waiting for the crops to ripen' : 'No fields to tend: plant some');
 }
 
-function cutWood(land: Land, s: Settler, fire: Building): void {
+function cutWood(land: Land, s: Settler, fire: Building, felling = 'Felling a tree'): void {
   if (storeRoom(campStores(land.buildings, fire)) < 3) return wander(land, s, fire, 'The storehouse is full');
   const tree = nearest(
     s,
     land.trees(fire).filter((t) => !spoken(land, s, t.x, t.z)),
   );
   if (!tree) return wander(land, s, fire, 'No trees left near the camp: saplings are growing');
-  go(land, s, { x: tree.x + 0.5, z: tree.z + 0.5 }, { kind: 'fell', x: tree.x, y: tree.y, z: tree.z, left: SECONDS.fell }, 'Felling a tree', 1.5);
+  go(land, s, { x: tree.x + 0.5, z: tree.z + 0.5 }, { kind: 'fell', x: tree.x, y: tree.y, z: tree.z, left: SECONDS.fell }, felling, 1.5);
 }
+
+/** A miner works the nearest outcrop near the camp; with none standing, they cut wood until one grows back. */
+function mine(land: Land, s: Settler, fire: Building): void {
+  const stores = campStores(land.buildings, fire);
+  if (storeRoom(stores) < 3) return wander(land, s, fire, 'The storehouse is full');
+  const c = fireCentre(fire);
+  const reach = CLAIM_RADIUS + MINE_MARGIN;
+  const outcrops = land.deposits
+    .within(c.x, c.z, reach)
+    .filter((d) => storeRoom(stores) >= DEPOSITS[d.kind].yield[1])
+    .map((d) => ({ d, ...depositCentre(d) }))
+    .filter((o) => !spoken(land, s, o.x, o.z));
+  const outcrop = nearest(s, outcrops);
+  if (outcrop) {
+    const task = { kind: 'mine' as const, deposit: outcrop.d.id, x: outcrop.x, z: outcrop.z, left: SECONDS.mine };
+    go(land, s, { x: outcrop.x, z: outcrop.z }, task, `Mining ${DEPOSITS[outcrop.d.kind].label}`, 1.8);
+    return;
+  }
+  const due = land.deposits.dueIn(c.x, c.z, reach, land.day());
+  cutWood(land, s, fire, `No ore near the camp: cutting wood until it grows back${due === null ? '' : ` (${days(due)})`}`);
+}
+
+/** "1 day", "3 days": how long, rounded up. */
+const days = (n: number): string => {
+  const d = Math.max(1, Math.ceil(n - 1e-6));
+  return d === 1 ? '1 day' : `${d} days`;
+};
 
 function fish(land: Land, s: Settler, fire: Building): void {
   if (storeRoom(campStores(land.buildings, fire)) < 3) return wander(land, s, fire, 'The storehouse is full');
@@ -319,6 +352,16 @@ function finish(land: Land, s: Settler): void {
       put(stores, 'timber', felled.timber);
       land.plantSapling(task.x, task.y, task.z);
       land.emit({ kind: 'work', action: 'fell', x: task.x, y: task.y, z: task.z, good: 'timber', amount: felled.timber, settler: s.id, leaves: felled.leaves });
+      break;
+    }
+    case 'mine': {
+      const d = land.deposits.byId(task.deposit);
+      if (!d || !land.deposits.standing(d)) break;
+      if (storeRoom(stores) < DEPOSITS[d.kind].yield[1]) return rest(s, 'The storehouse is full');
+      const won = land.mineDeposit(task.deposit);
+      if (!won) break;
+      put(stores, won.good, won.amount);
+      land.emit({ kind: 'work', action: 'break', x: won.x, y: won.y, z: won.z, good: won.good, amount: won.amount, settler: s.id });
       break;
     }
     case 'fish': {

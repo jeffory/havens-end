@@ -16,7 +16,7 @@ const NAME_RANGE = 7;
 /** Creature voxels, in world units. */
 const CREATURE_SCALE = 0.12;
 
-const TOOL: Record<Settler['job'], HeldModel | null> = { idle: null, farmer: 'hoe', woodcutter: 'axe', fisher: 'rod', worker: 'hammer' };
+const TOOL: Record<Settler['job'], HeldModel | null> = { idle: null, farmer: 'hoe', woodcutter: 'axe', miner: 'pickaxe', fisher: 'rod', worker: 'hammer' };
 
 interface Figure {
   view: CharacterView;
@@ -64,8 +64,8 @@ export class PeopleView {
       root.position.set(x, y, z);
       root.rotation.y = w.facing;
       const t = s.task;
-      const busy = t.kind === 'harvest' || t.kind === 'plant' || t.kind === 'fell' || t.kind === 'work';
-      const rate = t.kind === 'fell' ? 1.3 : t.kind === 'work' ? 1.1 : 1.6;
+      const busy = t.kind === 'harvest' || t.kind === 'plant' || t.kind === 'fell' || t.kind === 'mine' || t.kind === 'work';
+      const rate = t.kind === 'fell' || t.kind === 'mine' ? 1.3 : t.kind === 'work' ? 1.1 : 1.6;
       figure.view.walk(
         {
           speed: Math.hypot(w.vx, w.vz),

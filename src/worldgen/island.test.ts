@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
+import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { generateIsland, type IslandParams } from './island';
 
@@ -16,6 +17,14 @@ function fingerprint(world: VoxelWorld): string {
 }
 
 describe('generateIsland', () => {
+  it('has no iron veins in the rock: iron comes from outcrops now', () => {
+    const world = new VoxelWorld();
+    generateIsland(world, { seed: 11, centerX: 0, centerZ: 0, radius: 40, peak: 20 });
+    let iron = 0;
+    for (let x = -64; x <= 64; x++) for (let z = -64; z <= 64; z++) for (let y = 0; y < 60; y++) if (world.getVoxel(x, y, z) === Block.IronOre) iron++;
+    expect(iron).toBe(0);
+  });
+
   it('is deterministic for a given seed', () => {
     const a = new VoxelWorld();
     const b = new VoxelWorld();

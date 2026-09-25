@@ -35,7 +35,8 @@ import { angleOffWind, pointOfSailName } from './sailing/pointOfSail';
 import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
-import { Land } from './land/Land';
+import { Deposits } from './land/deposits';
+import { Land, TOWN_RADIUS } from './land/Land';
 import { type Building, isWorkshop } from './land/structures';
 import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
@@ -74,6 +75,7 @@ import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
 import { VoxelWorld } from './voxel/VoxelWorld';
 import { buildArchipelago, type IslandPlan, islandName, planArchipelago } from './worldgen/archipelago';
+import { placeDeposits } from './worldgen/deposits';
 
 const WORLD_SEED = 1717;
 const SKY_COLOR = new Color(0xa9d9ea);
@@ -225,6 +227,9 @@ export class Game {
 
     this.islands = planArchipelago(WORLD_SEED);
     this.ports = buildArchipelago(this.world, this.islands);
+    // Outcrops keep off town land (and a little beyond, so none sits at a town's edge).
+    const inTown = (x: number, z: number) => this.ports.some((p) => Math.hypot(p.x - x, p.z - z) < TOWN_RADIUS + 8);
+    const deposits = placeDeposits(this.world, this.islands, WORLD_SEED, regionTier, inTown);
     this.world.trackEdits(); // from here on, changes are what a save stores
 
     const classes = new Map<ShipType, ShipClass>();
@@ -232,6 +237,7 @@ export class Game {
     this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.ports, WORLD_SEED);
     this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
     this.land = new Land(this.world, this.sea, WORLD_SEED);
+    this.land.deposits = new Deposits(deposits);
     this.treasure = new Treasure(this.world, this.sea, this.land, this.islands, this.economy.fixers, WORLD_SEED);
     this.economy.rumourSources.push((port) => this.treasure.rumour(port));
     this.story = new Story(this.world, this.sea, this.ports);

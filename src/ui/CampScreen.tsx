@@ -78,7 +78,7 @@ export function CampScreen({ land, fire, tab: initial, sleepy, rest, close, nav 
   const aboard = land.sea.captain.passengers;
   const bedCount = beds(land.buildings, fire);
   const choices: JobChoice[] = [
-    ...(['idle', 'farmer', 'woodcutter', 'fisher'] as const).map((job) => ({ job, post: null, label: JOB_LABELS[job] })),
+    ...(['idle', 'farmer', 'woodcutter', 'miner', 'fisher'] as const).map((job) => ({ job, post: null, label: JOB_LABELS[job] })),
     ...workshops.map((b) => ({ job: 'worker' as const, post: b.id, label: `${STRUCTURES[b.kind].label} hand` })),
   ];
   const choiceOf = (s: Settler) => Math.max(0, choices.findIndex((c) => c.job === s.job && c.post === s.post));

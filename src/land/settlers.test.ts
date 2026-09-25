@@ -13,7 +13,8 @@ import { campStores, stock } from './camps';
 import { CROPS, SAPLING_SECONDS } from './crops';
 import { Land } from './Land';
 import { indoors } from './settlers';
-import type { Building } from './structures';
+import { type Deposit, DEPOSITS, Deposits } from './deposits';
+import { type Building, STORE_SIZE } from './structures';
 
 const CLASSES = new Map(
   [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG].map((type) => {
@@ -59,6 +60,17 @@ function run(sea: Sea, land: Land, seconds: number, watched = true, dt = 1 / 20)
     sea.pass(dt);
     land.step(dt, watched);
   }
+}
+
+/** An outcrop on the camp island's grass: four blocks and one on top. */
+function outcropAt(land: Land, kind: Deposit['kind'], x0: number, z0: number, id: number): Deposit {
+  const y = SEA_LEVEL + 1;
+  const ore = DEPOSITS[kind].ore;
+  const cells: Array<[number, number, number, number]> = [[x0, y, z0, ore], [x0 + 1, y, z0, ore], [x0, y, z0 + 1, ore], [x0 + 1, y, z0 + 1, ore], [x0, y + 1, z0, ore]];
+  for (const [x, cy, z, b] of cells) land.world.setVoxel(x, cy, z, b);
+  const d: Deposit = { id, kind, x: x0, z: z0, cells };
+  land.deposits = new Deposits([...land.deposits.list, d]);
+  return d;
 }
 
 describe('settlers', () => {
@@ -157,6 +169,61 @@ describe('settlers', () => {
     run(sea, land, SAPLING_SECONDS, false, 1);
     expect(land.saplings).toHaveLength(0);
     expect(world.getVoxel(0, SEA_LEVEL + 1, -15)).toBe(Block.Wood);
+  });
+
+  it('miners break up outcrops near the camp into the storehouse', () => {
+    const { sea, land, world, fire, store } = camp();
+    const d = outcropAt(land, 'iron', 0, -16, 1);
+    store.store!.maize = 5;
+    sea.captain.passengers = 1;
+    land.settle(fire, 1);
+    land.assign(land.settlers[0].id, 'miner');
+    run(sea, land, 45);
+    expect(store.store!.ore ?? 0).toBeGreaterThanOrEqual(DEPOSITS.iron.yield[0]);
+    for (const [x, y, z] of d.cells) expect(world.getVoxel(x, y, z)).toBe(Block.Air);
+  });
+
+  it('with no ore about, a miner cuts wood until it grows back', () => {
+    const { sea, land, world, fire, store } = camp();
+    const d = outcropAt(land, 'stone', 0, -16, 1);
+    land.mineDeposit(d.id); // worked out a moment ago
+    for (let y = SEA_LEVEL + 1; y < SEA_LEVEL + 5; y++) world.setVoxel(6, y, -15, Block.Wood);
+    store.store!.maize = 5;
+    sea.captain.passengers = 1;
+    land.settle(fire, 1);
+    land.assign(land.settlers[0].id, 'miner');
+    run(sea, land, 2);
+    expect(land.settlers[0].doing).toMatch(/No ore near the camp: cutting wood until it grows back \(3 days\)/);
+    run(sea, land, 30);
+    expect(store.store!.timber ?? 0).toBeGreaterThan(0);
+  });
+
+  it('a miner who finds the outcrop gone takes nothing, and finds other work', () => {
+    const { sea, land, fire, store } = camp();
+    const d = outcropAt(land, 'copper', 0, -16, 1);
+    store.store!.maize = 5;
+    sea.captain.passengers = 1;
+    land.settle(fire, 1);
+    land.assign(land.settlers[0].id, 'miner');
+    run(sea, land, 1);
+    expect(land.settlers[0].task.kind === 'walk' || land.settlers[0].task.kind === 'mine').toBe(true);
+    land.mineDeposit(d.id); // the captain got there first
+    run(sea, land, 40);
+    expect(store.store!.copperOre ?? 0).toBe(0);
+    expect(land.settlers[0].doing).toMatch(/cutting wood|No trees/);
+  });
+
+  it('a miner with a full storehouse leaves the outcrop standing', () => {
+    const { sea, land, world, fire, store } = camp();
+    outcropAt(land, 'stone', 0, -16, 1);
+    store.store!.maize = 5;
+    store.store!.stone = STORE_SIZE - 5 - 1; // one free slot (no breakfast before tomorrow's dawn)
+    sea.captain.passengers = 1;
+    land.settle(fire, 1);
+    land.assign(land.settlers[0].id, 'miner');
+    run(sea, land, 45);
+    expect(world.getVoxel(0, SEA_LEVEL + 1, -16)).toBe(DEPOSITS.stone.ore);
+    expect(land.settlers[0].doing).toMatch(/storehouse is full/);
   });
 
   it('fishers bring fish in from the shore', () => {

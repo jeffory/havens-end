@@ -115,6 +115,11 @@ const CAMP_GOODS: Partial<Record<Good, Record<PortFaction, Role | null>>> = {
   ore: { merchant: 'trades', pirate: null, imperial: 'trades' },
   maize: { merchant: 'produces', pirate: 'trades', imperial: 'trades' },
   provisions: { merchant: 'trades', pirate: 'demands', imperial: 'demands' },
+  // Phase 10's ores, last so older saves' lines keep their places: the Guild's
+  // foundries want copper, the Crown's mint silver and gold, the Brethren gold.
+  copperOre: { merchant: 'demands', pirate: 'trades', imperial: 'trades' },
+  silverOre: { merchant: 'trades', pirate: 'trades', imperial: 'demands' },
+  goldOre: { merchant: 'trades', pirate: 'demands', imperial: 'demands' },
 };
 
 const MUSKETS: Record<PortFaction, Role | null> = { merchant: 'produces', pirate: 'demands', imperial: null };

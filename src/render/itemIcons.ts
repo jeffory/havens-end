@@ -35,6 +35,18 @@ export const ICONS: Partial<Record<Good, Icon>> = {
     colors: { ...STONE_COLORS, o: 0xc0703a },
     rows: ['............', '............', '....aaaa....', '..aabbobaa..', '.abbcbbbooa.', '.aoccbbbdba.', 'abobbbbddbba', 'abbbdboobbba', '.abbbbbobda.', '..aaaaaaaa..', '............', '............'],
   },
+  copperOre: {
+    colors: { ...STONE_COLORS, o: 0x3f9a7d },
+    rows: ['............', '............', '....aaaa....', '..aabbobaa..', '.abbcbbbooa.', '.aoccbbbdba.', 'abobbbbddbba', 'abbbdboobbba', '.abbbbbobda.', '..aaaaaaaa..', '............', '............'],
+  },
+  silverOre: {
+    colors: { ...STONE_COLORS, o: 0xe8eef2 },
+    rows: ['............', '............', '....aaaa....', '..aabbobaa..', '.abbcbbbooa.', '.aoccbbbdba.', 'abobbbbddbba', 'abbbdboobbba', '.abbbbbobda.', '..aaaaaaaa..', '............', '............'],
+  },
+  goldOre: {
+    colors: { ...STONE_COLORS, o: 0xf2c94c },
+    rows: ['............', '............', '....aaaa....', '..aabbobaa..', '.abbcbbbooa.', '.aoccbbbdba.', 'abobbbbddbba', 'abbbdboobbba', '.abbbbbobda.', '..aaaaaaaa..', '............', '............'],
+  },
   earth: { colors: { a: 0x4a3020, b: 0x7a5234, c: 0x5e3e26 }, rows: CLOD },
   sand: { colors: { a: 0xb09a62, b: 0xe3d29a, c: 0xc9b27a }, rows: CLOD },
   // Two stalks of cane, jointed.

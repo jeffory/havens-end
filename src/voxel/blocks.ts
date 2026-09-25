@@ -44,6 +44,11 @@ export const Block = {
   Bone: 34,
   Deadwood: 35,
   Cairn: 36,
+  // Phase 10: outcrops of stone and ore
+  Boulder: 37,
+  CopperOre: 38,
+  SilverOre: 39,
+  GoldOre: 40,
 } as const;
 
 export type BlockId = number;
@@ -91,6 +96,10 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.Bone]: { name: 'bone-white rock', color: 0xe6dfcb },
   [Block.Deadwood]: { name: 'dead wood', color: 0x7d766b },
   [Block.Cairn]: { name: 'cairn stone', color: 0x6f777d },
+  [Block.Boulder]: { name: 'boulder', color: 0xa8a49a },
+  [Block.CopperOre]: { name: 'copper ore', color: 0x3f9a7d },
+  [Block.SilverOre]: { name: 'silver ore', color: 0xc9d1d8 },
+  [Block.GoldOre]: { name: 'gold ore', color: 0xe0b83a },
 };
 
 const SOLID = new Uint8Array(256);

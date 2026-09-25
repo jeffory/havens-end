@@ -18,9 +18,6 @@ export interface IslandParams {
 /** Columns deeper than this get no voxels: the water above them is opaque, so the floor would never be seen. */
 const SHELF_FLOOR = SEA_LEVEL - 8;
 const TREE_CELL = 6;
-/** Ore veins: noise frequency, and how much of the bare rock carries them. */
-const ORE_SCALE = 0.11;
-const ORE_THRESHOLD = 0.35;
 
 /**
  * Writes one procedural tropical island into the world. Deterministic in `seed`: a
@@ -30,7 +27,6 @@ export function generateIsland(world: VoxelWorld, p: IslandParams): void {
   const random = mulberry32(p.seed);
   const coastNoise = seededNoise2D(random);
   const hillNoise = seededNoise2D(random);
-  const oreNoise = seededNoise2D(random);
 
   const extent = Math.ceil(p.radius * 1.6);
   const size = extent * 2;
@@ -74,11 +70,8 @@ export function generateIsland(world: VoxelWorld, p: IslandParams): void {
       const [top, under, underDepth] = surfaceLayers(height, slope, p.peak);
       const x = x0 + col;
       const z = z0 + row;
-      // Iron shows in veins where the rock breaks the surface.
-      const vein = top === Block.Stone && height > SEA_LEVEL + 2 && oreNoise(x * ORE_SCALE, z * ORE_SCALE) > ORE_THRESHOLD;
       for (let y = 0; y < height; y++) {
-        let id = y === height - 1 ? top : y >= height - 1 - underDepth ? under : Block.Stone;
-        if (vein && y >= height - 3 && hash3(x, y, z) < 0.55) id = Block.IronOre;
+        const id = y === height - 1 ? top : y >= height - 1 - underDepth ? under : Block.Stone;
         world.setVoxel(x, y, z, id);
       }
     }

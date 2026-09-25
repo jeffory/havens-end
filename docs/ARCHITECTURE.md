@@ -505,7 +505,7 @@ it up.
   - "Hanging from it" means the leaves nearer that trunk than to any other, so two
     canopies that touch come down one at a time.
   - Blocks touching at an edge or a corner count, so a leaning palm comes down whole.
-- **Pickaxe:** breaks natural stone and iron ore, one block at a time.
+- **Pickaxe:** breaks outcrops (below), and nothing else: the island's own rock stays.
 - **No shovel** (retired in Phase 9, to move away from digging the voxels). F, right
   click or LT digs for treasure where the captain stands (`Land.dig`): 1.5 s of
   swinging a spade, given up if they walk off. It works on grass, earth, sand or
@@ -522,6 +522,40 @@ over a gap made the tools aim at the empty air beneath it.)
 
 **Where tools work.** Felling, mining and digging for treasure work on any island outside a port's
 town. Tilling and sowing need a claim.
+
+**Outcrops** (Phase 10; `land/deposits.ts`, placed by `worldgen/deposits.ts`). Small
+lumps of stone and ore, 3–5 blocks on a 2 × 2 footprint, placed from the seed after the
+archipelago is built and before the world tracks edits.
+- **Where.** About one per 700 square voxels of island, at least 7 apart, on dry grass,
+  earth or rock clear of trees, beaches and town land, and never in a hollow (with the
+  ground about it higher, an outcrop looks like paving). Every islet gets its share;
+  hilly ground and town land thin them out (the game's world has 39, 7 on Haven).
+- **Numbered by island.** Each island draws its spots from numbers of its own, and
+  island i's outcrops are numbered i × 1000 + 1, + 2, …, so changing one island (or
+  tuning it) leaves every other island's outcrops, and a save's record of them, as
+  they were.
+- **Kinds** (blows, yield): stone 3, 3–4 stone (all `Boulder`); iron 4, 2–3 ore; copper
+  4, 2–3; silver 5, 1–2; gold 6, 1. Home waters have no silver or gold; the mix gets
+  richer further out. Kinds are dealt out per region (whichever is furthest behind its
+  share goes next), so the world follows the mix even with only a few outcrops an
+  island. Ore shows in about 4 in 10 of an outcrop's other blocks (by place, not by a
+  draw) and always in its last-laid one. There are no iron veins in the terrain any
+  more.
+- **Mining.** Blows count per outcrop (not saved); the last breaks it up into dropped
+  items. Work events: `mine` for each blow, `break` for the last.
+- **Growing back.** 3 days on the sea clock after it was worked out, once no block,
+  building or body is in the way and every block rests on the ground as it lay (grass,
+  earth or rock: not over a hole, a field or a path). Saved (version 5).
+- **On load** (`Deposits.reconcile`), the record is squared with the world. One saved
+  as worked out whose blocks all stand counts as standing. A save's edited chunks can
+  wipe out outcrops placed since (an older save): one wiped out on a claim is retired
+  for good, so none grows up in a camp; anywhere else it counts as worked out then,
+  and grows back.
+- **Around them.** Buildings can't go over a standing outcrop; treasure is buried at
+  least 3 from any.
+- **Miners** (a settler job) work the nearest outcrop within the claim plus 16, 20 s
+  each, the yield straight to the stores. With none standing, they cut wood, and the
+  camp screen says when the next grows back.
 
 **Dropped items** (`land/drops.ts`, drawn by `render/DropsView.ts`). What the tools
 break off doesn't go straight into the pack. Felled trees, stone, ore,
@@ -654,6 +688,7 @@ straight into the storehouses.
   |---|---|
   | Farmer | Harvests ripe crops in the camp into the storehouse and sows them again with seed from it. With no seed, the plot waits until there is some. Plots the captain harvests are resown too. |
   | Woodcutter | Fells the nearest tree within the claim (plus 6) for timber, and plants a sapling in its place; it's a full tree again in 7 minutes. |
+  | Miner (Phase 10) | Breaks up the nearest outcrop within the claim (plus 16), 20 s each, into the stores. With none standing, cuts wood until one grows back. |
   | Fisher | Fishes from the shore near the camp: 1 to 3 fish every 24 s. |
   | Workshop hand | Works one workshop; nothing is made without them. |
 
@@ -696,13 +731,15 @@ until its hand is at the bench:
 - **Where they come from:**
   - planks, iron, cutlasses, molasses and provisions are made in workshops;
   - cane, tobacco leaf and maize come off your fields;
-  - iron ore comes from veins in the bare rock of the hills, broken with the pickaxe;
+  - iron ore comes from outcrops (Phase 10; it came from veins in the rock before);
   - fish and meat come from the shore and the night's creatures.
 - **Where they sell.** They're appended to every market, so older saves' stocks still
   line up. Each is drawn from its own seeded numbers:
   - pirate havens want cutlasses, iron, molasses and provisions;
   - the Crown's yards want planks, and its mines sell iron;
-  - free ports grow maize.
+  - free ports grow maize;
+  - Phase 10's ores come last: the free ports' foundries want copper ore, the Crown's
+    mint silver and gold ore, the pirate haven gold ore.
   - Fish and meat aren't traded.
 - **The market** lists goods in groups: cargoes, arms, building materials, camp
   produce, food and seed.
@@ -984,7 +1021,8 @@ src/
   story/               the main story: its words (script.ts) and the Story sim
                        (who's where, the thread, the journal, the Sovereign)
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
-  worldgen/            seeded noise, island generator, archipelago plan, harbours
+  worldgen/            seeded noise, island generator, archipelago plan, harbours,
+                       deposits (where outcrops go)
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
   render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
@@ -993,7 +1031,8 @@ src/
                        toolModels, PeopleView (settlers, creatures), NightLights,
                        NightLife (bats, ghost lights), glow
   land/                on foot: the walker, tools, camps and buildings, crops,
-                       settlers and their paths, workshops, night creatures
+                       settlers and their paths, workshops, night creatures,
+                       deposits (outcrops of stone and ore)
   save/                save format, IndexedDB slots, chunk run-length encoding
   Shore.ts             the captain on foot: controls to land orders, the view and HUD
   ui/                  Hud (help, compass, combat panel, prompts, messages),
@@ -1030,7 +1069,12 @@ verified in the running game. None of those directories import from `render`,
 8. ✅ **Story:** a painted intro (the foundling, the *Good Hope*, the Imperial attack); a journal whose entries gather what people tell you; Nell, Quill, Finch and Red Mary; Blackwood's letter naming Lord Admiral Harrow; the choice of the black flag or the Guild's letter of marque; the *Sovereign*, a frigate with two brigs (and the Brethren's ships beside you under the black flag), and a last duel with Harrow; an epilogue.
 
 9. 🔄 **Quick wins:** going down (sunk or jailed) clears the sea and keeps it quiet for a minute, so nobody camps the port; the shovel retired (dig for treasure with F where you stand, and the ground is never changed); trees that take several axe blows; cannons that fly back when fired and run out when loaded.
-10. **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
+10. 🔄 **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
+    - **Next, before 10.2: Haven's town.** The home port looks thrown together: the
+      shipyard is a sign over a pile of rocks, and the houses sit on rough ground
+      among the trees. Space the buildings out on levelled ground, with streets
+      between them and a proper shipyard, so it looks like a real town. Checked with
+      the visual critic until it's happy.
 11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
 12. **Farming:** growth cycles, seeds, the hoe, watering and harvest yields, built on the crops already there.
 

@@ -15,6 +15,7 @@ import { WATER_LEVEL } from '../ocean/waves';
 import { CROPS } from './crops';
 import { DROP_SECONDS } from './drops';
 import { palmTree } from '../worldgen/island';
+import { type Deposit, type DepositKind, DEPOSITS, Deposits, REGROW_DAYS } from './deposits';
 import { CLAIM_RADIUS, Land, TOOL_LIST } from './Land';
 
 function box(length: number, beam: number): Float32Array {
@@ -66,6 +67,17 @@ function gather(land: Land) {
   Object.assign(w, home);
 }
 
+/** An outcrop of `kind` on the flat grass, footprint (x0..x0+1, z0..z0+1): four blocks and one on top. */
+function outcrop(land: Land, kind: DepositKind, x0 = -20, z0 = -20, id = 1): Deposit {
+  const y = SEA_LEVEL + 1;
+  const ore = DEPOSITS[kind].ore;
+  const cells: Array<[number, number, number, number]> = [[x0, y, z0, ore], [x0 + 1, y, z0, ore], [x0, y, z0 + 1, ore], [x0 + 1, y, z0 + 1, ore], [x0, y + 1, z0, ore]];
+  for (const [x, cy, z, b] of cells) land.world.setVoxel(x, cy, z, b);
+  const d: Deposit = { id, kind, x: x0, z: z0, cells };
+  land.deposits = new Deposits([...land.deposits.list, d]);
+  return d;
+}
+
 describe('going ashore', () => {
   it('rows ashore from a ship lying off a beach, and back aboard stows the pack', () => {
     const { sea, land } = setup();
@@ -109,7 +121,7 @@ describe('going ashore', () => {
 });
 
 describe('working the land', () => {
-  it('fells trees and breaks rock anywhere: timber, saplings and stone to pick up', () => {
+  it('fells trees and breaks outcrops: timber, saplings and stone to pick up', () => {
     const { world, land } = setup();
     land.goAshore();
     walkTo(land, 10.5, 9); // facing +z, the tree just ahead
@@ -130,10 +142,11 @@ describe('working the land', () => {
     gather(land);
     expect(land.pack.timber).toBe(4);
     expect(land.pack.sapling).toBe(saplings);
-    walkTo(land, 20.5, 4);
-    expect(land.use('pickaxe').ok).toBe(true);
+    outcrop(land, 'stone', 20, 5);
+    walkTo(land, 20.5, 3.8); // facing the boulder
+    for (let i = 0; i < DEPOSITS.stone.blows; i++) expect(land.use('pickaxe').ok).toBe(true);
     gather(land);
-    expect(land.pack.stone).toBe(1);
+    expect(land.pack.stone).toBeGreaterThanOrEqual(DEPOSITS.stone.yield[0]);
   });
 
   it('fells one tree at a time, leaning palms and all, even where two canopies touch', () => {
@@ -237,28 +250,24 @@ describe('working the land', () => {
 });
 
 describe('reach', () => {
-  it('works the ground under a canopy, not the air beneath the leaves', () => {
+  it('works an outcrop under a canopy, not the air beneath the leaves', () => {
     const { world, land } = setup();
     land.goAshore();
+    outcrop(land, 'stone', 0, 1);
     walkTo(land, 0.5, 0.5);
     const feet = SEA_LEVEL + 1;
-    // A rock in front, and leaves overhanging it with a gap between (the canopy of a tree nearby).
-    world.setVoxel(0, feet, 1, Block.Stone);
-    world.setVoxel(0, feet + 2, 1, Block.Leaves);
+    world.setVoxel(0, feet + 3, 1, Block.Leaves);
     expect(land.aim('pickaxe', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'mine', y: feet });
   });
 
-  it('breaks into a wall as high as the captain can reach, and no higher', () => {
-    const { world, land } = setup();
+  it('reaches an outcrop block picked with the mouse, if it’s in reach', () => {
+    const { land } = setup();
     land.goAshore();
+    outcrop(land, 'iron', 0, 1);
     walkTo(land, 0.5, 0.5);
     const feet = SEA_LEVEL + 1;
-    for (let y = feet; y < feet + 6; y++) world.setVoxel(0, y, 1, Block.Stone);
-    expect(land.aim('pickaxe', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'mine', y: feet + 2 });
+    expect(land.aim('pickaxe', { x: 0, y: feet + 1, z: 1 })).toMatchObject({ ok: true, action: 'mine', y: feet + 1 });
     expect(land.aim('hoe', { x: 0, z: 1 }).ok).toBe(false);
-    // Picked with the mouse: that very block, if it's in reach; the top of what's in reach if not.
-    expect(land.aim('pickaxe', { x: 0, y: feet, z: 1 })).toMatchObject({ ok: true, y: feet });
-    expect(land.aim('pickaxe', { x: 0, y: feet + 4, z: 1 })).toMatchObject({ ok: true, y: feet + 2 });
   });
 
   it('reaches only a couple of blocks down', () => {
@@ -269,6 +278,144 @@ describe('reach', () => {
     const aim = land.aim('pickaxe', { x: 0, z: 1 });
     expect(aim.ok).toBe(false);
     expect(aim.x).toBeUndefined(); // nothing to mark
+  });
+});
+
+describe('outcrops', () => {
+  it('stand so many blows, then break up into what they hold', () => {
+    const { world, land } = setup();
+    land.goAshore();
+    const d = outcrop(land, 'copper');
+    walkTo(land, -19.5, -21.2); // facing its near side
+    for (let i = 1; i < DEPOSITS.copper.blows; i++) expect(land.use('pickaxe').ok).toBe(true);
+    for (const [x, y, z, b] of d.cells) expect(world.getVoxel(x, y, z)).toBe(b);
+    expect(land.drops).toHaveLength(0);
+    expect(land.use('pickaxe').ok).toBe(true);
+    for (const [x, y, z] of d.cells) expect(world.getVoxel(x, y, z)).toBe(Block.Air);
+    const won = land.drops.filter((drop) => drop.good === 'copperOre').reduce((n, drop) => n + drop.amount, 0);
+    expect(won).toBeGreaterThanOrEqual(DEPOSITS.copper.yield[0]);
+    expect(won).toBeLessThanOrEqual(DEPOSITS.copper.yield[1]);
+    const actions = land.takeEvents().flatMap((e) => (e.kind === 'work' ? [e.action] : []));
+    expect(actions).toEqual([...Array(DEPOSITS.copper.blows - 1).fill('mine'), 'break']);
+  });
+
+  it('are all the pickaxe breaks: the island’s own rock stays', () => {
+    const { world, land } = setup();
+    land.goAshore();
+    world.setVoxel(0, SEA_LEVEL + 1, 1, Block.Stone);
+    walkTo(land, 0.5, 0.5);
+    expect(land.use('pickaxe').message).toMatch(/Only outcrops/);
+    expect(world.getVoxel(0, SEA_LEVEL + 1, 1)).toBe(Block.Stone);
+  });
+
+  it('grow back after three days, but not into someone standing there', () => {
+    const { world, sea, land } = setup();
+    land.goAshore();
+    const d = outcrop(land, 'stone');
+    walkTo(land, -19.5, -21.2);
+    for (let i = 0; i < DEPOSITS.stone.blows; i++) land.use('pickaxe');
+    sea.clock.day += REGROW_DAYS - 1;
+    land.step(1.1);
+    expect(world.getVoxel(-20, SEA_LEVEL + 1, -20)).toBe(Block.Air);
+    sea.clock.day += 1;
+    walkTo(land, -19.5, -19.5); // standing in it
+    land.step(1.1);
+    expect(world.getVoxel(-20, SEA_LEVEL + 1, -20)).toBe(Block.Air);
+    walkTo(land, -10.5, -10.5);
+    land.step(1.1);
+    for (const [x, y, z, b] of d.cells) expect(world.getVoxel(x, y, z)).toBe(b);
+  });
+
+  it('won’t grow back hanging over dug-out ground, or onto a tilled field', () => {
+    const { world, sea, land } = setup();
+    land.goAshore();
+    const d = outcrop(land, 'stone');
+    walkTo(land, -19.5, -21.2);
+    for (let i = 0; i < DEPOSITS.stone.blows; i++) land.use('pickaxe');
+    walkTo(land, -10.5, -10.5);
+    world.setVoxel(-20, SEA_LEVEL, -20, Block.Air); // dug out (an older save's shovel)
+    world.setVoxel(-19, SEA_LEVEL, -19, Block.Soil); // tilled
+    sea.clock.day += REGROW_DAYS;
+    land.step(1.1);
+    expect(world.getVoxel(-19, SEA_LEVEL + 1, -20)).toBe(Block.Air);
+    world.setVoxel(-20, SEA_LEVEL, -20, Block.Grass);
+    land.step(1.1);
+    expect(world.getVoxel(-19, SEA_LEVEL + 1, -20)).toBe(Block.Air); // the field still stops it
+    world.setVoxel(-19, SEA_LEVEL, -19, Block.Grass);
+    land.step(1.1);
+    for (const [x, y, z, b] of d.cells) expect(world.getVoxel(x, y, z)).toBe(b);
+  });
+
+  it('a building on a worked-out outcrop’s spot keeps it from growing back', () => {
+    const { world, sea, land } = setup();
+    land.goAshore();
+    outcrop(land, 'stone', -12, -12);
+    land.pack.timber = 20;
+    walkTo(land, -11.5, -13.2);
+    for (let i = 0; i < DEPOSITS.stone.blows; i++) land.use('pickaxe');
+    expect(land.build('campfire', -4, -4, 0).ok).toBe(true);
+    expect(land.build('fence', -12, -12, 0).ok).toBe(true);
+    sea.clock.day += REGROW_DAYS + 1;
+    walkTo(land, -4.5, -8.5);
+    land.step(1.1);
+    expect(world.getVoxel(-11, SEA_LEVEL + 1, -11)).toBe(Block.Air);
+  });
+
+  it('can’t be built over while they stand', () => {
+    const { land } = setup();
+    land.goAshore();
+    outcrop(land, 'iron', -12, -12);
+    land.pack.timber = 20;
+    land.pack.stone = 20;
+    walkTo(land, -4.5, -8.5);
+    expect(land.build('campfire', -4, -4, 0).ok).toBe(true);
+    expect(land.placement('hut', -12, -12, 0).reason).toMatch(/outcrop/);
+  });
+
+  it('are saved worked out, and grow back on time after a load', () => {
+    const { world, sea, land } = setup();
+    land.goAshore();
+    const d = outcrop(land, 'stone');
+    walkTo(land, -19.5, -21.2);
+    for (let i = 0; i < DEPOSITS.stone.blows; i++) land.use('pickaxe');
+    const saved = JSON.parse(JSON.stringify(land.snapshot()));
+    const again = new Land(world, sea);
+    again.deposits = new Deposits([d]);
+    again.restore(saved);
+    expect(again.deposits.at(-20, SEA_LEVEL + 1, -20)).toBeNull();
+    sea.clock.day += REGROW_DAYS;
+    again.step(1.1);
+    expect(world.getVoxel(-20, SEA_LEVEL + 1, -20)).toBe(DEPOSITS.stone.ore);
+  });
+
+  it('an outcrop a save’s own edits wiped out on a claim never grows back; off it, it does', () => {
+    const { world, sea, land } = setup();
+    land.goAshore();
+    walkTo(land, -4.5, -8.5);
+    land.pack.timber = 5;
+    expect(land.build('campfire', -4, -4, 0).ok).toBe(true);
+    const camp = outcrop(land, 'stone', -20, -20, 1); // within the claim
+    const wild = outcrop(land, 'stone', 30, 30, 2); // well outside it
+    const saved = JSON.parse(JSON.stringify(land.snapshot()));
+    for (const d of [camp, wild]) for (const [x, y, z] of d.cells) world.setVoxel(x, y, z, Block.Air); // an older save's chunks, loaded over them
+    delete saved.deposits; // and that save knew nothing of outcrops
+    const again = new Land(world, sea);
+    again.deposits = new Deposits([camp, wild]);
+    again.restore(saved);
+    sea.clock.day += 30;
+    again.step(1.1);
+    expect(world.getVoxel(-20, SEA_LEVEL + 1, -20)).toBe(Block.Air);
+    expect(world.getVoxel(30, SEA_LEVEL + 1, 30)).toBe(DEPOSITS.stone.ore);
+  });
+
+  it('a miner’s whole outcrop at once, for the camp’s stores', () => {
+    const { world, land } = setup();
+    const d = outcrop(land, 'silver');
+    const got = land.mineDeposit(d.id);
+    expect(got?.good).toBe('silverOre');
+    expect(got!.amount).toBeGreaterThanOrEqual(DEPOSITS.silver.yield[0]);
+    expect(world.getVoxel(-20, SEA_LEVEL + 1, -20)).toBe(Block.Air);
+    expect(land.mineDeposit(d.id)).toBeNull();
   });
 });
 
