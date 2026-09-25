@@ -1,7 +1,7 @@
 # Haven's End
 
 A 2.5D voxel pirate RPG in Three.js: naval freedom in the spirit of *Pirates!*,
-with island base building you dig and shape yourself.
+with island base building you clear and shape yourself.
 
 ## Run
 
@@ -36,8 +36,8 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | Game menu: save, load, new game | Esc | Start |
 | **On foot:** walk | WASD / arrows | Left stick |
 | **On foot:** use what's in hand / interact | Space or left click / E | X / A |
-| **On foot:** put earth down (with the shovel) | F or right click | LT |
-| **On foot:** axe, pickaxe, shovel, hoe, seed, maize and saplings | 1–9, click a slot, or Q / R to cycle | LB / RB |
+| **On foot:** dig for treasure where you stand | F or right click | LT |
+| **On foot:** axe, pickaxe, hoe, seed, maize and saplings | 1–8, click a slot, or Q / R to cycle | LB / RB |
 | **On foot:** build (Q / R turns a building) | B | Y |
 | **Duel:** move | A / D | Left stick |
 | **Duel:** cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
@@ -45,7 +45,6 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | **Duel:** roll | Space | A |
 | Turn the view 90° | Z / C | LB / RB |
 | Zoom | Mouse wheel | Right stick ↕ |
-| Dig / place a voxel | Left / right click | |
 | Performance readout | F3 | |
 
 Sail with the wind on your beam or quarter; you can't sail straight into it. Water
@@ -79,10 +78,9 @@ but customs officers search holds.
 **On foot.** Dock in a port and you step off onto the pier: walk up to a door (the
 signs say which is the market, tavern, governor and shipyard) to go in. Anywhere else,
 bring the ship close to a beach, slow down and press B to row ashore; she waits at
-anchor. On any island, the axe fells trees, the pickaxe breaks stone and the shovel
-digs. What comes loose drops at your feet and is picked up when you walk over it:
-timber and saplings from a tree, stone, earth. F (or right click) puts earth back
-down, to fill holes or raise the ground. Saplings grow into new trees.
+anchor. On any island, the axe fells trees (a few blows each, more for a big one) and
+the pickaxe breaks stone. What comes loose drops at your feet and is picked up when you
+walk over it: timber and saplings from a tree, stone. Saplings grow into new trees.
 **Build a campfire** (5 timber) to claim the land around it; then you can build huts,
 storehouses, fences, paths and torches, and farm:
 till with the hoe and plant cane cuttings, tobacco or pepper seed (sold in every port)
@@ -112,7 +110,7 @@ them, and sailors talk of treasure over a round. Read them on the chart (M, then
 Near home a map is a sketch of the real islet with an X; further out it gives
 directions from a landmark (a skull rock, a cairn, a dead tree); far out it's a riddle
 that counts paces by the sun. A pace is a block, and the compass on foot shows north.
-Dig two spades deep at the spot. Chests hold gold, goods and sometimes one of five
+Stand on the spot and dig (F). Chests hold gold, goods and sometimes one of five
 unique finds. On the three cursed isles, the dead guard their hoards: dig by night and
 a ghostly captain rises to duel you. Each cursed hoard holds a piece of a pirate
 king's chart...

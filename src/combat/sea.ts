@@ -597,7 +597,11 @@ export class Sea {
     this.emit({ kind: 'respawn', goods, port: this.captain.lastPort.name });
   }
 
-  /** A fresh sloop, crewed and with an empty hold, waiting at the last port. */
+  /**
+   * A fresh sloop, crewed and with an empty hold, waiting at the last port. The sea is
+   * cleared (bar the story's ships, which see to themselves), and stays quiet a while, so
+   * nobody who sank you is lying off the harbour when you put out again.
+   */
   private newShip(): void {
     this.captain.pack = {};
     this.ashore = false;
@@ -606,7 +610,10 @@ export class Sea {
     const cls = this.classFor(this.starter);
     const berth = this.berthFor(cls.spec, this.captain.lastPort);
     this.vessels[0] = createVessel(p.id, 'Your sloop', 'player', cls, berth.x, berth.z, berth.heading, 0);
+    this.remove(this.vessels.filter((v) => v.faction !== 'player' && !v.story));
+    this.shots.length = 0;
     this.barrels.length = 0;
+    this.encounters.lull();
   }
 }
 

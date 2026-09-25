@@ -15,7 +15,7 @@ import { WATER_LEVEL } from '../ocean/waves';
 import { CROPS } from './crops';
 import { DROP_SECONDS } from './drops';
 import { palmTree } from '../worldgen/island';
-import { CLAIM_RADIUS, Land } from './Land';
+import { CLAIM_RADIUS, Land, TOOL_LIST } from './Land';
 
 function box(length: number, beam: number): Float32Array {
   const cells: Array<[number, number]> = [];
@@ -113,6 +113,12 @@ describe('working the land', () => {
     const { world, land } = setup();
     land.goAshore();
     walkTo(land, 10.5, 9); // facing +z, the tree just ahead
+    // A small tree stands three blows: the first two only chip it.
+    expect(land.use('axe').ok).toBe(true);
+    expect(land.use('axe').ok).toBe(true);
+    expect(world.getVoxel(10, SEA_LEVEL + 1, 10)).toBe(Block.Wood);
+    expect(land.drops).toHaveLength(0);
+    expect(land.takeEvents().filter((e) => e.kind === 'work').map((e) => e.kind === 'work' && e.action)).toEqual(['chop', 'chop']);
     expect(land.use('axe').ok).toBe(true);
     expect(world.getVoxel(10, SEA_LEVEL + 5, 10)).toBe(Block.Air);
     // A piece of timber from each block of trunk, and a sapling or two from the leaves.
@@ -142,6 +148,9 @@ describe('working the land', () => {
     };
     const second = before(4, 12);
     walkTo(land, -9.5, -1);
+    // A tall palm stands five blows, wherever on her they land.
+    for (let i = 0; i < 4; i++) expect(land.use('axe', i % 2 ? { x: -10, y: SEA_LEVEL + 2, z: 0 } : undefined).ok).toBe(true);
+    expect(land.drops).toHaveLength(0);
     expect(land.use('axe').ok).toBe(true);
     expect(land.drops.filter((d) => d.good === 'timber').length).toBeGreaterThanOrEqual(7);
     expect(before(-6, 2)).toBe(0); // all of it, the leaning top and the fronds too
@@ -179,53 +188,37 @@ describe('working the land', () => {
     land.step(1);
     expect(world.getVoxel(5, SEA_LEVEL + 3, 6)).toBe(Block.CaneTop);
     expect(land.interaction()?.kind).toBe('harvest');
-    expect(land.use('shovel').ok).toBe(true); // any tool picks a ripe crop
+    expect(land.use('axe').ok).toBe(true); // any tool picks a ripe crop
     gather(land);
     expect(land.pack.cane).toBe(CROPS.cane.amount);
     expect(world.getVoxel(5, SEA_LEVEL + 1, 6)).toBe(Block.Air);
   });
 
-  it('digs earth anywhere outside town, and puts it back down', () => {
+  it('has no shovel: the captain digs for treasure where they stand, and the ground is left as it was', () => {
     const { world, land } = setup();
+    expect(TOOL_LIST).not.toContain('shovel');
     land.goAshore();
     walkTo(land, 0.5, 0.5);
-    expect(land.place().message).toMatch(/no earth/);
-    expect(land.use('shovel').ok).toBe(true);
-    expect(world.getVoxel(0, SEA_LEVEL, 1)).toBe(Block.Air);
-    expect(land.use('shovel').ok).toBe(true); // and deeper
-    expect(world.getVoxel(0, SEA_LEVEL - 1, 1)).toBe(Block.Air);
-    expect(land.use('shovel').message).toMatch(/reach/); // and that's as deep as you can reach
-    gather(land);
-    expect(land.pack.earth).toBe(2);
-    expect(land.place().ok).toBe(true); // fills the hole back up
-    expect(land.place().ok).toBe(true);
-    expect(world.getVoxel(0, SEA_LEVEL - 1, 1)).toBe(Block.Dirt);
-    expect(world.getVoxel(0, SEA_LEVEL, 1)).toBe(Block.Dirt);
-    expect(land.pack.earth).toBeUndefined();
-    // Sand when the earth runs out, from the beach.
-    land.pack.sand = 1;
-    expect(land.place().ok).toBe(true);
-    expect(world.getVoxel(0, SEA_LEVEL + 1, 1)).toBe(Block.Sand);
+    const top = SEA_LEVEL; // the ground under your feet
+    const before = world.getVoxel(0, top, 0);
+    expect(land.dig()).toEqual({ ok: true, message: expect.stringMatching(/nothing/i) });
+    expect(world.getVoxel(0, top, 0)).toBe(before);
+    expect(land.drops).toHaveLength(0);
+    // Buried treasure is asked about the spot.
+    const asked: number[][] = [];
+    land.buried = { search: (x, y, z) => (asked.push([x, y, z]), 'Loose earth.') };
+    expect(land.dig().message).toBe('Loose earth.');
+    expect(asked).toEqual([[0, top, 0]]);
   });
 
-  it('puts earth against the face picked, but not where anyone stands or out of reach', () => {
+  it('won’t dig rock', () => {
     const { world, land } = setup();
     land.goAshore();
     walkTo(land, 0.5, 0.5);
-    land.pack.earth = 5;
-    const feet = SEA_LEVEL + 1;
-    // The top of the ground under your own feet: that's where you're standing.
-    expect(land.place({ x: 0, y: feet - 1, z: 0, face: { x: 0, y: 1, z: 0 } }).message).toMatch(/standing/);
-    // A wall, block on block, as high as you can reach.
-    expect(land.place({ x: 2, y: feet - 1, z: 0, face: { x: 0, y: 1, z: 0 } }).ok).toBe(true);
-    expect(land.place({ x: 2, y: feet, z: 0, face: { x: 0, y: 1, z: 0 } }).ok).toBe(true);
-    expect(land.place({ x: 2, y: feet + 1, z: 0, face: { x: 0, y: 1, z: 0 } }).ok).toBe(true);
-    expect(land.place({ x: 2, y: feet + 2, z: 0, face: { x: 0, y: 1, z: 0 } }).message).toMatch(/reach/);
-    // Against its side.
-    expect(land.place({ x: 2, y: feet + 1, z: 0, face: { x: 0, y: 0, z: 1 } }).ok).toBe(true);
-    expect(world.getVoxel(2, feet + 1, 1)).toBe(Block.Dirt);
-    // Too far across.
-    expect(land.place({ x: 6, y: feet - 1, z: 0, face: { x: 0, y: 1, z: 0 } }).message).toMatch(/reach/);
+    world.setVoxel(0, SEA_LEVEL, 0, Block.Stone);
+    expect(land.digAim()).toMatchObject({ ok: false, reason: expect.stringMatching(/hard/) });
+    expect(land.dig().ok).toBe(false);
+    expect(world.getVoxel(0, SEA_LEVEL, 0)).toBe(Block.Stone);
   });
 
   it('plants saplings on open ground, and they grow into trees', () => {
@@ -252,21 +245,20 @@ describe('reach', () => {
     // A rock in front, and leaves overhanging it with a gap between (the canopy of a tree nearby).
     world.setVoxel(0, feet, 1, Block.Stone);
     world.setVoxel(0, feet + 2, 1, Block.Leaves);
-    expect(land.aim('shovel', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'dig', y: feet });
     expect(land.aim('pickaxe', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'mine', y: feet });
   });
 
-  it('digs into a wall as high as the captain can reach, and no higher', () => {
+  it('breaks into a wall as high as the captain can reach, and no higher', () => {
     const { world, land } = setup();
     land.goAshore();
     walkTo(land, 0.5, 0.5);
     const feet = SEA_LEVEL + 1;
-    for (let y = feet; y < feet + 6; y++) world.setVoxel(0, y, 1, Block.Dirt);
-    expect(land.aim('shovel', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'dig', y: feet + 2 });
+    for (let y = feet; y < feet + 6; y++) world.setVoxel(0, y, 1, Block.Stone);
+    expect(land.aim('pickaxe', { x: 0, z: 1 })).toMatchObject({ ok: true, action: 'mine', y: feet + 2 });
     expect(land.aim('hoe', { x: 0, z: 1 }).ok).toBe(false);
     // Picked with the mouse: that very block, if it's in reach; the top of what's in reach if not.
-    expect(land.aim('shovel', { x: 0, y: feet, z: 1 })).toMatchObject({ ok: true, y: feet });
-    expect(land.aim('shovel', { x: 0, y: feet + 4, z: 1 })).toMatchObject({ ok: true, y: feet + 2 });
+    expect(land.aim('pickaxe', { x: 0, y: feet, z: 1 })).toMatchObject({ ok: true, y: feet });
+    expect(land.aim('pickaxe', { x: 0, y: feet + 4, z: 1 })).toMatchObject({ ok: true, y: feet + 2 });
   });
 
   it('reaches only a couple of blocks down', () => {
@@ -274,7 +266,7 @@ describe('reach', () => {
     land.goAshore();
     walkTo(land, 0.5, 0.5);
     for (let y = 0; y <= SEA_LEVEL; y++) world.setVoxel(0, y, 1, y < SEA_LEVEL - 3 ? Block.Dirt : Block.Air);
-    const aim = land.aim('shovel', { x: 0, z: 1 });
+    const aim = land.aim('pickaxe', { x: 0, z: 1 });
     expect(aim.ok).toBe(false);
     expect(aim.x).toBeUndefined(); // nothing to mark
   });
@@ -309,7 +301,7 @@ describe('things lying about', () => {
     land.goAshore();
     walkTo(land, 10.5, 9);
     land.pack.stone = PACK_SIZE;
-    land.use('axe');
+    for (let i = 0; i < 3; i++) land.use('axe');
     gather(land);
     expect(land.pack.timber).toBeUndefined();
     expect(land.drops.filter((d) => d.good === 'timber').reduce((n, d) => n + d.amount, 0)).toBe(4);

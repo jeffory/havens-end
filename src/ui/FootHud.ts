@@ -48,9 +48,9 @@ export class FootHud {
     this.prompt.className = 'foot-prompt';
     this.hint.className = 'foot-hint';
     this.help.className = 'foot-help';
-    this.help.innerHTML = `<kbd>WASD</kbd> walk · <kbd>Space</kbd> / click use · <kbd>F</kbd> / right-click put earth down · <kbd>E</kbd> interact ·
-      <kbd>1</kbd>–<kbd>9</kbd> tools and seed · <kbd>B</kbd> build · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>Esc</kbd> menu
-      <span class="pad">🎮 <kbd>X</kbd> use · <kbd>LT</kbd> earth · <kbd>A</kbd> interact · <kbd>LB</kbd><kbd>RB</kbd> tools · <kbd>Y</kbd> build · <kbd>Start</kbd> menu</span>`;
+    this.help.innerHTML = `<kbd>WASD</kbd> walk · <kbd>Space</kbd> / click use · <kbd>F</kbd> / right-click dig for treasure · <kbd>E</kbd> interact ·
+      <kbd>1</kbd>–<kbd>8</kbd> tools and seed · <kbd>B</kbd> build · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>Esc</kbd> menu
+      <span class="pad">🎮 <kbd>X</kbd> use · <kbd>LT</kbd> dig · <kbd>A</kbd> interact · <kbd>LB</kbd><kbd>RB</kbd> tools · <kbd>Y</kbd> build · <kbd>Start</kbd> menu</span>`;
     this.help.hidden = true;
     this.slots.addEventListener('pointerdown', (e) => {
       const slot = (e.target as HTMLElement).closest<HTMLElement>('.foot-slot');

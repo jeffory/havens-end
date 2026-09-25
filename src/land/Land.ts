@@ -16,10 +16,10 @@ import { type Creature, CREATURES, stepCreatures, strike } from './creatures';
 import { type Drop, dropItem, stepDrops } from './drops';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
 import { type Building, doorOf, isWorkshop, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
-import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, type Walker } from './walker';
+import { createWalker, groundBelow, standable, stepWalker, type Walker } from './walker';
 
-export type Tool = 'axe' | 'pickaxe' | 'shovel' | 'hoe';
-export const TOOL_LIST: readonly Tool[] = ['axe', 'pickaxe', 'shovel', 'hoe'];
+export type Tool = 'axe' | 'pickaxe' | 'hoe';
+export const TOOL_LIST: readonly Tool[] = ['axe', 'pickaxe', 'hoe'];
 /** What's in the captain's hands: a tool, or a seed to plant. */
 export type Held = Tool | Good;
 
@@ -42,6 +42,8 @@ const INTERACT_RANGE = 2.2;
 const TREE_LIMIT = 300;
 /** A tree's leaves hang within this many voxels of its trunk (each way). */
 const CANOPY_REACH = 4;
+/** Axe blows it takes to fell a tree: more for a taller trunk and a heavier crown, within these. */
+const BLOWS = [3, 6] as const;
 /** Camps within this of the captain (or their ship) are lived in step by step; further off, walks are just timed. */
 const LIVE_RANGE = 160;
 /** Woodcutters look this far past the edge of the claim for trees, and fishers for the shore. */
@@ -60,7 +62,7 @@ export type LandEvent =
   | { kind: 'made'; building: number; x: number; y: number; z: number }
   | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' };
 
-export type Action = 'fell' | 'mine' | 'dig' | 'place' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
+export type Action = 'fell' | 'chop' | 'mine' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
 
 /**
  * What a tool is pointed at: a column (the one in front of the captain), or a block
@@ -71,12 +73,12 @@ export interface Target {
   z: number;
   /** The block picked with the mouse, if it was. */
   y?: number;
-  /** The face it was picked by (a unit normal), to put earth against. */
+  /** The face it was picked by (a unit normal). */
   face?: { x: number; y: number; z: number };
 }
 
-/** What the shovel shifts, and the pickaxe breaks. */
-const DIGGABLE: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand, Block.Soil, Block.Stone, Block.Gravel];
+/** Where the captain can dig for treasure: soft ground. */
+const SOFT: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand, Block.Soil];
 const ROCK: readonly number[] = [Block.Stone, Block.IronOre];
 /** Where saplings take root. */
 const ROOTING: readonly number[] = [Block.Grass, Block.Dirt, Block.Sand];
@@ -155,8 +157,8 @@ export class Land {
   nextDrop = 1;
   /** When the captain was last told their pack is full. */
   fullToldAt = -Infinity;
-  /** Buried treasure, told of every block the shovel digs out: returns what to tell the captain, if anything. */
-  buried: { dig(x: number, y: number, z: number): string | null } | null = null;
+  /** Buried treasure, asked about every spot the captain digs (the ground block): returns what to tell them, if anything. */
+  buried: { search(x: number, y: number, z: number): string | null } | null = null;
   nextId = 1;
   private events: LandEvent[] = [];
   private readonly random: () => number;
@@ -168,6 +170,8 @@ export class Land {
   /** What each workshop was doing at the last step, for the camp screen. */
   private readonly workshopStates = new Map<number, WorkshopState>();
   private readonly surveys = new Map<string, { at: number; spots: TreeSpot[] | ShoreSpot[] }>();
+  /** Axe blows each tree has taken, by the foot of its trunk: not saved, and forgotten when it falls. */
+  private readonly blows = new Map<string, number>();
 
   constructor(
     readonly world: VoxelWorld,
@@ -596,16 +600,6 @@ export class Land {
       return { ok: true, action: 'mine', x, y: ground.y, z };
     }
 
-    if (held === 'shovel') {
-      if (!ground) return cell('Nothing within reach to dig.');
-      const why = this.occupied(x, ground.y, z);
-      if (why) return cell(why);
-      if (ground.y + 1 < SEA_LEVEL) return cell('Too wet to dig.');
-      if (ground.y <= 0) return cell('Bedrock.');
-      if (!DIGGABLE.includes(block)) return cell('The shovel won’t shift that.');
-      return { ok: true, action: 'dig', x, y: ground.y, z };
-    }
-
     const sapling = held === 'sapling';
     if (held !== 'hoe' && !sapling && !CROP_FOR_SEED[held]) return cell('That won’t grow.');
     if (!sapling && !this.claimed(x, z)) return cell('Build a campfire first: it claims the land around it.');
@@ -640,7 +634,7 @@ export class Land {
       case 'harvest':
         return this.harvest(this.cropAt(x, z)!);
       case 'fell':
-        this.fell(x, y, z);
+        this.chop(x, y, z);
         return done('');
       case 'unbuild':
         return this.demolish(this.buildingAt(x, y, z)!.id);
@@ -648,17 +642,6 @@ export class Land {
         this.drop(world.getVoxel(x, y, z) === Block.IronOre ? 'ore' : 'stone', x + 0.5, y + 0.5, z + 0.5);
         world.setVoxel(x, y, z, Block.Air);
         break;
-      case 'dig': {
-        const id = world.getVoxel(x, y, z);
-        this.drop(id === Block.Sand ? 'sand' : id === Block.Stone ? 'stone' : 'earth', x + 0.5, y + 0.5, z + 0.5);
-        world.setVoxel(x, y, z, Block.Air);
-        const found = this.buried?.dig(x, y, z);
-        if (found) {
-          this.events.push({ kind: 'work', action: 'dig', x, y, z });
-          return done(found);
-        }
-        break;
-      }
       case 'till':
         world.setVoxel(x, y, z, Block.Soil);
         break;
@@ -676,50 +659,29 @@ export class Land {
     return done('');
   }
 
-  /** Where earth (or sand) from the pack would go: against the face picked, or on the ground in front. */
-  placeAim(t: Target | null = this.front()): Aim {
-    if (!this.walker || !t) return { ok: false, reason: 'You’re aboard ship.' };
-    let x = t.x;
-    let y: number;
-    let z = t.z;
-    if (t.y !== undefined && t.face) {
-      x += t.face.x;
-      y = t.y + t.face.y;
-      z += t.face.z;
-    } else {
-      const ground = this.groundAt(t, 1);
-      if (!ground) return { ok: false, reason: 'Nothing within reach to put it on.' };
-      y = ground.y + 1;
-    }
+  /** Where the captain would dig for treasure: the ground under their feet, or why they can't. */
+  digAim(): Aim {
+    const w = this.walker;
+    if (!w) return { ok: false, reason: 'You’re aboard ship.' };
+    const x = Math.floor(w.x);
+    const z = Math.floor(w.z);
+    const y = Math.round(w.y) - 1;
     const no = (reason: string): Aim => ({ ok: false, reason, x, y, z });
-    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land (marked on the ground): work it in your own camp.' };
-    if (!this.reaches(x, y, z)) return { ok: false, reason: 'Out of reach.' };
-    if (this.world.getVoxel(x, y, z) !== Block.Air) return no('There’s no room there.');
-    // Holes can be filled as deep as the shovel digs; any deeper is the sea.
-    if (y < SEA_LEVEL - 1) return no('Earth won’t stay put in the sea.');
-    if (this.buildingAt(x, y, z)) return no('A building stands there.');
-    if (this.bodyIn(x, y, z)) return no('Someone’s standing there.');
-    if (this.available('earth') + this.available('sand') < 1) return no('You have no earth: dig some with the shovel.');
-    return { ok: true, action: 'place', x, y, z };
+    if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land (marked on the ground): nobody digs here.' };
+    if (this.buildingAt(x, y, z) || this.buildingAt(x, y + 1, z)) return no('Not under a building.');
+    if (!SOFT.includes(this.world.getVoxel(x, y, z))) return no('The ground’s too hard to dig here.');
+    if (y + 1 < SEA_LEVEL) return no('Too wet to dig.');
+    return { ok: true, action: 'dig', x, y, z };
   }
 
-  /** Puts down a block of earth from the pack (or sand, once the earth runs out). */
-  place(t: Target | null = this.front()): Outcome {
-    const aim = this.placeAim(t);
+  /** Digs where the captain stands, for buried treasure. The ground is left as it was: it's the chest that comes up. */
+  dig(): Outcome {
+    const aim = this.digAim();
     if (!aim.ok) return fail(aim.reason);
-    const good = this.available('earth') > 0 ? 'earth' : 'sand';
-    this.spend({ [good]: 1 });
-    this.world.setVoxel(aim.x, aim.y, aim.z, good === 'earth' ? Block.Dirt : Block.Sand);
-    this.events.push({ kind: 'work', action: 'place', x: aim.x, y: aim.y, z: aim.z });
-    return done('');
-  }
-
-  /** Is anyone (the captain, a settler, a beast) in the way of this cell? */
-  private bodyIn(x: number, y: number, z: number): boolean {
-    const walkers = [this.walker, ...this.settlers.map((s) => s.walker), ...this.creatures.map((c) => c.walker)];
-    return walkers.some(
-      (w) => !!w && w.x + HALF_WIDTH > x && w.x - HALF_WIDTH < x + 1 && w.z + HALF_WIDTH > z && w.z - HALF_WIDTH < z + 1 && w.y + HEIGHT > y && w.y < y + 1,
-    );
+    const { x, y, z } = aim;
+    const found = this.buried?.search(x, y, z) ?? null;
+    this.events.push({ kind: 'work', action: 'dig', x, y, z });
+    return done(found ?? 'Nothing here but earth and roots.');
   }
 
   /** Something comes loose here, to be picked up. */
@@ -762,6 +724,18 @@ export class Land {
     return done('');
   }
 
+  /** The captain's axe bites: the tree takes a blow, and comes down with the last one it can stand. */
+  private chop(x: number, y: number, z: number): void {
+    const { wood, leaves } = this.treeAt(x, y, z);
+    const foot = footOf(wood);
+    const blows = foot === null ? Infinity : (this.blows.get(foot) ?? 0) + 1;
+    if (blows >= blowsToFell(wood.length, leaves.length)) return this.fell(x, y, z);
+    this.blows.set(foot!, blows);
+    // A few leaves shaken loose from the crown.
+    const shaken = Array.from({ length: Math.min(3, leaves.length) }, () => leaves[Math.floor(this.random() * leaves.length)]);
+    this.events.push({ kind: 'work', action: 'chop', x, y, z, leaves: shaken.flat() });
+  }
+
   /** The captain fells a tree: it comes apart into timber, and a sapling or two from its leaves. */
   private fell(x: number, y: number, z: number): void {
     const { wood, leaves } = this.fellTree(x, y, z);
@@ -775,13 +749,22 @@ export class Land {
     this.events.push({ kind: 'work', action: 'fell', x, y, z, leaves: leaves.flat() });
   }
 
-  /**
-   * Cuts down a whole tree from any part of it: its trunk, then the leaves that hang
-   * from it (closer to it than to any other tree's trunk). Blocks touching at an edge or
-   * a corner count, as a palm's trunk leans and its fronds droop that way. Returns
-   * where its wood and leaves were.
-   */
+  /** Cuts down a whole tree from any part of it (see `treeAt`). Returns where its wood and leaves were. */
   private fellTree(x: number, y: number, z: number): { wood: Cell[]; leaves: Cell[] } {
+    const tree = this.treeAt(x, y, z);
+    for (const [cx, cy, cz] of [...tree.wood, ...tree.leaves]) this.world.setVoxel(cx, cy, cz, Block.Air);
+    this.surveys.delete(`trees-${this.fireAt(x, z)?.id}`);
+    const foot = footOf(tree.wood);
+    if (foot !== null) this.blows.delete(foot);
+    return tree;
+  }
+
+  /**
+   * A whole tree, from any part of it: its trunk, then the leaves that hang from it
+   * (closer to it than to any other tree's trunk). Blocks touching at an edge or a
+   * corner count, as a palm's trunk leans and its fronds droop that way.
+   */
+  private treeAt(x: number, y: number, z: number): { wood: Cell[]; leaves: Cell[] } {
     const world = this.world;
     const key = ([cx, cy, cz]: Cell) => `${cx},${cy},${cz}`;
     const is = (c: Cell, ids: (id: number) => boolean) => ids(world.getVoxel(c[0], c[1], c[2])) && !this.buildingAt(c[0], c[1], c[2]);
@@ -835,8 +818,6 @@ export class Land {
     const seeds = wood.length > 0 ? wood : [start];
     const leaves = spread(seeds, (c) => is(c, leafy) && hangsHere(c)).slice(seeds.length);
     if (wood.length === 0 && is(start, leafy)) leaves.unshift(start); // a bush of leaves with no trunk left
-    for (const [cx, cy, cz] of [...wood, ...leaves]) world.setVoxel(cx, cy, cz, Block.Air);
-    this.surveys.delete(`trees-${this.fireAt(x, z)?.id}`);
     return { wood, leaves };
   }
 
@@ -1039,3 +1020,15 @@ export class Land {
 
 const done = (message: string): Outcome => ({ ok: true, message });
 const fail = (message: string): Outcome => ({ ok: false, message });
+
+/** The foot of a trunk (its lowest block), which names the tree; null if there's no trunk. */
+function footOf(wood: readonly Cell[]): string | null {
+  if (wood.length === 0) return null;
+  const [x, y, z] = wood.reduce((low, c) => (c[1] < low[1] || (c[1] === low[1] && (c[0] < low[0] || (c[0] === low[0] && c[2] < low[2]))) ? c : low));
+  return `${x},${y},${z}`;
+}
+
+/** Axe blows a tree stands: a young palm three, the tallest palms and broadest crowns five or six. */
+export function blowsToFell(wood: number, leaves: number): number {
+  return Math.min(BLOWS[1], Math.max(BLOWS[0], wood + Math.round(leaves / 4) - 7));
+}

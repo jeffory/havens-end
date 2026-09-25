@@ -1,6 +1,7 @@
 import { Group } from 'three';
+import { gunSlots, gunsRunOut, mannedSlots } from '../combat/gunnery';
 import type { Sea } from '../combat/sea';
-import type { Faction } from '../combat/vessel';
+import { type Faction, gunsManned, reloadTime, type Vessel } from '../combat/vessel';
 import { WATER_LEVEL } from '../ocean/waves';
 import type { ShipModel } from '../sailing/shipModel';
 import type { ShipType } from '../sailing/ships';
@@ -68,6 +69,7 @@ export class FleetView {
       pose.heading = v.prev.heading + wrapAngle(v.ship.heading - v.prev.heading) * alpha;
       view.update(pose, v.ship, sea.weather.windAt(pose.x, pose.z, time), time, frameSeconds, v.status, v.fate);
       view.setLantern(v.status === 'sinking' ? 0 : dark);
+      this.runGuns(view, v);
 
       const fx = Math.sin(pose.heading);
       const fz = Math.cos(pose.heading);
@@ -90,5 +92,12 @@ export class FleetView {
       this.wakes.forget(id);
     }
   }
-}
 
+  /** Her guns: in after a broadside, out when loaded, and in for good once she's struck or going down. */
+  private runGuns(view: ShipView, v: Vessel): void {
+    if (view.gunCount !== v.cls.type.gunsPerSide) view.mountGuns({ port: gunSlots(v, 'port'), starboard: gunSlots(v, 'starboard') });
+    const manned = mannedSlots(v.cls.type.gunsPerSide, gunsManned(v));
+    const total = reloadTime(v);
+    for (const side of ['port', 'starboard'] as const) view.runGuns(side, v.status === 'afloat' ? gunsRunOut(v.reload[side], total) : 0, manned);
+  }
+}

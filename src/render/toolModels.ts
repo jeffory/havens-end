@@ -1,7 +1,7 @@
 import type { Held } from '../land/Land';
 
-/** What someone on foot can have in hand: the captain's tools and seed, and a settler's rod or hammer. */
-export type HeldModel = Held | 'rod' | 'hammer';
+/** What someone on foot can have in hand: the captain's tools and seed, the spade they dig for treasure with, and a settler's rod or hammer. */
+export type HeldModel = Held | 'spade' | 'rod' | 'hammer';
 
 /**
  * Voxel tools for the captain's hand, in character voxels, laid along −x from the
@@ -24,7 +24,7 @@ export function heldCells(held: HeldModel): { cells: Int32Array; palette: Uint8A
   } else if (held === 'hammer') {
     for (let x = 2; x >= -8; x--) put(x, 0, 0, 1);
     for (let y = -2; y <= 2; y++) for (let z = -1; z <= 1; z++) put(-9, y, z, 2);
-  } else if (held === 'axe' || held === 'pickaxe' || held === 'shovel' || held === 'hoe') {
+  } else if (held === 'axe' || held === 'pickaxe' || held === 'spade' || held === 'hoe') {
     for (let x = 2; x >= -11; x--) put(x, 0, 0, 1);
     switch (held) {
       case 'axe':
@@ -34,7 +34,7 @@ export function heldCells(held: HeldModel): { cells: Int32Array; palette: Uint8A
         for (let y = -3; y <= 3; y++) put(-12, y, 0, Math.abs(y) === 3 ? 3 : 2);
         put(-13, 0, 0, 2);
         break;
-      case 'shovel':
+      case 'spade':
         for (let x = -12; x >= -16; x--) for (let z = -1; z <= 1; z++) put(x, 0, z, x === -16 ? 3 : 2);
         break;
       case 'hoe':

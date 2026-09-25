@@ -149,31 +149,33 @@ describe('treasure maps', () => {
 });
 
 describe('digging for treasure', () => {
-  it('finds the chest two spades down, within a block of the X: gold, goods on the ground, the map used up', () => {
+  it('comes up where you dig within a block of the X: gold, goods on the ground, the map used up', () => {
     const t = setup();
     const map = mapOf(t, 'near');
-    const { x, y, z } = map.site;
+    const { x, z } = map.site;
+    const top = map.site.y + 1; // the ground you stand on
     const gold = t.sea.captain.gold;
-    expect(t.treasure.dig(x + 3, y + 1, z)).toMatch(/loose/);
-    expect(t.treasure.dig(x, y + 1, z)).toMatch(/loose/); // not deep enough yet
-    expect(t.treasure.dig(x + 1, y, z - 1)).toMatch(/chest/);
-    expect(t.world.getVoxel(x + 1, y, z - 1)).toBe(Block.Chest);
+    expect(t.treasure.search(x + 3, top, z)).toMatch(/loose/);
+    expect(t.treasure.search(x + 9, top, z)).toBeNull();
+    expect(t.treasure.search(x + 1, top, z - 1)).toMatch(/chest/);
+    // The chest sits in the ground where you dug, and nothing else is disturbed.
+    expect(t.world.getVoxel(x + 1, top, z - 1)).toBe(Block.Chest);
+    expect(t.world.getVoxel(x, top, z)).toBe(Block.Grass);
     expect(t.sea.captain.gold).toBe(gold + map.loot.gold);
     expect(t.land.drops.reduce((n, d) => n + d.amount, 0)).toBe(Object.values(map.loot.goods).reduce((a, b) => a + b, 0));
     expect(t.sea.captain.maps).not.toContain(map);
     expect(t.treasure.takeNotices()[0].text).toMatch(/chest holds \d+ gold/);
-    expect(t.treasure.dig(x, y, z)).toBeNull();
+    expect(t.treasure.search(x, top, z)).toBeNull();
   });
 
-  it('is found with the shovel, on foot', () => {
+  it('is dug up on foot, standing on the X, without a spade in hand', () => {
     const t = setup();
     const map = mapOf(t, 'near');
     const { x, z } = map.site;
-    t.land.walker = createWalker(x + 0.5, SEA_LEVEL + 2, z - 1.2, 0); // just north of the X, facing it
-    expect(t.land.use('shovel').ok).toBe(true);
-    const deeper = t.land.use('shovel');
-    expect(deeper.message).toMatch(/chest/);
-    expect(t.world.getVoxel(x, map.site.y, z)).toBe(Block.Chest);
+    t.land.walker = createWalker(x + 0.5, SEA_LEVEL + 2, z + 0.5, 0);
+    const dug = t.land.dig();
+    expect(dug).toMatchObject({ ok: true, message: expect.stringMatching(/chest/) });
+    expect(t.world.getVoxel(x, SEA_LEVEL + 1, z)).toBe(Block.Chest);
   });
 
   it('won’t give up a cursed hoard by day; at night its guardian rises, and must be beaten', () => {
@@ -181,10 +183,10 @@ describe('digging for treasure', () => {
     const map = mapOf(t, 'cursed');
     const { x, y, z } = map.site;
     noon(t.sea);
-    expect(t.treasure.dig(x, y, z)).toMatch(/keeps to the dark/);
+    expect(t.treasure.search(x, y, z)).toMatch(/keeps to the dark/);
     expect(t.treasure.takeEvents()).toEqual([]);
     night(t.sea);
-    expect(t.treasure.dig(x, y, z)).toMatch(/cold/);
+    expect(t.treasure.search(x, y, z)).toMatch(/cold/);
     const [event] = t.treasure.takeEvents();
     expect(event).toMatchObject({ kind: 'guardian', map: map.id });
     // Losing costs a tenth of your gold, and the hoard stays.
@@ -211,7 +213,7 @@ describe('digging for treasure', () => {
     // No more maps to the cursed isles: their hoards are gone.
     t.sea.clock.day = 500;
     expect(t.treasure.offersFor(PIRATE_PORT).some((o) => o.map.tier === 'cursed')).toBe(false);
-    expect(t.treasure.dig(legend.site.x, legend.site.y, legend.site.z)).toMatch(/chest/);
+    expect(t.treasure.search(legend.site.x, legend.site.y, legend.site.z)).toMatch(/chest/);
     expect(t.sea.captain.relics.sort()).toEqual([...RELIC_LIST].sort());
     expect(t.sea.captain.letter).toBe(true);
   });

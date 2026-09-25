@@ -33,8 +33,11 @@ export interface ShoreHost {
   hidden(x: number, y: number, z: number, id: BlockId): boolean;
 }
 
-const TOOL_LABELS: Record<Tool, string> = { axe: 'Axe', pickaxe: 'Pickaxe', shovel: 'Shovel', hoe: 'Hoe' };
+const TOOL_LABELS: Record<Tool, string> = { axe: 'Axe', pickaxe: 'Pickaxe', hoe: 'Hoe' };
 const SWING_SECONDS = 0.38;
+/** How long it takes to dig for treasure, and how far the captain can shift before they've given up. */
+const DIG_SECONDS = 1.5;
+const DIG_WANDER = 0.3;
 const HINT_SECONDS = 2.5;
 /** How long a town's land stays marked out after you try to work it, fading in and out. */
 const TOWN_SECONDS = 5;
@@ -53,6 +56,8 @@ export class Shore {
   private item = 0;
   placing: { kind: Structure; rot: number } | null = null;
   private swing: number | null = null;
+  /** Digging for treasure: where the captain stood to dig, and how long is left. */
+  private digging: { x: number; z: number; left: number } | null = null;
   private hint: { text: string; until: number; ok: boolean; tally?: boolean } | null = null;
   /** A town whose land is marked out on the ground (you tried to work it), and when. */
   private town: { port: Port; at: number } | null = null;
@@ -86,7 +91,7 @@ export class Shore {
     hud.onSelect = (i) => this.select(i);
   }
 
-  /** The hotbar: the four tools, each kind of seed, and saplings. */
+  /** The hotbar: the tools, each kind of seed, and saplings. */
   items(): Held[] {
     return [...TOOL_LIST, ...PLANTABLE, 'sapling'];
   }
@@ -119,13 +124,15 @@ export class Shore {
     this.clock += dt;
     if (this.swing !== null) {
       this.swing += dt / SWING_SECONDS;
-      if (this.swing >= 1) this.swing = null;
+      // Digging is one swing of the spade after another.
+      if (this.swing >= 1) this.swing = this.digging ? 0 : null;
     }
     const { forwardX, forwardZ, rightX, rightZ } = this.rig.groundAxes();
     const mx = rightX * controls.walkX + forwardX * controls.walkY;
     const mz = rightZ * controls.walkX + forwardZ * controls.walkY;
     if (Math.hypot(mx, mz) > 0.1) this.mouseUntil = 0; // walking with keys or stick: work in front again
     this.land.move(dt, mx, mz);
+    this.keepDigging(dt);
 
     // Esc (and Start) put down what you're placing, or else open the menu; B only puts it down.
     const cancel = controls.take('cancel');
@@ -148,8 +155,7 @@ export class Shore {
     if (controls.take('interact') > 0) this.interact();
     const atCursor = controls.take('useAtCursor') > 0;
     if (controls.take('use') > 0 || atCursor) this.use(atCursor);
-    const placeAtCursor = controls.take('placeAtCursor') > 0;
-    if (controls.take('place') > 0 || placeAtCursor) this.putDown(placeAtCursor);
+    if (controls.take('dig') > 0) this.startDigging();
   }
 
   private interact(): void {
@@ -191,20 +197,42 @@ export class Shore {
     }
     const target = this.cursor(atCursor) ?? this.land.front();
     if (!target) return;
+    this.digging = null;
     this.swing = 0;
     this.report(this.land.use(this.held, target));
     this.markTown(target);
   }
 
-  /** The shovel puts earth down: against the face under the mouse, or on the ground in front. */
-  private putDown(atCursor: boolean): void {
-    if (this.placing) return;
-    if (this.held !== 'shovel') return this.report({ ok: false, message: 'Take up the shovel to put earth down.' });
-    const target = this.cursor(atCursor, true) ?? this.land.front();
-    if (!target) return;
+  /** Starts digging for treasure where the captain stands (F, right-click, LT), if the ground can be dug. */
+  private startDigging(): void {
+    const w = this.land.walker;
+    if (this.placing || this.digging || !w) return;
+    const aim = this.land.digAim();
+    if (!aim.ok) {
+      this.report({ ok: false, message: aim.reason });
+      this.markTown({ x: Math.floor(w.x), z: Math.floor(w.z) });
+      return;
+    }
+    this.digging = { x: w.x, z: w.z, left: DIG_SECONDS };
     this.swing = 0;
-    this.report(this.land.place(target));
-    this.markTown(target);
+    this.report({ ok: true, message: 'Digging…' });
+  }
+
+  /** A moment's digging: done, it turns up what's there (if anything); walking off gives it up. */
+  private keepDigging(dt: number): void {
+    const d = this.digging;
+    const w = this.land.walker;
+    if (!d) return;
+    if (!w || Math.hypot(w.x - d.x, w.z - d.z) > DIG_WANDER) {
+      this.digging = null;
+      this.swing = null;
+      this.hint = null;
+      return;
+    }
+    d.left -= dt;
+    if (d.left > 0) return;
+    this.digging = null;
+    this.report(this.land.dig());
   }
 
   /** Trying to work a town's land marks it out on the ground for a while, so you can see where yours could start. */
@@ -228,15 +256,11 @@ export class Shore {
     if (result.message) this.hint = { text: result.message, until: this.clock + HINT_SECONDS, ok: result.ok };
   }
 
-  /**
-   * The block under the mouse, if the mouse is what's being used (or was just clicked)
-   * and the captain can reach it; for putting earth down, the cell against its face.
-   */
-  private cursor(clicked = false, against = false): Target | null {
+  /** The block under the mouse, if the mouse is what's being used (or was just clicked) and the captain can reach it. */
+  private cursor(clicked = false): Target | null {
     const h = this.hover;
     if (!h || !(clicked || this.mouseActive())) return null;
-    const reach = against ? this.land.reaches(h.x + h.nx, h.y + h.ny, h.z + h.nz) : this.land.reaches(h.x, h.y, h.z);
-    return reach ? { x: h.x, y: h.y, z: h.z, face: { x: h.nx, y: h.ny, z: h.nz } } : null;
+    return this.land.reaches(h.x, h.y, h.z) ? { x: h.x, y: h.y, z: h.z, face: { x: h.nx, y: h.ny, z: h.nz } } : null;
   }
 
   private mouseActive(): boolean {
@@ -262,7 +286,7 @@ export class Shore {
   render(alpha: number, frameSeconds: number, time: number, camera: Camera): WorldLabel[] {
     const w = this.land.walker;
     if (!w) return [];
-    this.view.update(w, alpha, this.held, this.swing, frameSeconds, time);
+    this.view.update(w, alpha, this.digging ? 'spade' : this.held, this.swing, frameSeconds, time);
     this.focus.copy(this.view.captain.root.position).setY(this.view.captain.root.position.y + 1.2);
     this.pick(camera);
 
@@ -286,7 +310,7 @@ export class Shore {
       this.view.showGhost(null);
       const target = this.cursor() ?? this.land.front();
       // Nothing can be worked in town, so there's nothing to mark.
-      const aim = target && !this.land.inTown(target.x, target.z) ? this.land.aim(this.held, target) : null;
+      const aim = this.digging ? this.land.digAim() : target && !this.land.inTown(target.x, target.z) ? this.land.aim(this.held, target) : null;
       this.view.mark(aim && aim.x !== undefined ? { x: aim.x, y: aim.y!, z: aim.z!, ok: aim.ok } : null);
     }
 

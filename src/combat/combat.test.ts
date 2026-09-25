@@ -9,7 +9,7 @@ import { createAi } from './ai';
 import { AMMO, type Ammo, landingDistance } from './ammo';
 import { dropBarrel } from './barrels';
 import { planGroup, planNightGroup, regionTier } from './encounters';
-import { fireBroadside } from './gunnery';
+import { fireBroadside, gunPositions, gunSlots, gunsRunOut, mannedSlots } from './gunnery';
 import { cargoCount, plunder } from '../economy/goods';
 import type { Port } from '../economy/ports';
 import { JAIL_FINE, type PlayerOrders, Sea } from './sea';
@@ -79,6 +79,17 @@ describe('broadsides', () => {
     expect(fireBroadside(sea, sea.player, 'port')).toBe(true);
   });
 
+  it('jump inboard when fired, and run out again as the loading finishes', () => {
+    expect(gunsRunOut(0, 8)).toBe(1); // loaded
+    expect(gunsRunOut(8, 8)).toBe(1); // the instant they fire
+    expect(gunsRunOut(7.9, 8)).toBeLessThan(0.5); // flying back
+    expect(gunsRunOut(5, 8)).toBe(0); // in, being loaded
+    const out = [0.5, 0.3, 0.1].map((left) => gunsRunOut(left, 8));
+    expect(out[0]).toBeGreaterThan(0);
+    expect(out[1]).toBeGreaterThan(out[0]);
+    expect(out[2]).toBeGreaterThan(out[1]);
+  });
+
   it('reach further with round shot than chain, and further with chain than grape', () => {
     expect(landingDistance('round', 2)).toBeGreaterThan(landingDistance('chain', 2));
     expect(landingDistance('chain', 2)).toBeGreaterThan(landingDistance('grape', 2));
@@ -117,6 +128,23 @@ describe('damage', () => {
     applyDamage(v, 0, 0, v.crew * 0.6);
     expect(gunsManned(v)).toBeLessThan(BRIG.gunsPerSide);
     expect(reloadTime(v)).toBeGreaterThan(fullReload * 1.3);
+  });
+
+  it('leaves the guns where they are when the crew thins: a short crew works some of them, spread along the side', () => {
+    const sea = newSea();
+    const v = place(sea, BRIG, 'imperial', 0, 0);
+    const slots = gunSlots(v, 'port');
+    expect(slots).toHaveLength(BRIG.gunsPerSide);
+    expect(gunPositions(v, 'port')).toEqual(slots);
+    applyDamage(v, 0, 0, v.crew * 0.6);
+    const manned = gunPositions(v, 'port');
+    expect(manned).toHaveLength(gunsManned(v));
+    for (const gun of manned) expect(slots).toContainEqual(gun);
+    // Spread out: the first and last guns manned aren't bunched at one end.
+    const spread = manned[manned.length - 1][2] - manned[0][2];
+    expect(spread).toBeGreaterThan((slots[slots.length - 1][2] - slots[0][2]) * 0.5);
+    expect(mannedSlots(7, 7)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(new Set(mannedSlots(7, 3)).size).toBe(3);
   });
 
   it('makes a ship strike her colours when most of her crew is gone', () => {
@@ -407,6 +435,34 @@ describe('boarding, plunder and jail', () => {
     run(sea, 6);
     expect(sea.captain.gold).toBe(500);
     expect(cargoCount(sea.player.cargo)).toBe(0);
+  });
+
+  it('going down clears the sea: nobody waits off the port for the new sloop, and nobody comes for a while', () => {
+    const sea = newSea(new VoxelWorld(), true);
+    const hunter = place(sea, BRIG, 'pirate', 0, -40);
+    hunter.ai = createAi(0, 0, EAST);
+    hunter.ai.alerted = true;
+    const story = place(sea, BRIG, 'imperial', 200, 0);
+    story.story = true;
+    sea.shots.push({ ammo: 'round', owner: hunter.id, x: 0, y: 2, z: -20, vx: 0, vy: 0, vz: 10 });
+    applyDamage(sea.player, 1000, 0, 0);
+    run(sea, 6);
+    expect(sea.player.status).toBe('afloat');
+    // The story's ships see to themselves.
+    expect(sea.vessels.map((v) => v.id)).toEqual([sea.player.id, story.id]);
+    expect(sea.shots).toHaveLength(0);
+    run(sea, 55);
+    expect(sea.vessels).toHaveLength(2);
+    run(sea, 10);
+    expect(sea.vessels.length).toBeGreaterThan(2);
+  });
+
+  it('so does being jailed', () => {
+    const sea = newSea();
+    alongside(sea, 'pirate');
+    sea.boarding = sea.vessels[1].id;
+    sea.finishBoarding(false);
+    expect(sea.vessels).toEqual([sea.player]);
   });
 
   it('merchants carry cargo worth taking; warships carry a paymaster’s chest', () => {

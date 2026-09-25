@@ -21,8 +21,7 @@ export type Action =
   | 'interact'
   | 'use'
   | 'useAtCursor'
-  | 'place'
-  | 'placeAtCursor'
+  | 'dig'
   | 'itemPrev'
   | 'itemNext'
   | 'item1'
@@ -84,7 +83,7 @@ const SEA_PAD: Bindings<number> = [
 const FOOT_PAD: Bindings<number> = [
   [PAD.A, 'interact'],
   [PAD.X, 'use'],
-  [PAD.LT, 'place'],
+  [PAD.LT, 'dig'],
   [PAD.LB, 'itemPrev'],
   [PAD.RB, 'itemNext'],
   [PAD.Y, 'build'],
@@ -139,7 +138,7 @@ const SEA_KEYS: Bindings<string> = [
 const FOOT_KEYS: Bindings<string> = [
   ['KeyE', 'interact'],
   ['Space', 'use'],
-  ['KeyF', 'place'],
+  ['KeyF', 'dig'],
   ['KeyQ', 'itemPrev'],
   ['KeyR', 'itemNext'],
   ['Digit1', 'item1'],
@@ -288,10 +287,10 @@ export class Controls {
     this.walkX = this.mode === 'foot' ? held('KeyD', 'ArrowRight') - held('KeyA', 'ArrowLeft') : 0;
     this.walkY = this.mode === 'foot' ? held('KeyW', 'ArrowUp') - held('KeyS', 'ArrowDown') : 0;
     if (this.mode === 'foot') {
-      // On foot the mouse works: a left click uses what's in hand on the block under the cursor, a right click puts earth there.
+      // On foot the mouse works: a left click uses what's in hand on the block under the cursor, a right click digs where you stand.
       for (const click of input.takeClicks()) {
         if (click.button === 0) this.queue('useAtCursor');
-        if (click.button === 2) this.queue('placeAtCursor');
+        if (click.button === 2) this.queue('dig');
       }
     }
 

@@ -260,6 +260,7 @@ export class Story {
     const add = (name: string, type: typeof BRIG, faction: 'imperial' | 'pirate', place: { x: number; z: number }, gold: number): Vessel => {
       const v = createVessel(sea.nextId++, name, faction, sea.classFor(type), place.x, place.z, heading, faction === 'imperial' ? group : group + 1);
       v.gold = gold;
+      v.story = true;
       v.ai = createAi(p.ship.x, p.ship.z, heading);
       v.helm.sails = 1;
       v.ship.sail = 0.5;

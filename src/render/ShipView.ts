@@ -1,5 +1,5 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Sprite } from 'three';
-import type { VesselStatus } from '../combat/vessel';
+import { BoxGeometry, BufferAttribute, Color, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Sprite } from 'three';
+import type { Side, VesselStatus } from '../combat/vessel';
 import { WATER_LEVEL, waterSurfaceY } from '../ocean/waves';
 import { angleOffWind } from '../sailing/pointOfSail';
 import type { ShipState } from '../sailing/ship';
@@ -11,6 +11,14 @@ import { meshCells } from './voxelGeometry';
 
 /** True wind speed in u/s for wind strength 1; only used to work out apparent wind for the flag. */
 const WIND_SPEED = 15;
+/** Gun barrels: length and thickness, how far the muzzle stands out of the side when run out, and how far back the recoil takes it. */
+const BARREL_LENGTH = 1.3;
+const BARREL_WIDTH = 0.4;
+const MUZZLE_OUT = 0.9;
+const RECOIL = 1.1;
+/** Barrels sit in the painted gun ports, this far below where the shot leaves (the gun deck's top). */
+const PORT_DROP = 0.8;
+const IRON = 0x2c2c31;
 
 /** Flag colours: `field` replaces the flag's main colour, `emblem` every other colour on it. */
 export interface Livery {
@@ -41,6 +49,9 @@ export class ShipView {
   readonly body = new Group();
   private readonly sails: Sail[] = [];
   private readonly flags: Group[] = [];
+  /** Each side's gun barrels, and where each sits when run out. */
+  private readonly guns: Record<Side, Array<{ barrel: Mesh; x: number; inboard: number }>> = { port: [], starboard: [] };
+  private gunGeometry: BoxGeometry | null = null;
   private heave = 0;
   private pitch = 0;
   private roll = 0;
@@ -80,6 +91,61 @@ export class ShipView {
     this.halo.scale.setScalar(4);
     this.lantern.visible = this.halo.visible = false;
     this.body.add(this.lantern, this.halo);
+  }
+
+  /** How many guns a side is drawn with. */
+  get gunCount(): number {
+    return this.guns.port.length;
+  }
+
+  /**
+   * Puts a barrel at each gun place (muzzle positions from the simulation, ship-local),
+   * poking out of the hull's side there. They start run out.
+   */
+  mountGuns(slots: Record<Side, ReadonlyArray<readonly [number, number, number]>>): void {
+    for (const side of ['port', 'starboard'] as const) {
+      for (const gun of this.guns[side]) this.body.remove(gun.barrel);
+      this.guns[side] = [];
+    }
+    this.gunGeometry?.dispose();
+    const geometry = (this.gunGeometry = ironBox(BARREL_LENGTH, BARREL_WIDTH, BARREL_WIDTH));
+    for (const side of ['port', 'starboard'] as const) {
+      for (const [x, y, z] of slots[side]) {
+        const out = Math.sign(x);
+        const hullSide = this.hullSide(out, y - PORT_DROP, z) ?? Math.abs(x);
+        const barrel = new Mesh(geometry, this.material);
+        barrel.castShadow = true;
+        // Run out: the muzzle stands clear of the side, the breech inside the hull.
+        const runOut = out * (hullSide + MUZZLE_OUT - BARREL_LENGTH / 2);
+        barrel.position.set(runOut, y - PORT_DROP, z);
+        this.body.add(barrel);
+        this.guns[side].push({ barrel, x: runOut, inboard: -out * RECOIL });
+      }
+    }
+  }
+
+  /** Runs a side's guns out (1) or in (0); `manned` lists the guns with hands to work them, and the rest stay in. */
+  runGuns(side: Side, out: number, manned: readonly number[]): void {
+    this.guns[side].forEach((gun, i) => {
+      const run = manned.includes(i) ? out : 0;
+      gun.barrel.position.x = gun.x + gun.inboard * (1 - run);
+    });
+  }
+
+  /** How far the hull reaches out to one side (+1 port, −1 starboard) at a height and station, ship-local; null if there's no hull there. */
+  private hullSide(out: number, y: number, z: number): number | null {
+    const { cells } = this.model.hull;
+    const o = this.model.origin;
+    let reach: number | null = null;
+    for (let i = 0; i < cells.length; i += 4) {
+      const cy = cells[i + 1] - o.y;
+      const cz = cells[i + 2] - o.z;
+      if (y < cy || y >= cy + 1 || z < cz || z >= cz + 1) continue;
+      const cx = cells[i] - o.x;
+      const edge = out > 0 ? cx + 1 : -cx;
+      if (reach === null || edge > reach) reach = edge;
+    }
+    return reach;
   }
 
   /** Lights the stern lantern: 0 by day, 1 on a dark night. */
@@ -183,6 +249,17 @@ function recolorFlag(part: ModelPart, rgba: Uint8Array, livery: Livery): Uint8Ar
     out.set([(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, 255], index * 4);
   }
   return out;
+}
+
+/** A box coloured iron through its vertex colours, so it can share the ship's material (and fade with her). */
+function ironBox(x: number, y: number, z: number): BoxGeometry {
+  const geometry = new BoxGeometry(x, y, z);
+  const n = geometry.getAttribute('position').count;
+  const colours = new Float32Array(n * 3);
+  const { r, g, b } = new Color(IRON); // in the working (linear) colour space, as vertex colours are
+  for (let i = 0; i < n; i++) colours.set([r, g, b], i * 3);
+  geometry.setAttribute('color', new BufferAttribute(colours, 3));
+  return geometry;
 }
 
 function partHeight(part: ModelPart): number {

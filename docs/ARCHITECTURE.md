@@ -203,6 +203,13 @@ those into smoke, splashes, splinters, explosions and messages.
 **Guns.** Broadsides fire straight out of the side at one fixed elevation. You aim
 by manoeuvring, and range comes from the charge. Each side reloads separately.
 Reload time and the number of guns manned both fall with crew losses.
+- **Gun places** (`gunSlots`) are fixed along each side, `gunsPerSide` of them. A short
+  crew works an even spread of them (`mannedSlots`), so the guns don't bunch up as
+  hands fall.
+- **The barrels** are drawn by `ShipView` in the painted gun ports, a little below
+  where the shot leaves. They fly back inboard as a side fires, stay in while it
+  loads, and are hauled out over the last 0.6 s (`gunsRunOut`). Unmanned guns, and
+  every gun on a ship that has struck or is sinking, stay in.
 
 | Shot | Reach* | Per projectile | Use |
 |---|---|---|---|
@@ -234,6 +241,9 @@ captured crew signs on, if you have room.
 
 **Encounters** (`combat/encounters.ts`) spawn groups out of sight (230–300 away) on
 courses that cross yours. Groups that fall far astern untouched leave the map.
+- **After you go down,** sunk or jailed, every ship at sea is cleared away except the
+  story's (`Vessel.story`; the story sends its own home). Then no new ships come for
+  60 s (`Encounters.lull`), so nobody is waiting off the port when you put out again.
 Difficulty rises with distance from home:
 
 | Region | Distance | Groups |
@@ -484,19 +494,24 @@ show hollow), and your own ship fades while you work beside her.
 if the captain can reach it. Reach is 3.6 across, and from two blocks below the feet
 to two above. The mouse picks through whatever the cutaway hides
 (`ChunkRenderer.hides`, the shader's own test). The target is marked, and red means it
-won't work; nothing out of reach is marked. Click a hotbar slot, or press 1–9, to take
+won't work; nothing out of reach is marked. Click a hotbar slot, or press 1–8, to take
 it up.
-- **Axe:** fells a whole tree, first the trunk and then the leaves hanging from it.
+- **Axe:** a tree takes several blows (`blowsToFell`): 3 for a young palm, up to 5 or
+  6 for the tallest trunks and broadest crowns. Blows are counted by the foot of the
+  trunk, so it doesn't matter where on the tree they land. Each one throws chips and
+  shakes a few leaves from the crown (a `chop` work event). The count isn't saved.
+  Settler woodcutters are unchanged: their felling already takes time. The last blow fells the whole tree,
+  first the trunk and then the leaves hanging from it.
   - "Hanging from it" means the leaves nearer that trunk than to any other, so two
     canopies that touch come down one at a time.
   - Blocks touching at an edge or a corner count, so a leaning palm comes down whole.
 - **Pickaxe:** breaks natural stone and iron ore, one block at a time.
-- **Shovel:** digs the top of the ground within reach, for earth, sand or stone. Into
-  a wall, it starts as high as you can reach.
-  - F, right click or LT puts earth back down (sand once the earth runs out). It goes
-    against the face under the mouse, or on the ground in front. That fills holes,
-    raises ground and builds walls.
-  - Earth goes as deep as the shovel digs, and no deeper into the sea.
+- **No shovel** (retired in Phase 9, to move away from digging the voxels). F, right
+  click or LT digs for treasure where the captain stands (`Land.dig`): 1.5 s of
+  swinging a spade, given up if they walk off. It works on grass, earth, sand or
+  tilled soil outside town, and never changes the ground. Earth and sand already in a
+  pack are still goods to sell. The ground leveller planned for Phase 11 takes over
+  shaping the land.
 - **Hoe:** tills grass or earth.
 - **Seed:** plants in tilled soil. **Saplings** (from felled trees) plant in grass,
   earth or sand, and grow into a tree.
@@ -505,12 +520,12 @@ it up.
 don't count as ground, and neither does the air under their canopies. (Once, a canopy
 over a gap made the tools aim at the empty air beneath it.)
 
-**Where tools work.** Felling, mining and digging work on any island outside a port's
+**Where tools work.** Felling, mining and digging for treasure work on any island outside a port's
 town. Tilling and sowing need a claim.
 
 **Dropped items** (`land/drops.ts`, drawn by `render/DropsView.ts`). What the tools
-break off doesn't go straight into the pack. Felled trees, stone, ore, earth and sand,
-harvested crops and caught beasts all drop this way. Settlers still put their work
+break off doesn't go straight into the pack. Felled trees, stone, ore,
+harvested crops, caught beasts and treasure all drop this way. Settlers still put their work
 straight into the storehouses.
 - **How they look.** Each item is a 12-pixel picture cut out one voxel deep
   (`render/itemIcons.ts`). It pops out, falls, and lies there turning and bobbing.
@@ -525,7 +540,7 @@ straight into the storehouses.
 **Camps** (`land/structures.ts`):
 - **Claims.** A campfire (5 timber) claims everything within 32 voxels of it.
   Nothing else can be built without one, and nothing at all within 80 of a port's
-  berth. Try to dig, build or put earth down on a town's land and that land is
+  berth. Try to fell, mine, dig or build on a town's land and that land is
   marked out on the ground for five seconds: stripes across it and a glowing line
   at its edge. The terrain shader draws the marking (`ChunkRenderer.setZone`).
 - **Buildings** go on the grid, turned in quarter turns:
@@ -743,12 +758,12 @@ of yours leads to.
   offer.
 - **The case holds 8.**
 
-**Digging** (`Treasure.dig`, called by the `Land` after every block the shovel
-digs out):
-- **What the shovel turns up.** Within a block of the X at chest depth, a chest.
-  Above it, "soft and loose: keep digging". Within three blocks, loose earth, "as if
-  it has been dug before".
-- **What's in the chest.** A `Chest` block is left in the hole. Goods pop out in
+**Digging** (`Treasure.search`, asked by `Land.dig` about the ground block the
+captain stands on):
+- **What digging turns up.** Within a block of the X, a chest; depth doesn't matter.
+  Within three blocks, loose earth, "as if it has been dug before". Anywhere else,
+  nothing.
+- **What's in the chest.** The ground block where the captain dug becomes a `Chest`. Goods pop out in
   piles of five as dropped items. Gold and unique finds go straight to the captain.
 - **Cursed hoards.** By day they won't give. At night the chest raises a `guardian`
   event, and the loot waits until it's beaten (`guardianBeaten`). A guardian that
@@ -873,7 +888,9 @@ Phase 8 has lived through the intro, so it doesn't play again.
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
 and brig, which are also templates: open one in MagicaVoxel and restyle it. Painted
-gun ports are cosmetic: guns are spaced along the hull from `gunsPerSide`.
+gun ports are only paint, but the guns (spaced along the hull from `gunsPerSide`,
+see §6) are drawn in them on the placeholder hulls, so keep the ports at the stripe
+height if you restyle one.
 
 1. **Axes:** Z up, **bow toward +Y**, starboard toward +X.
 2. **One object per moving part**, named in the world editor:
@@ -1011,6 +1028,11 @@ verified in the running game. None of those directories import from `render`,
 6. ✅ **Crews, production & night:** settlers hired in taverns who farm, cut wood, fish and work six workshops (sawpit, sugar mill, distillery, curing shed, smokehouse, forge), fed each morning and housed in huts; voxel-surface pathfinding; maize, iron ore, planks and a carpenter; a configurable day and night with moonlight, lanterns and glowing windows, night raiders, slack customs, a fixer who works after dark, crabs and boar after your crops, bats and ghost lights; sleeping through the night.
 7. ✅ **Treasure hunting:** named islets; maps from the fixer, prizes and tavern talk, drawn on parchment from the real coastline (an X near home, directions further out, sun-riddles far out); landmarks and chests two spades down; cursed hoards guarded at night by a ghost captain in the duel; five unique finds; Blackwood's chart in three pieces, leading to his hoard and the letter that opens Phase 8.
 8. ✅ **Story:** a painted intro (the foundling, the *Good Hope*, the Imperial attack); a journal whose entries gather what people tell you; Nell, Quill, Finch and Red Mary; Blackwood's letter naming Lord Admiral Harrow; the choice of the black flag or the Guild's letter of marque; the *Sovereign*, a frigate with two brigs (and the Brethren's ships beside you under the black flag), and a last duel with Harrow; an epilogue.
+
+9. 🔄 **Quick wins:** going down (sunk or jailed) clears the sea and keeps it quiet for a minute, so nobody camps the port; the shovel retired (dig for treasure with F where you stand, and the ground is never changed); trees that take several axe blows; cannons that fly back when fired and run out when loaded.
+10. **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
+11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
+12. **Farming:** growth cycles, seeds, the hoe, watering and harvest yields, built on the crops already there.
 
 **Later:** docks and building over water. Jetties from your camps where the ship can
 moor, and walkways or huts on stilts. Notes and open questions:

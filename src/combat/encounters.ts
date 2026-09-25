@@ -65,6 +65,8 @@ export function planNightGroup(tier: Tier, roll: number, local: PortFaction | nu
 const OPENING: GroupPlan[] = [[merchant(MERCHANT_SLOOP)], [pirate(SLOOP)]];
 const FIRST_SPAWN = 4;
 const SPAWN_INTERVAL = 35;
+/** After you go down, the sea stays empty this long: a quiet start from port. */
+const LULL = 60;
 /** Ships come by more often at night: the raiders are out. */
 const NIGHT_SPAWN_INTERVAL = 26;
 const SPAWN_DISTANCE = [230, 300] as const;
@@ -99,6 +101,11 @@ export class Encounters {
 
   set count(n: number) {
     this.spawned = n;
+  }
+
+  /** No new ships for a while (the player has just gone down). */
+  lull(): void {
+    this.timer = LULL;
   }
 
   step(sea: Sea, dt: number): void {

@@ -902,10 +902,12 @@ export class Game {
     const near = (x: number, z: number) => Math.hypot(x - focus.x, z - focus.z) < 120;
     for (const e of this.land.takeEvents()) {
       if (e.kind === 'work' && near(e.x, e.z)) {
-        this.effects.emit(e.action === 'fell' ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
-        // A felled tree's leaves come down about it.
+        const woody = e.action === 'fell' || e.action === 'chop';
+        this.effects.emit(woody ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
+        // A felled tree's leaves come down about it; a blow of the axe shakes a few loose.
         const leaves = e.leaves ?? [];
-        for (let i = 0; i < leaves.length; i += 3 * LEAF_EVERY) this.effects.emit('leaves', leaves[i] + 0.5, leaves[i + 1] + 0.5, leaves[i + 2] + 0.5);
+        const every = e.action === 'chop' ? 1 : LEAF_EVERY;
+        for (let i = 0; i < leaves.length; i += 3 * every) this.effects.emit('leaves', leaves[i] + 0.5, leaves[i + 1] + 0.5, leaves[i + 2] + 0.5);
       }
       if (e.kind === 'pickup') this.shore.picked(e.good, e.amount);
       if (e.kind === 'built' || e.kind === 'razed') this.effects.emit('dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 1);

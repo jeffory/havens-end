@@ -19,15 +19,44 @@ export interface Shot {
 
 const BARREL_HIT_RADIUS = 1.3;
 
-/** Gun muzzles along one side, in ship-local space (x port, y above the waterline, z bow). */
-export function gunPositions(v: Vessel, side: Side, count = gunsManned(v)): Array<[number, number, number]> {
+/** Seconds a gun takes to fly back inboard when it fires, and to be run out again at the end of loading. */
+const RECOIL_SECONDS = 0.12;
+const RUN_OUT_SECONDS = 0.6;
+
+/** Where every gun sits along one side, manned or not: muzzles in ship-local space (x port, y above the waterline, z bow). */
+export function gunSlots(v: Vessel, side: Side): Array<[number, number, number]> {
   const b = v.cls.body;
+  const count = v.cls.type.gunsPerSide;
   const sign = side === 'port' ? 1 : -1;
   const first = b.stern + 2.5;
   const span = b.bow - 3 - first;
   const out: Array<[number, number, number]> = [];
   for (let i = 0; i < count; i++) out.push([sign * (b.halfBeam - 0.2), b.deck - 0.7, first + ((i + 0.5) * span) / count]);
   return out;
+}
+
+/** Which of a side's `slots` guns `manned` hands work: spread along the side, all of them with a full crew. */
+export function mannedSlots(slots: number, manned: number): number[] {
+  const n = Math.min(slots, manned);
+  return Array.from({ length: n }, (_, i) => Math.floor(((i + 0.5) * slots) / n));
+}
+
+/** The muzzles of the guns that are manned along one side. */
+export function gunPositions(v: Vessel, side: Side, count = gunsManned(v)): Array<[number, number, number]> {
+  const slots = gunSlots(v, side);
+  return mannedSlots(slots.length, count).map((i) => slots[i]);
+}
+
+/**
+ * How far a side's guns are run out (1) or in (0), from the seconds of loading `left`
+ * out of `total`: they fly back inboard as they fire, stay in to be loaded, and are
+ * hauled out again as the loading finishes.
+ */
+export function gunsRunOut(left: number, total: number): number {
+  if (left <= 0) return 1;
+  const since = total - left;
+  if (since < RECOIL_SECONDS) return 1 - since / RECOIL_SECONDS;
+  return left < RUN_OUT_SECONDS ? 1 - left / RUN_OUT_SECONDS : 0;
 }
 
 /**

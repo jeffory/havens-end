@@ -48,7 +48,7 @@ const EAT_SECONDS = 2.5;
 const THINK_SECONDS = 0.5;
 /** Animals climb only a single voxel. */
 const CLIMB = 1;
-const TOOL_DAMAGE: Record<Tool, number> = { axe: 2, pickaxe: 2, shovel: 1, hoe: 1 };
+const TOOL_DAMAGE: Record<Tool, number> = { axe: 2, pickaxe: 2, hoe: 1 };
 
 /** The world as a beast sees it: a fence is too high to get over. */
 export function fenced(world: VoxelWorld): VoxelReader {

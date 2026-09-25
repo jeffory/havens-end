@@ -11,7 +11,7 @@ import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { type IslandPlan, islandName } from '../worldgen/archipelago';
 import { mulberry32 } from '../worldgen/noise';
 import { RELIC_LIST, RELICS, type RelicId } from './relics';
-import { clueFor, DEPTH, planSite, raiseLandmark, type Site } from './sites';
+import { clueFor, planSite, raiseLandmark, type Site } from './sites';
 
 /** How hard a map is to follow, from how far out its islet lies (or what haunts it). */
 export type Tier = 'near' | 'mid' | 'far' | 'cursed' | 'legend';
@@ -65,7 +65,7 @@ export const PIECES = 3;
 /** Distances from Haven that mark home waters and the contested seas. */
 const NEAR = 700;
 const MID = 1500;
-/** The shovel finds a chest this close to the X (a block either way), and loose earth this close. */
+/** Digging finds a chest this close to the X (a block either way), and loose earth this close. */
 const FIND_RANGE = 1;
 const LOOSE_RANGE = 3;
 const OFFERS_PER_NIGHT = 2;
@@ -226,10 +226,10 @@ export class Treasure {
   // ---- Digging it up ----
 
   /**
-   * The shovel has just dug out (x, y, z): is there treasure? Returns what to tell the
-   * player, if anything. A chest comes up here; a cursed one raises its guardian instead.
+   * The captain digs at (x, y, z), the ground they stand on: is there treasure? Returns
+   * what to tell them, if anything. A chest comes up here; a cursed one raises its guardian instead.
    */
-  dig(x: number, y: number, z: number): string | null {
+  search(x: number, y: number, z: number): string | null {
     let loose: string | null = null;
     for (const map of this.captain.maps) {
       const s = map.site;
@@ -239,17 +239,13 @@ export class Treasure {
         loose ??= 'The earth here is loose, as if it has been dug before.';
         continue;
       }
-      if (y > s.y) {
-        loose = 'The earth here is soft and loose: keep digging.';
-        continue;
-      }
       if (map.tier === 'cursed') {
         if (!isNight(this.sea.clock.phase)) return 'The ground won’t give here. Whatever’s buried keeps to the dark.';
         this.events.push({ kind: 'guardian', map: map.id, x, y, z });
-        return 'Your spade strikes wood, and the air turns cold…';
+        return 'You strike wood, and the air turns cold…';
       }
       this.open(map, x, y, z);
-      return 'Your spade strikes wood: a chest!';
+      return 'You strike wood: a chest!';
     }
     return loose;
   }
@@ -284,7 +280,7 @@ export class Treasure {
     return best;
   }
 
-  /** Hauls up a chest: gold to the captain, goods onto the ground, and whatever else it holds. */
+  /** Hauls up a chest where the captain dug (x, y, z): gold to the captain, goods onto the ground, and whatever else it holds. */
   private open(map: TreasureMap, x: number, y: number, z: number): void {
     const captain = this.captain;
     captain.maps.splice(captain.maps.indexOf(map), 1);
@@ -292,8 +288,8 @@ export class Treasure {
     const loot = map.loot;
     captain.gold += loot.gold;
     for (const [good, n] of Object.entries(loot.goods) as Array<[Good, number]>) {
-      // Out of the hole and onto the ground about it, where they can be picked up.
-      for (let left = n; left > 0; left -= PILE) this.land.drop(good, x + 0.5, y + DEPTH + 0.8, z + 0.5, Math.min(PILE, left));
+      // Out of the chest and onto the ground about it, where they can be picked up.
+      for (let left = n; left > 0; left -= PILE) this.land.drop(good, x + 0.5, y + 1.8, z + 0.5, Math.min(PILE, left));
     }
     const found: string[] = [`${loot.gold} gold`];
     for (const [good, n] of Object.entries(loot.goods) as Array<[Good, number]>) found.push(`${n} ${GOOD_INFO[good].label.toLowerCase()}`);

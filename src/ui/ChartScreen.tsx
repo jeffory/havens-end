@@ -16,7 +16,7 @@ export function ChartScreen({ close, nav, view: first = 'chart', ...chart }: Cha
         <div>
           <h2>{view === 'chart' ? 'Sea chart' : 'Treasure maps'}</h2>
           <span className="port-kind">
-            {view === 'chart' ? 'Choose a port to steer for: the compass will point the way.' : 'Find the landmark, count your paces (a pace is a block), and dig two spades deep.'}
+            {view === 'chart' ? 'Choose a port to steer for: the compass will point the way.' : 'Find the landmark, count your paces (a pace is a block), and dig there (F).'}
           </span>
         </div>
         <button type="button" onClick={close}>

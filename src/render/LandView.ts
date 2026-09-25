@@ -1,9 +1,8 @@
 import { BoxGeometry, EdgesGeometry, Group, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial } from 'three';
 import type { CharacterModel } from '../duel/characterModel';
-import type { Held } from '../land/Land';
 import type { Walker } from '../land/walker';
 import { CharacterView } from './CharacterView';
-import { heldCells } from './toolModels';
+import { type HeldModel, heldCells } from './toolModels';
 
 const OK = 0xfff4d6;
 const NO = 0xff5a4a;
@@ -17,7 +16,7 @@ export class LandView {
   readonly captain: CharacterView;
   private readonly marker: LineSegments<EdgesGeometry, LineBasicMaterial>;
   private readonly ghost: Mesh<BoxGeometry, MeshBasicMaterial>;
-  private held: Held | null = null;
+  private held: HeldModel | null = null;
 
   constructor(model: CharacterModel) {
     this.captain = new CharacterView(model);
@@ -37,7 +36,7 @@ export class LandView {
   }
 
   /** Places and poses the captain (interpolated between sim steps). */
-  update(w: Walker, alpha: number, held: Held, swing: number | null, dt: number, time: number): void {
+  update(w: Walker, alpha: number, held: HeldModel, swing: number | null, dt: number, time: number): void {
     const x = w.prev.x + (w.x - w.prev.x) * alpha;
     const y = w.prev.y + (w.y - w.prev.y) * alpha;
     const z = w.prev.z + (w.z - w.prev.z) * alpha;

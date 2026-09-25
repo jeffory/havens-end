@@ -54,6 +54,8 @@ export interface Vessel {
   group: number;
   /** An admiral's flagship: she's never taken without a duel with the admiral himself, struck or not. */
   admiral?: boolean;
+  /** One of the story's ships: the story brings her out and sends her home, so nothing else clears her away. */
+  story?: boolean;
   ai: AiState | null;
   /** Coin aboard (for AI ships: plunder; the player's purse lives on the captain). */
   gold: number;
