@@ -23,6 +23,7 @@ import { WATER_LEVEL } from './ocean/waves';
 import { BarrelsView } from './render/BarrelsView';
 import { CameraRig } from './render/CameraRig';
 import { ChunkRenderer } from './render/ChunkRenderer';
+import { RoofLifter } from './render/RoofLifter';
 import { Effects } from './render/Effects';
 import { FleetView } from './render/FleetView';
 import { OceanRenderer } from './render/OceanRenderer';
@@ -90,6 +91,16 @@ const LABEL_RANGE = 220;
 const NIGHT_LABEL_RANGE = 120;
 /** A felled tree drops a flutter of leaves from one in this many of its leaf blocks. */
 const LEAF_EVERY = 2;
+/** The controls legend shows by itself for this many days (then H brings it back). */
+const HELP_DAYS = 2;
+/**
+ * In port on foot, the building the captain's beside lifts (at its door, say), so you see
+ * in; the rest keep their roofs. Not with the camera pulled right back over the town.
+ */
+const TOWN_LIFT_RADIUS = 2;
+const TOWN_LIFT_UNDER = 60;
+/** On foot, with the camera further back than this, a pin marks the captain. */
+const PIN_BEYOND = 55;
 /** Seconds of sim time per step while the night is slept through. */
 const SLEEP_STEP = 1;
 /** Light given off by what's built, by kind. */
@@ -192,6 +203,10 @@ export class Game {
   /** Standing orders from the helm: canvas and shot type persist between key presses. */
   private readonly orders: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
   private readonly cameraTarget = new Vector3();
+  /** Lifts roofs and canopies out of the way on foot. */
+  private readonly lifter: RoofLifter;
+  /** Whether the player has asked for the controls legend (H), or null to show it only on the first days. */
+  private helpShown: boolean | null = null;
   private readonly threat = new Vector3();
 
   /** Loads the ship and captain art, then builds the game. */
@@ -255,6 +270,7 @@ export class Game {
     this.rig = new CameraRig(container.clientWidth / container.clientHeight);
     this.sun = new Sun(this.scene);
     this.terrain = new ChunkRenderer(this.world);
+    this.lifter = new RoofLifter(this.world);
     this.ocean = new OceanRenderer(seabed, this.wakes);
     this.streaks = new WindStreaks(this.weather);
     this.fleet = new FleetView(models, this.wakes, this.effects, this.arcs);
@@ -513,6 +529,14 @@ export class Game {
     for (let n = controls.take('rotateLeft'); n > 0; n--) rig.rotate(-1);
     for (let n = controls.take('rotateRight'); n > 0; n--) rig.rotate(1);
     rig.zoom(controls.takeZoom(frameSeconds));
+    // The controls legend: shown for the first couple of days, then tucked away; H flips it (and that sticks).
+    if (!this.overlay.kind && !this.duel && controls.take('help') > 0) this.helpShown = !this.showingHelp();
+    const help = this.showingHelp();
+    const scheme = controls.gamepadConnected ? 'pad' : 'keys';
+    this.hud.setHelpShown(help);
+    this.footHud.setHelpShown(help);
+    this.hud.setScheme(scheme);
+    this.footHud.setScheme(scheme);
     if (this.overlay.kind) {
       for (const action of MENU_ACTIONS) for (let n = controls.take(action); n > 0; n--) this.overlay.nav(action);
     } else if (!this.duel && controls.take('chart') > 0) {
@@ -558,16 +582,17 @@ export class Game {
     let focus = rig.focus;
     const walker = this.land.walker;
     const signs = walker ? [...this.shore.render(paused ? 1 : alpha, frameSeconds, time, rig.camera), ...this.people.labels(this.land, walker)] : [];
+    // Pulled right back, the captain's a speck: a pin over them says where they are.
+    if (walker && rig.distance > PIN_BEYOND) signs.push({ id: 'captain', x: walker.x, y: walker.y + 2.6, z: walker.z, text: '', kind: 'pin' });
     if (walker) this.cameraTarget.copy(this.shore.focus);
-    // Ashore, cut away what's between the camera and the captain, and fade your own ship beside you.
+    // Ashore, cut away what's between the camera and the captain (and in port, every roof
+    // round them), and fade your own ship beside you.
     if (walker) {
-      const cam = rig.camera.position;
-      const dx = cam.x - this.shore.focus.x;
-      const dz = cam.z - this.shore.focus.z;
-      const run = Math.hypot(dx, dz) || 1;
-      this.terrain.setCutaway(this.shore.focus.x, this.shore.focus.y - 1.2, this.shore.focus.z, 4.5, dx / run, dz / run, run / Math.max(1, cam.y - this.shore.focus.y));
+      const inTown = this.sea.docked && rig.distance < TOWN_LIFT_UNDER;
+      this.terrain.setLifts(this.lifter.update(this.shore.focus, walker.y, rig.camera.position, frameSeconds, inTown ? TOWN_LIFT_RADIUS : 0));
     } else {
-      this.terrain.setCutaway(0, 0, 0, 0);
+      this.lifter.clear();
+      this.terrain.setLifts([]);
     }
     const near = walker ? Math.hypot(pose.x - walker.x, pose.z - walker.z) : Infinity;
     this.fleet.view(player.id)?.setFade(near < 16 ? 0.3 + 0.7 * Math.max(0, (near - 10) / 6) : 1);
@@ -621,7 +646,6 @@ export class Game {
     this.signs.update(paused ? [] : signs, rig.camera, this.container.clientWidth, this.container.clientHeight);
     if (!paused && !this.land.walker) {
       const wind = this.weather.windAt(pose.x, pose.z, time);
-      this.hud.setGamepadConnected(controls.gamepadConnected);
       this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));
       this.hud.setCombat(this.combatReadout());
       this.labels.update(this.shipLabels(), rig.camera, this.container.clientWidth, this.container.clientHeight);
@@ -873,10 +897,15 @@ export class Game {
     );
   }
 
+  /** Is the controls legend showing? As the player last asked, or for the first couple of days. */
+  private showingHelp(): boolean {
+    return this.helpShown ?? this.sea.clock.day <= HELP_DAYS;
+  }
+
   /** The captain steps ashore: on-foot controls, camera and HUD. */
   private toFoot(message: string): void {
     this.controls.setMode('foot');
-    this.rig.setRange(12, 60, 26);
+    this.rig.setRange(12, 70, 36);
     this.landView.setVisible(true);
     this.showPanels();
     if (message) this.hud.toast(message);

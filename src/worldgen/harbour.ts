@@ -1,10 +1,11 @@
 import { SEA_LEVEL } from '../config';
-import type { PortFaction, PortPlace, PlaceKind } from '../economy/ports';
-import { Block, type BlockId } from '../voxel/blocks';
+import type { PortFaction, PortPlace, PlaceKind, TownSpot } from '../economy/ports';
+import { Block } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, levelGround, overlaps } from './buildings';
+import { groundHeight } from './buildings';
 import type { IslandParams } from './island';
 import { mulberry32 } from './noise';
+import { buildTown, type TownLayout, type TownStyle } from './town';
 
 /** What a harbour gives its port: the berth, a spot on the pier to step ashore, and the doors in town. */
 export interface Harbour {
@@ -15,6 +16,10 @@ export interface Harbour {
   pier: { x: number; y: number; z: number };
   places: PortPlace[];
   lamps: Array<{ x: number; y: number; z: number }>;
+  /** Where the town's square, streets, houses and shipyard lie. */
+  town: TownLayout;
+  /** Where townsfolk go about the town. */
+  spots: TownSpot[];
 }
 
 /** Columns this low leave room under any keel (surface ≤ 8 means 3.6+ units of water). */
@@ -29,53 +34,49 @@ const PIER_REACH = 14;
 const BERTH_ALONG = 11;
 const BERTH_SIDE = 7.5;
 
-interface Style {
-  walls: BlockId;
-  roof: BlockId;
-  houses: number;
-  tower: boolean;
-}
+/** Which buildings do what (the shipyard is its own shed). */
+const ROLES: readonly Exclude<PlaceKind, 'shipyard'>[] = ['market', 'tavern', 'office'];
 
-/** Which houses do what: the first built (nearest the pier) is the market, and so on. */
-const ROLES: readonly PlaceKind[] = ['market', 'tavern', 'office'];
-
-const STYLES: Record<PortFaction, Style> = {
-  imperial: { walls: Block.Plaster, roof: Block.RoofTile, houses: 5, tower: true },
-  merchant: { walls: Block.Plaster, roof: Block.RoofSlate, houses: 5, tower: false },
-  pirate: { walls: Block.Planks, roof: Block.Thatch, houses: 4, tower: false },
+const STYLES: Record<PortFaction, TownStyle> = {
+  imperial: { walls: Block.Plaster, roof: Block.RoofTile, houses: 9, tower: true, flag: Block.FlagCrimson, blackFlags: false, officeStoreys: 3, dress: 'crown' },
+  merchant: { walls: Block.Plaster, roof: Block.RoofSlate, houses: 9, tower: false, flag: Block.FlagBlue, blackFlags: false, mirror: true, dress: 'free' },
+  pirate: { walls: Block.Planks, roof: Block.TarredRoof, houses: 7, tower: false, flag: Block.FlagBlack, blackFlags: true, dress: 'brethren' },
 };
+/** Haven, home: a free port, but thatched, so it's never mistaken for the others. */
+const HOME: TownStyle = { ...STYLES.merchant, roof: Block.Thatch, houses: 10, mirror: false, dress: 'haven' };
 
 /**
  * Builds a port on an island that's already in the world: a pier from the beach out to
  * deep water, and a little town behind it in the faction's style. Deterministic in the
  * island's seed.
  */
-export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: PortFaction): Harbour {
+export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: PortFaction, home = false): Harbour {
   const random = mulberry32(island.seed ^ 0x4a7b);
   const site = chooseSite(world, island, random);
   const { dx, dz } = site;
   const at = (t: number, w = 0) => ({ x: island.centerX + dx * t - dz * w, z: island.centerZ + dz * t + dx * w });
 
-  const landing = at(site.landing);
-  const { doors, plots, beacon } = buildTown(world, landing.x, landing.z, dx, dz, STYLES[faction], random);
   const foot = at(site.landing - 2);
-  for (const door of doors) buildRoad(world, foot.x, foot.z, door, plots);
   const end = site.deep + PIER_REACH;
+  const town = buildTown(world, foot.x, foot.z, dx, dz, (t) => at(t), [site.landing - 3, end], home ? HOME : STYLES[faction]);
   buildPier(world, island, dx, dz, site.landing, end);
   // Lamps at the pier head, to find the berth by after dark, and down its sides to the beach.
   const lamps = [-1, 1].map((w) => lampPost(world, at(end - 0.5, w)));
   for (let t = end - 6.5, w = 1; t > site.landing + 1; t -= 6, w = -w) lamps.push(lampPost(world, at(t, w)));
-  if (beacon) lamps.push(beacon);
+  lamps.push(...town.lamps);
+  if (town.beacon) lamps.push(town.beacon);
 
-  // Moored alongside, bow out to sea.
-  const berth = at(site.deep + BERTH_ALONG, random() < 0.5 ? BERTH_SIDE : -BERTH_SIDE);
+  // Moored alongside, bow out to sea, on the side of the pier away from the shipyard.
+  const berth = at(site.deep + BERTH_ALONG, -town.yardSide * BERTH_SIDE);
   const pier = at(site.deep + BERTH_ALONG);
-  // The shipyard works the foot of the pier; any role without a house of its own joins it there.
-  const yard = at(site.landing - 2);
-  const yardY = groundHeight(world, Math.floor(yard.x), Math.floor(yard.z));
-  const places: PortPlace[] = [{ kind: 'shipyard', x: yard.x, y: yardY, z: yard.z }];
-  ROLES.forEach((kind, i) => places.push(doors[i] ? { kind, x: doors[i].outX + 0.5, y: doors[i].y, z: doors[i].outZ + 0.5 } : { ...places[0], kind }));
-  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps };
+  const places: PortPlace[] = [{ kind: 'shipyard', ...town.yard, sign: town.yardSign }];
+  // A role without a building of its own (a cramped island) joins the shipyard.
+  for (const kind of ROLES) {
+    const door = town.doors[kind];
+    const sign = town.signs[kind];
+    places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
+  }
+  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots };
 }
 
 /** A post on the pier deck with a lantern on top; returns where the light is. */
@@ -167,77 +168,3 @@ function buildPier(world: VoxelWorld, island: IslandParams, dx: number, dz: numb
     }
   }
 }
-
-/** Houses (and, in Imperial ports, a watchtower) on level-ish ground behind the landing. Returns the doors, nearest first. */
-function buildTown(world: VoxelWorld, lx: number, lz: number, dx: number, dz: number, style: Style, random: () => number) {
-  const doors: Door[] = [];
-  const placed: Footprint[] = [];
-  let beacon: { x: number; y: number; z: number } | null = null;
-  const candidates: Array<{ x: number; z: number }> = [];
-  for (let back = 6; back <= 40; back += 4) {
-    for (let side = -32; side <= 32; side += 4) {
-      candidates.push({ x: lx - dx * back - dz * side, z: lz - dz * back + dx * side });
-    }
-  }
-  // Nearer the landing first, with a little shuffle so towns differ.
-  candidates.sort((a, b) => Math.hypot(a.x - lx, a.z - lz) + random() * 8 - (Math.hypot(b.x - lx, b.z - lz) + random() * 8));
-
-  const want = style.houses + (style.tower ? 1 : 0);
-  for (const c of candidates) {
-    if (placed.length >= want) break;
-    const tower = style.tower && placed.length === 0;
-    const [w, d] = tower ? [3, 3] : SIZES[Math.floor(random() * SIZES.length)];
-    const fp = { x0: Math.floor(c.x - w / 2), z0: Math.floor(c.z - d / 2), w, d };
-    if (placed.some((p) => overlaps(fp, p, 2))) continue;
-    const base = levelGround(world, fp, 3);
-    if (base === null || base > SEA_LEVEL + 14) continue;
-    placed.push(fp);
-    clearSite(world, fp, base, 4);
-    if (tower) beacon = buildTower(world, fp, base);
-    else doors.push(buildHouse(world, fp, base, style, lx, lz));
-  }
-  return { doors, plots: placed, beacon };
-}
-
-/**
- * A gravel road from the foot of the pier to a door, graded so it never rises or falls
- * more than a voxel from one cell to the next: every door in town can be walked to.
- * Cells under other buildings are left alone.
- */
-function buildRoad(world: VoxelWorld, fromX: number, fromZ: number, door: Door, plots: readonly Footprint[]): void {
-  const toX = door.outX + 0.5;
-  const toZ = door.outZ + 0.5;
-  const length = Math.hypot(toX - fromX, toZ - fromZ);
-  const cells: Array<{ x: number; z: number; h: number }> = [];
-  for (let t = 0; t <= length; t += 0.5) {
-    const x = Math.floor(fromX + ((toX - fromX) * t) / length);
-    const z = Math.floor(fromZ + ((toZ - fromZ) * t) / length);
-    const last = cells[cells.length - 1];
-    if (!last || last.x !== x || last.z !== z) cells.push({ x, z, h: Math.max(SEA_LEVEL, groundHeight(world, x, z)) });
-  }
-  if (cells.length === 0) return;
-  // Grade it: no more than a voxel between neighbours, starting from the beach and arriving level with the door.
-  for (let i = 1; i < cells.length; i++) cells[i].h = Math.min(cells[i - 1].h + 1, Math.max(cells[i - 1].h - 1, cells[i].h));
-  cells[cells.length - 1].h = door.y;
-  for (let i = cells.length - 2; i >= 0; i--) cells[i].h = Math.min(cells[i + 1].h + 1, Math.max(cells[i + 1].h - 1, cells[i].h));
-  const inPlot = (x: number, z: number) => plots.some((p) => x >= p.x0 - 1 && x <= p.x0 + p.w && z >= p.z0 - 1 && z <= p.z0 + p.d);
-  const lay = (x: number, z: number, h: number) => {
-    if (inPlot(x, z)) return;
-    for (let y = groundHeight(world, x, z); y < h - 1; y++) world.setVoxel(x, y, z, Block.Dirt);
-    world.setVoxel(x, h - 1, z, Block.Gravel);
-    for (let y = h; y < h + 4; y++) world.setVoxel(x, y, z, Block.Air);
-  };
-  for (const c of cells) {
-    lay(c.x, c.z, c.h);
-    // Two wide: the neighbour across the line of the road.
-    if (Math.abs(toX - fromX) > Math.abs(toZ - fromZ)) lay(c.x, c.z + 1, c.h);
-    else lay(c.x + 1, c.z, c.h);
-  }
-}
-
-const SIZES: ReadonlyArray<readonly [number, number]> = [
-  [5, 5],
-  [5, 7],
-  [7, 5],
-  [6, 6],
-];

@@ -1,7 +1,7 @@
 import { hash3 } from '../util/hash';
 import { Block, BLOCK_PALETTE } from './blocks';
 import { Chunk, CHUNK_SIZE } from './Chunk';
-import type { VoxelPalette } from './palette';
+import { FLAG_CUTAWAY, type VoxelPalette } from './palette';
 import type { VoxelWorld } from './VoxelWorld';
 
 /** A chunk plus a one-voxel border borrowed from its neighbours. */
@@ -153,14 +153,23 @@ export function meshPaddedVolume(
         const b = rgb[id * 3 + 2] * shade;
 
         for (const face of FACES) {
-          if (solid[vol[i + face.neighbor]]) continue;
+          const next = vol[i + face.neighbor];
+          // Faces against what may be lifted away on foot are kept, hidden till it goes:
+          // inside a tree or a building, a top face under more of it; and the ground's
+          // face against a tree or a building (a roof's eave against a terrace wall).
+          const inner = solid[next] === 1;
+          const liftable = !!flags && (flags[next] & FLAG_CUTAWAY) !== 0;
+          const mine = !!flags && (flags[id] & FLAG_CUTAWAY) !== 0;
+          if (inner && !(liftable && (!mine || face.normal[1] === 1))) continue;
+          // An inner face is lit as though what's against it had gone.
+          const blocks = (v: number) => solid[v] === 1 && !(inner && flags && flags[v] & FLAG_CUTAWAY);
 
           const base = positions.length / 3;
           for (let c = 0; c < 4; c++) {
             const corner = face.corners[c];
-            const s1 = solid[vol[i + corner.side1]];
-            const s2 = solid[vol[i + corner.side2]];
-            const d = solid[vol[i + corner.diagonal]];
+            const s1 = +blocks(vol[i + corner.side1]);
+            const s2 = +blocks(vol[i + corner.side2]);
+            const d = +blocks(vol[i + corner.diagonal]);
             ao[c] = s1 && s2 ? 0 : 3 - (s1 + s2 + d);
             const light = AO_CURVE[ao[c]];
             positions.push(x + corner.x, y + corner.y, z + corner.z);

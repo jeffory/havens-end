@@ -1,3 +1,5 @@
+import { type KeyEntries, Legend, type Scheme, showPrompt } from './hudParts';
+
 export interface HudStats {
   drawCalls: number;
   triangles: number;
@@ -54,10 +56,41 @@ const MAX_TOASTS = 4;
 
 const SAIL_LABELS: Record<number, string> = { 0: 'furled', 0.5: 'half', 1: 'full' };
 
+/** The keys at sea. */
+const SEA_KEYS: KeyEntries = [
+  ['W S', 'sails'],
+  ['A D', 'steer'],
+  ['Q E', 'fire port / starboard'],
+  ['1 2 3', 'shot'],
+  ['B', 'board / dock / row ashore'],
+  ['M', 'chart'],
+  ['J', 'journal'],
+  ['N', 'shanty'],
+  ['Z C', 'view'],
+  ['Wheel', 'zoom'],
+  ['Esc', 'menu'],
+  ['H', 'hide'],
+];
+
+/** The gamepad's buttons at sea. */
+const SEA_PAD: KeyEntries = [
+  ['LS', 'steer'],
+  ['↑ ↓', 'sails'],
+  ['LT RT', 'fire'],
+  ['X', 'shot'],
+  ['B', 'board / ashore'],
+  ['View', 'chart'],
+  ['RS', 'shanty'],
+  ['LB RB', 'view'],
+  ['RS', 'zoom'],
+  ['Start', 'menu'],
+];
+
 /** Plain-DOM overlay: controls help, the navigation panel and a perf readout (F3). */
 export class Hud {
-  private readonly stats: HTMLElement;
-  private readonly padHelp: HTMLElement;
+  private readonly legend = new Legend('hud', SEA_KEYS, SEA_PAD, `<div class="hud-title">Haven's End <span>phase 8 · the story</span></div>`);
+  private readonly stats = document.createElement('div');
+  private scheme: Scheme = 'keys';
   private readonly nav: Record<string, Element>;
   private readonly combat: Record<string, HTMLElement>;
   private readonly toasts: HTMLElement;
@@ -67,20 +100,9 @@ export class Hud {
   private elapsed = 0;
 
   constructor(parent: HTMLElement) {
-    const help = document.createElement('div');
-    help.className = 'hud';
-    help.innerHTML = `
-      <div class="hud-title">Haven's End <span>phase 8 · the story</span></div>
-      <div class="hud-help">
-        <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
-        <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />
-        <kbd>B</kbd> board / dock / row ashore · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>N</kbd> shanty · <kbd>Esc</kbd> menu · <kbd>Z</kbd><kbd>C</kbd> view · wheel zoom
-      </div>
-      <div class="hud-help hud-pad" hidden>
-        🎮 <kbd>LS</kbd> steer · <kbd>↑</kbd><kbd>↓</kbd> sails · <kbd>LT</kbd><kbd>RT</kbd> fire · <kbd>X</kbd> shot<br />
-        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>RS</kbd> shanty · <kbd>Start</kbd> menu · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
-      </div>
-      <div class="hud-stats"></div>`;
+    // The perf readout (F3) stays put when the keys are tucked away.
+    this.stats.className = 'hud-stats';
+    this.legend.el.append(this.stats);
 
     const nav = document.createElement('div');
     nav.className = 'hud hud-nav';
@@ -128,7 +150,7 @@ export class Hud {
     this.clock = document.createElement('div');
     this.clock.className = 'hud-clock';
 
-    parent.append(help, nav, combat, prompt, this.toasts, this.clock);
+    parent.append(this.legend.el, nav, combat, prompt, this.toasts, this.clock);
     this.combat = {
       hull: combat.querySelector('.bar.hull > div')!,
       sails: combat.querySelector('.bar.sails > div')!,
@@ -137,8 +159,6 @@ export class Hud {
       ...Object.fromEntries([...combat.querySelectorAll<HTMLElement>('[data-c]')].map((el) => [el.dataset.c!, el])),
       ...Object.fromEntries([...combat.querySelectorAll<HTMLElement>('[data-ammo]')].map((el) => [`ammo-${el.dataset.ammo}`, el])),
     };
-    this.stats = help.querySelector('.hud-stats')!;
-    this.padHelp = help.querySelector('.hud-pad')!;
     this.nav = {
       north: nav.querySelector('.compass-north')!,
       windArrow: nav.querySelector('.compass-wind')!,
@@ -156,7 +176,7 @@ export class Hud {
 
   /** Shows or hides the sailing panels (help, compass, gunnery, prompt) but not the messages: ashore they're replaced. */
   setPanels(visible: boolean): void {
-    for (const panel of [this.padHelp.parentElement!, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
+    for (const panel of [this.legend.el, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
       (panel as HTMLElement).hidden = !visible;
     }
     this.combat.prompt.hidden ||= !visible;
@@ -165,7 +185,7 @@ export class Hud {
 
   /** Hides the sailing and gunnery panels (during a duel, which has its own). */
   setVisible(visible: boolean): void {
-    for (const panel of [this.padHelp.parentElement!, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
+    for (const panel of [this.legend.el, this.nav.north.closest('.hud-nav')!, this.combat.hull.closest('.hud-combat')!]) {
       (panel as HTMLElement).hidden = !visible;
     }
     this.combat.prompt.hidden ||= !visible;
@@ -179,8 +199,20 @@ export class Hud {
     this.clock.classList.toggle('night', night);
   }
 
+  /** Shows the controls legend, or tucks it away to a small "H controls" tab. */
+  setHelpShown(shown: boolean): void {
+    this.legend.setShown(shown);
+  }
+
+  /** Whose controls the legend and the prompt show: the keyboard's, or the gamepad's. */
+  setScheme(scheme: Scheme): void {
+    this.scheme = scheme;
+    this.legend.setScheme(scheme);
+  }
+
+  /** The gamepad's controls while one is connected, else the keyboard's: setScheme by another name. */
   setGamepadConnected(connected: boolean): void {
-    this.padHelp.hidden = !connected;
+    this.setScheme(connected ? 'pad' : 'keys');
   }
 
   setNav(n: NavReadout): void {
@@ -226,7 +258,8 @@ export class Hud {
     const prompt = this.combat.prompt;
     const message = c.sinking ? 'Abandon ship!' : c.boardable ? `B / 🎮 B: board the ${c.boardable}` : (c.dock ?? '');
     prompt.hidden = message === '';
-    this.text(prompt, message);
+    prompt.classList.toggle('warn', c.sinking);
+    showPrompt(prompt, message, this.scheme);
   }
 
   /** A short message across the top of the screen, gone after a few seconds. */

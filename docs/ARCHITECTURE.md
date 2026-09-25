@@ -378,10 +378,52 @@ Each port island gets a harbour:
   then diagonals, so piers come out clean). It picks a spot where deep water comes
   close to the beach with open sea beyond, then runs a pier of planks on pilings out
   past the drop-off. Lamp posts stand at its head and every 6 voxels down its sides.
-- **Town.** Built behind the landing, in the faction's style:
-  - free ports: plaster and slate;
-  - Imperial ports: plaster and terracotta, plus a stone watchtower;
-  - the pirate haven: plank shacks with thatch.
+- **Town** (`worldgen/town.ts`, reworked before 10.2). Laid out on a grid square to
+  the pier: u runs inland from the pier's foot, v across it.
+  - **Streets.** A ramp climbs from the pier to a paved square (15 across, 10 deep,
+    with a well in it). A main street runs inland from the square, with a cross
+    street 22 along. Streets are gravel. The main street is level across the
+    crossing and climbs at most a block a cell.
+  - **Lots.** The market, tavern and office face the square. Houses line both
+    streets, at least 4 apart, each on a pad levelled to its street's height. Stone
+    quay is filled over the sea round the pads and the square. The land blends back
+    into the hills over 4 blocks, with stone retaining walls where it drops away.
+    Trees in and round the town are cleared whole (flood-filled from the trunk), so
+    no stray trunk or floating leaf is left.
+  - **Buildings.** Houses have one or two storeys. The tavern has two storeys and
+    barrels by the door. The market is an open hall of stalls. The office (the
+    Guildhall, the Governor's House or the Pirate Lord's Hall) is two storeys, three
+    in Imperial ports, and flies the faction's flag. Floors are boarded.
+  - **Shipyard.** A slipway seven wide runs down into the water, with a ship on the
+    stocks. She's broadest aft of amidships, narrowing to a stem at the bow, and her
+    sheer rises fore and aft. Aft she's planked to the gunwale and closed by a
+    transom; forward, only her bottom strakes are on and her frames stand bare. Her
+    mast is stepped, with a yard across it. A timber shed stands beside the slipway,
+    and the berth is on the pier's other side.
+  - **Dressing.** Two stalls stand either side of the way to the market's door, each
+    with a counter of goods and a striped awning (blue at the free port, red
+    elsewhere). Benches stand at the square's top, and a cart of timber by the
+    shipyard. Each port adds its own: net racks and crates of fish at Haven, bales at
+    the free port, two guns run out at the seaward edge for the Crown, and guns and
+    a gallows (in the cart's place) for the Brethren. Rooms are furnished, since the
+    roof lifter shows them. A house has a bed, a hearth and a table; the tavern has
+    a bar with barrels behind it, and tables; the office has shelves of books and a
+    desk. The market hall has goods on its counters.
+  - **Doors you can enter.** Each has a timber frame, a stone step and a lantern
+    beside it. The market hall has lanterns at its front corners, and the shed at
+    its front posts. Each sign hangs just out from its door.
+  - **Banners.** Five by three, on a pole: the Brethren's black with a skull over two
+    bones, the Crown's crimson with a gold cross, the Guild's blue with a white band
+    and a gold boss.
+  - **Street lamps** stand at the square's inland corners and down the main street.
+  - **Styles.** Haven: plaster and thatch, ten houses. Free ports: plaster and
+    slate, goods stacked on the quay, a blue flag. Imperial ports: plaster and
+    terracotta, a stone watchtower, a crimson flag. The pirate haven: plank shacks
+    under tarred roofs, with black flags at the top of the ramp.
+  - **Tests** (`town.test.ts`) build all five real ports and check the spacing, the
+    flat square and gentle streets, level pads, no trees in town, the slipway and
+    hull, the market on the square, the roofs, flags and floors of each style, and
+    signs on their buildings.
 - **Berth.** Alongside the pier head, bow out to sea: where ships dock, leave and
   respawn.
 
@@ -502,18 +544,55 @@ your pack is stowed in the hold.
   `isSolid`.
 
 **Ports on foot.** The Phase 4 menus are unchanged; you just walk to them.
-- **Doors and signs.** Each harbour records its doors: the three houses nearest the
-  pier become the market, the tavern and the governor's office. The shipyard is at
-  the foot of the pier. Signs hang over them, and walking up to a door opens that
-  place's menu.
-- **Roads.** Gravel roads graded one voxel per step run from the pier to every door.
+- **Doors and signs.** Each harbour records its doors: the market, the tavern and
+  the office on the square, and the shipyard's shed. A sign hangs over each door,
+  and walking up to a door opens that place's menu. The prompt names the building
+  ("enter the Guildhall"), and that building's sign hides while the prompt shows.
+- **Streets.** The town's own streets (section 8) join every door to the pier.
 - **Reachability test.** Every door can be walked to from the pier, by the walker's
   own rules.
+- **Townsfolk** (`land/townsfolk.ts`, not saved). While the captain is ashore in a
+  docked port, up to 8 townsfolk (7 in the pirate haven, 3 at night) come out of the
+  houses' doors. Each goes to a spot the town lists: the square, a stall, the well,
+  the tavern door, the shipyard, a street corner or a doorstep. They linger there
+  a while and move on, walking the settlers' paths. At night most go home to the
+  nearest door. They're gone when you leave port. At the yard they swing a hammer.
+  - **Dress** (`duel/dress.ts`). Clothes follow the port. Haven's fisherfolk wear
+    oilskins and smocks; the free port's folk wear straw hats and aprons; the
+    Brethren wear bandanas, the odd tricorn, and striped or ragged shirts with a
+    sash; the Crown's ports are soberer, with the odd soldier (red coat, white
+    cross-belts, tricorn, musket). No one comes out dressed like the last one out.
+    Hired settlers keep the looks they always had.
+  - **Guards.** Two Crown soldiers stand either side of the Governor's door, facing
+    out, day and night. They don't count toward the town's numbers.
+  - **Spread out.** Folk at the same spot stand in a ring round it, and a spot
+    where two already are is less often picked.
 
-**The view.** The camera closes in (26 units). A cutaway in the terrain shader opens
-any tree or building on the camera's side of the captain, above head height. Blocks
-opt in through a per-vertex `cutaway` flag (the ground never does, since it would
-show hollow), and your own ship fades while you work beside her.
+**The view.** The camera closes in (36 units). A roof lifter (`render/RoofLifter.ts`)
+opens up whatever hides the captain, as in a doll's house.
+- **In the way.** Six rays run from the captain toward the camera. The first tree
+  or building a ray hits is flood-filled whole, from the captain's feet up (never
+  the boards they stand on). The fill follows edges as well as faces, because the
+  courses of an open shed's stepped roof meet only at their edges. Everything from
+  a storey above its floor, or from its eaves if those are lower, lifts, so no roof
+  is left hanging. If the line of sight passes through lower down (the captain just
+  behind a tall building's wall), it lifts from there. Lanterns go with the wall or
+  post they hang from. It's held for 0.6 s after the captain moves clear.
+- **Beside you in port.** With the camera nearer than 60, a roofed building within
+  2 of the captain lifts too (the one whose door they're at, say), so you see in; the
+  rest of the town keeps its roofs. (Lifting every roof within 12 made the town read
+  as ruins.) The scan runs four times a second, and a building stays lifted until
+  the captain is 4 away, so nothing flickers at the edge. Stalls, carts, guns and
+  flags lift only when they're in the way.
+- **In the shader.** Up to twelve boxes lift at once, what's in the way first. The
+  terrain shader discards lifted voxels whole: each fragment finds its voxel half a
+  block back from its face and tests that voxel's middle, as `ChunkRenderer.hides`
+  does. Blocks opt in through a per-vertex `cutaway` flag. The ground never does,
+  since it would show hollow. The mesher draws the top of a cutaway block under
+  another, so a lifted wall has a clean top.
+
+A light ring on a dark one marks the captain's feet, scaled with the camera's
+distance. Your own ship fades while you work beside her.
 
 **Tools** (`land/Land.ts`) work the block in front of you, or the one under the mouse
 if the captain can reach it. Reach is 3.6 across, and from two blocks below the feet
@@ -1096,11 +1175,24 @@ verified in the running game. None of those directories import from `render`,
 
 9. 🔄 **Quick wins:** going down (sunk or jailed) clears the sea and keeps it quiet for a minute, so nobody camps the port; the shovel retired (dig for treasure with F where you stand, and the ground is never changed); trees that take several axe blows; cannons that fly back when fired and run out when loaded.
 10. 🔄 **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
-    - **Next, before 10.2: Haven's town.** The home port looks thrown together: the
-      shipyard is a sign over a pile of rocks, and the houses sit on rough ground
-      among the trees. Space the buildings out on levelled ground, with streets
-      between them and a proper shipyard, so it looks like a real town. Checked with
-      the visual critic until it's happy.
+    - ✅ **Before 10.2: the towns.** Every port was rebuilt as a real town
+      (section 8). There's a paved square with stalls, and streets on levelled
+      ground. Houses of one or two storeys are spaced out and furnished. The doors
+      you can enter are framed and lit. There's a ship on the stocks, and banners
+      and dressing for each faction. On foot there are townsfolk dressed for their
+      port and Crown guards at the Governor's door. Roofs lift where they're in the
+      way or you're beside them. The captain gets a ring (and a pin when zoomed
+      out), the camera pulls back to 36, and the HUD is clearer, with help that
+      hides after two days (H shows it). The visual critic ran four passes. It
+      stayed at 4/10, held back by the on-foot art, so the rest is below.
+    - **Next: a town art pass.** The critic's open points from its last pass
+      (`.playwright-mcp/critic-town-4/report.md`, not in git):
+      - The Tavern, Guildhall and Governor's House get shapes of their own (a porch,
+        a hanging signboard, columns, a clock), not the house every dwelling uses.
+      - Each faction lays its town out its own way, not one kit re-roofed.
+      - The ship on the stocks should read as a ship from above.
+      - The captain should read at a glance (a lighter, more distinct figure).
+      - Night: bats read as debris, and moonlit plaster turns royal blue.
 11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
 12. **Farming:** growth cycles, seeds, the hoe, watering and harvest yields, built on the crops already there.
 

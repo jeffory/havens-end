@@ -90,4 +90,21 @@ describe('mesher options for models', () => {
     expect(mesh.colors[0]).toBeGreaterThan(0.5); // red
     expect(mesh.colors[1]).toBe(0);
   });
+
+  it('keeps the top of a building block under another, for when the one above is lifted away', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Plaster);
+    world.setVoxel(5, 6, 5, Block.Thatch);
+    // Both blocks' outsides (5 each), and the plaster's top, hidden inside the thatch.
+    expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(11);
+  });
+
+  it('keeps the ground’s face against a tree or building, so lifting it leaves no hole', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Stone);
+    world.setVoxel(6, 5, 5, Block.Thatch);
+    // The stone's six (one hidden in the thatch till it lifts); the thatch's five: its face
+    // against the stone is never seen, so it isn't drawn over the stone's.
+    expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(11);
+  });
 });

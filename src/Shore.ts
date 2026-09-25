@@ -13,7 +13,6 @@ import { type Building, STRUCTURES, type Structure } from './land/structures';
 import type { CameraRig } from './render/CameraRig';
 import type { LandView } from './render/LandView';
 import type { FootHud } from './ui/FootHud';
-import { OFFICE_NAMES } from './ui/port/OfficeTab';
 import type { WorldLabel } from './ui/WorldLabels';
 import { Block, type BlockId } from './voxel/blocks';
 import { raycastVoxels, type VoxelReader } from './voxel/raycast';
@@ -45,7 +44,11 @@ const TOWN_FADE_IN = 0.25;
 const TOWN_FADE_OUT = 1.2;
 /** How far away the mouse can place a building. */
 const PLACE_REACH = 18;
-const PLACE_LABELS: Record<PortPlace['kind'], string> = { market: 'Market', tavern: 'Tavern', shipyard: 'Shipyard', office: 'Governor' };
+const PLACE_LABELS: Record<PortPlace['kind'], string> = { market: 'Market', tavern: 'Tavern', shipyard: 'Shipyard', office: 'Guildhall' };
+/** The seat of power, as its sign names it: a building, like the others. */
+const OFFICE_BUILDINGS: Record<Port['faction'], string> = { merchant: 'Guildhall', imperial: 'Governor’s House', pirate: 'Pirate Lord’s Hall' };
+/** What a place's sign says, in this port. */
+const placeName = (kind: PortPlace['kind'], port: Port | null) => (kind === 'office' && port ? OFFICE_BUILDINGS[port.faction] : PLACE_LABELS[kind]);
 
 /**
  * The captain on foot: turns controls into orders for the `Land` (walking, tools,
@@ -287,6 +290,7 @@ export class Shore {
     const w = this.land.walker;
     if (!w) return [];
     this.view.update(w, alpha, this.digging ? 'spade' : this.held, this.swing, frameSeconds, time);
+    this.view.setCameraDistance(this.rig.distance);
     this.focus.copy(this.view.captain.root.position).setY(this.view.captain.root.position.y + 1.2);
     this.pick(camera);
 
@@ -318,6 +322,7 @@ export class Shore {
     this.hud.update({
       slots: this.items().map((held, i) => ({
         key: `${i + 1}`,
+        item: held,
         label: isTool(held) ? TOOL_LABELS[held] : GOOD_INFO[held].label,
         count: isTool(held) ? undefined : this.land.available(held),
         active: i === this.item,
@@ -325,7 +330,7 @@ export class Shore {
       packUsed: cargoCount(pack),
       packSize: PACK_SIZE,
       packSummary: (Object.entries(pack) as Array<[Good, number]>).map(([g, n]) => `${n} ${GOOD_INFO[g].label.toLowerCase()}`).join(', '),
-      prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase),
+      prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase, this.land.sea.docked),
       north: this.north(),
       lodestone: this.lodestone(),
       hint,
@@ -353,17 +358,25 @@ export class Shore {
     return `The lodestone tugs to the ${point}.`;
   }
 
-  /** Signs over the doors of the port you're walking in. */
+  /** Signs over the doors of the port you're walking in: not the one you're at, whose prompt names it. */
   private signs(): WorldLabel[] {
     const port: Port | null = this.land.sea.docked;
     if (!port) return [];
-    return port.places.map((p, i) => ({
-      id: `${port.id}-${i}`,
-      x: p.x,
-      y: p.y + 3.2,
-      z: p.z,
-      text: p.kind === 'office' ? OFFICE_NAMES[port.faction] : PLACE_LABELS[p.kind],
-    }));
+    const at = this.land.interaction();
+    const here = at?.kind === 'door' ? at.place : null;
+    return port.places.flatMap((p, i) =>
+      p === here
+        ? []
+        : [
+            {
+              id: `${port.id}-${i}`,
+              x: p.sign?.x ?? p.x,
+              y: p.sign?.y ?? p.y + 3.2,
+              z: p.sign?.z ?? p.z,
+              text: placeName(p.kind, port),
+            },
+          ],
+    );
   }
 
   /** Tracks the voxel under the mouse; moving the mouse makes it the target for a couple of seconds. */
@@ -387,14 +400,14 @@ const isTool = (held: Held): held is Tool => (TOOL_LIST as readonly string[]).in
 /** Late enough to turn in: the evening, or the night. */
 export const sleepy = (phase: number): boolean => ['evening', 'night'].includes(partOfDay(phase));
 
-function promptFor(what: Interaction | null, phase: number): string | null {
+function promptFor(what: Interaction | null, phase: number, port: Port | null): string | null {
   if (!what) return null;
   const key = 'E / 🎮 A';
   switch (what.kind) {
     case 'board':
       return `${key}: back aboard`;
     case 'door':
-      return `${key}: ${what.place.kind === 'office' ? 'the governor' : PLACE_LABELS[what.place.kind].toLowerCase()}`;
+      return `${key}: enter the ${placeName(what.place.kind, port)}`;
     case 'rest':
       return `${key}: ${sleepy(phase) ? 'sleep till morning' : 'rest'} (saves the game)`;
     case 'camp':

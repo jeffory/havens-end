@@ -1,3 +1,20 @@
+/*
+ * The HUD's type and colours: one UI sans for all its words (keycaps included), dark ink
+ * on light panels, day and night. Only signs hung in the world keep a painted serif.
+ * Every panel, pill and tray is the same paper with the same edge and lift; gold marks
+ * what's live (the slot in hand, what E / A will do).
+ */
+:root {
+  --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --hud-ink: #12324a;
+  /* Secondary words, a legend's actions: over 8:1 on the paper even with the darkest night behind it. */
+  --hud-ink-soft: #2b4255;
+  --hud-paper: rgb(248 245 238 / 0.94);
+  --hud-edge: inset 0 0 0 1px rgb(18 50 74 / 0.18);
+  --hud-lift: 0 1px 6px rgb(0 0 0 / 0.16);
+  --hud-accent: #c8911c;
+}
+
 html,
 body,
 #app {
@@ -24,10 +41,11 @@ canvas {
   box-sizing: border-box;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.6);
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
   backdrop-filter: blur(6px);
   color: #12324a;
-  font: 13px/1.6 system-ui, sans-serif;
+  font: 13px/1.6 var(--ui-font);
   pointer-events: none; /* clicks go through to the world */
 }
 
@@ -43,16 +61,89 @@ canvas {
   opacity: 0.7;
 }
 
-.hud kbd {
+/* Keys, the same everywhere in the HUD: a small keycap, raised by a heavier bottom edge. */
+.hud kbd,
+.hud-legend kbd,
+.hud-prompt kbd,
+.foot-hud kbd,
+.world-label kbd {
   display: inline-block;
-  min-width: 1.4em;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
   margin: 0 1px;
   padding: 0 4px;
-  border: 1px solid rgb(18 50 74 / 0.25);
+  border: 1px solid #93a1ad;
+  border-bottom-width: 2px;
   border-radius: 4px;
-  background: rgb(255 255 255 / 0.7);
-  font: 600 11px/17px ui-monospace, monospace;
+  background: #fff;
+  color: var(--hud-ink);
+  font: 600 10.5px/15px var(--ui-font);
   text-align: center;
+  white-space: nowrap;
+}
+
+/*
+ * The controls legends, top left at sea and on foot: small and secondary to play, but
+ * never faint. Only the scheme in use is shown.
+ */
+.hud-legend {
+  box-sizing: border-box;
+  max-width: min(480px, calc(100% - 32px));
+  padding: 5px 10px 6px;
+  border-radius: 8px;
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
+  backdrop-filter: blur(6px);
+  color: var(--hud-ink-soft);
+  font: 500 12px/21px var(--ui-font);
+}
+
+/* Tucked away: just a small tab, "H controls", to bring it back. */
+.hud-legend.tucked {
+  padding: 2px 9px 3px 4px;
+  font-size: 11.5px;
+  line-height: 19px;
+}
+
+.legend-tab {
+  white-space: nowrap;
+}
+
+.legend-tab kbd {
+  margin: 0 3px 0 0;
+}
+
+.hud-legend .hud-title {
+  color: var(--hud-ink);
+  font-size: 13px;
+}
+
+/* A row of "keys action" pairs; a pair never breaks across lines. */
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 11px;
+}
+
+.keys > span {
+  white-space: nowrap;
+}
+
+.pad-mark {
+  flex: none;
+  width: 21px;
+  height: 14px;
+  margin-right: -3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.pad-mark circle {
+  fill: currentColor;
+  stroke: none;
 }
 
 .hud-stats {
@@ -82,7 +173,7 @@ canvas {
 
 .compass-north text {
   fill: #b3372c;
-  font: 700 13px system-ui, sans-serif;
+  font: 700 13px var(--ui-font);
   text-anchor: middle;
   dominant-baseline: middle;
 }
@@ -102,10 +193,6 @@ canvas {
 
 .nav-muted {
   opacity: 0.7;
-}
-
-.nav-sails {
-  font-family: ui-monospace, monospace;
 }
 
 .nav-warn {
@@ -219,18 +306,62 @@ canvas {
   opacity: 1;
 }
 
-/* Boarding prompt and toasts. */
+/*
+ * What a key would do here (board, go ashore, the market): the HUD's paper, ringed in gold
+ * like the slot in hand, its key a keycap. At sea it sits bottom centre; on foot, over the hotbar.
+ */
+.hud-prompt,
+.foot-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: var(--hud-paper);
+  box-shadow: inset 0 0 0 2px var(--hud-accent), var(--hud-lift);
+  box-sizing: border-box;
+  max-width: 100%;
+  color: var(--hud-ink);
+  font: 700 15px/22px var(--ui-font);
+}
+
 .hud-prompt {
   position: absolute;
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: rgb(20 30 40 / 0.78);
-  color: #fff4dc;
-  font: 700 15px system-ui, sans-serif;
+  width: max-content;
+  max-width: calc(100% - 32px);
   pointer-events: none;
+}
+
+.hud-prompt.warn {
+  box-shadow: inset 0 0 0 2px #b3372c, var(--hud-lift);
+  color: #9b2a22;
+}
+
+.prompt-keys {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.hud-prompt kbd,
+.foot-prompt kbd {
+  min-width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.prompt-keys .pad-mark {
+  width: 24px;
+  height: 16px;
+  margin-right: 1px;
 }
 
 .hud-toasts {
@@ -248,9 +379,10 @@ canvas {
 .toast {
   padding: 6px 14px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.88);
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
   color: #12324a;
-  font: 600 14px system-ui, sans-serif;
+  font: 600 14px var(--ui-font);
   transition: opacity 0.4s, transform 0.4s;
 }
 
@@ -278,7 +410,7 @@ canvas {
   border-radius: 5px;
   background: rgb(255 255 255 / 0.7);
   color: #12324a;
-  font: 600 11px/1.3 system-ui, sans-serif;
+  font: 600 11px/1.3 var(--ui-font);
   text-align: center;
   white-space: nowrap;
 }
@@ -320,17 +452,20 @@ canvas {
   transform: translateX(-50%);
   padding: 4px 14px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.82);
-  color: #12324a;
-  font: 700 14px system-ui, sans-serif;
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
+  backdrop-filter: blur(6px);
+  color: var(--hud-ink);
+  font: 700 14px var(--ui-font);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   transition: background 1s, color 1s;
 }
 
+/* At night it stays a light pill like the rest of the HUD, only cooler, like moonlight. */
 .hud-clock.night {
-  background: rgb(14 24 48 / 0.82);
-  color: #dfe6ff;
+  background: rgb(228 234 248 / 0.94);
+  color: #1c2d50;
 }
 
 /* Asleep: the screen goes dark while the night passes. */
@@ -342,7 +477,7 @@ canvas {
   place-items: center;
   background: #05070d;
   color: #dfe6ff;
-  font: 600 20px system-ui, sans-serif;
+  font: 600 20px var(--ui-font);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.6s;
@@ -370,7 +505,7 @@ canvas {
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  font: 13px/1.4 system-ui, sans-serif;
+  font: 13px/1.4 var(--ui-font);
   color: #fff8ea;
 }
 
@@ -434,14 +569,14 @@ canvas {
   padding: 4px 14px 6px;
   border-radius: 8px;
   background: rgb(20 24 30 / 0.7);
-  font: 800 20px/1.1 system-ui, sans-serif;
+  font: 800 20px/1.1 var(--ui-font);
   letter-spacing: 0.2em;
   text-align: center;
 }
 
 .duel-title span {
   display: block;
-  font: 500 11px system-ui, sans-serif;
+  font: 500 11px var(--ui-font);
   letter-spacing: 0;
   opacity: 0.8;
 }
@@ -486,7 +621,7 @@ canvas {
 .duel-pop {
   position: absolute;
   transform: translate(-50%, -50%);
-  font: 900 20px system-ui, sans-serif;
+  font: 900 20px var(--ui-font);
   text-shadow: 0 2px 3px rgb(0 0 0 / 0.7);
   white-space: nowrap;
   animation: duel-pop 1s ease-out forwards;
@@ -521,7 +656,7 @@ canvas {
   padding: 0 4px;
   border-radius: 4px;
   background: rgb(255 255 255 / 0.18);
-  font: 600 11px/17px ui-monospace, monospace;
+  font: 600 11px/17px var(--ui-font);
 }
 
 .duel-help .pad {
@@ -542,7 +677,7 @@ canvas {
 
 .duel-result b {
   display: block;
-  font: 900 34px system-ui, sans-serif;
+  font: 900 34px var(--ui-font);
 }
 
 .duel-result.won b { color: #ffd23f; }
@@ -607,7 +742,7 @@ canvas {
   background: var(--paper-dark);
   box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
   color: var(--ink);
-  font: 14px/1.45 system-ui, sans-serif;
+  font: 14px/1.45 var(--ui-font);
 }
 
 .port-screen h2,
@@ -751,7 +886,7 @@ canvas {
   border: 1px solid rgb(58 42 26 / 0.3);
   border-radius: 4px;
   background: rgb(255 255 255 / 0.7);
-  font: 600 11px/17px ui-monospace, monospace;
+  font: 600 11px/17px var(--ui-font);
   text-align: center;
 }
 
@@ -780,7 +915,7 @@ table.market {
 
 table.market th {
   padding: 0 6px 4px;
-  font: 600 11px system-ui, sans-serif;
+  font: 600 11px var(--ui-font);
   text-align: left;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -974,55 +1109,31 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  width: min(760px, calc(100% - 32px));
+  width: min(860px, calc(100% - 32px));
   pointer-events: none;
-  color: #12324a;
-  font: 13px/1.4 system-ui, sans-serif;
+  color: var(--hud-ink);
+  font: 13px/1.4 var(--ui-font);
 }
 
+/* On foot the prompt stands clear of the pack and hotbar below it. */
+.foot-prompt {
+  margin-bottom: 10px;
+}
+
+/* The legend on foot: placed here, drawn by .hud-legend. */
 .foot-help {
   position: absolute;
   z-index: 2;
   top: 12px;
   left: 16px;
-  max-width: calc(100% - 32px);
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 0.6);
-  backdrop-filter: blur(6px);
-}
-
-.foot-help .pad {
-  display: block;
-  margin-top: 2px;
-  opacity: 0.75;
-}
-
-.foot-hud kbd,
-.world-label kbd {
-  display: inline-block;
-  min-width: 1.4em;
-  margin: 0 1px;
-  padding: 0 4px;
-  border: 1px solid rgb(18 50 74 / 0.25);
-  border-radius: 4px;
-  background: rgb(255 255 255 / 0.75);
-  font: 600 11px/17px ui-monospace, monospace;
-  text-align: center;
-}
-
-.foot-prompt {
-  padding: 7px 16px;
-  border-radius: 8px;
-  background: rgb(20 30 40 / 0.8);
-  color: #fff4dc;
-  font: 700 15px system-ui, sans-serif;
+  pointer-events: none; /* clicks go through to the world */
 }
 
 .foot-hint {
   padding: 4px 12px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.85);
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
   color: #7a2a1f;
   font-weight: 600;
 }
@@ -1032,99 +1143,177 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
 .foot-pack {
   padding: 3px 12px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.6);
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
   font-variant-numeric: tabular-nums;
 }
 
-/* The compass on foot: north, for the riddles. */
+/* The compass on foot: north, for the riddles. The card turns; its N stays upright. */
 .foot-compass {
   position: absolute;
-  top: 14px;
+  top: 12px;
   right: 16px;
   z-index: 2;
-  width: 46px;
-  height: 46px;
-  border: 2px solid rgb(18 50 74 / 0.35);
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: rgb(255 255 255 / 0.6);
+  background: var(--hud-paper);
+  box-shadow: inset 0 0 0 2px rgb(18 50 74 / 0.35), var(--hud-lift);
   backdrop-filter: blur(6px);
   pointer-events: auto;
 }
 
-.foot-needle {
-  position: absolute;
-  inset: 0;
+.foot-card {
+  display: block;
+  width: 100%;
+  height: 100%;
   transition: transform 0.3s ease;
 }
 
-.foot-needle::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 8px;
-  border: 6px solid transparent;
-  border-bottom: 15px solid #a3261d;
-  border-top: none;
-  transform: translateX(-50%);
+.dial-ticks {
+  stroke: rgb(18 50 74 / 0.45);
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
-.foot-needle b {
-  position: absolute;
-  left: 50%;
-  top: -3px;
-  transform: translateX(-50%);
-  font: 700 10px/1 Georgia, serif;
-  color: #12324a;
+.needle-north { fill: #b3372c; }
+.needle-south { fill: #9aabb9; }
+.needle-pin { fill: var(--hud-ink); }
+
+.dial-n {
+  fill: #b3372c;
+  font: 700 13px var(--ui-font);
+  text-anchor: middle;
+  dominant-baseline: central;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.3s ease;
 }
 
+/* The lodestone stirring: the same paper, its words in a lodestone purple. */
 .foot-lodestone {
   padding: 3px 10px;
   border-radius: 8px;
-  background: rgb(60 30 60 / 0.75);
-  color: #f3e6ff;
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
+  color: #5b2d6e;
   font-size: 13px;
   font-style: italic;
 }
 
+/* The hotbar: a solid tray of equal slots, so it reads the same over sand, grass or sea. */
 .foot-slots {
   display: flex;
   gap: 4px;
-  pointer-events: auto;
+  box-sizing: border-box;
+  max-width: 100%;
   padding: 5px;
   border-radius: 10px;
-  background: rgb(255 255 255 / 0.55);
-  backdrop-filter: blur(6px);
+  background: var(--hud-paper);
+  box-shadow: var(--hud-edge), var(--hud-lift);
+  pointer-events: auto;
 }
 
+/* A slot: its key top left, how many top right, the picture, and the name under it. */
 .foot-slot {
   position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 96px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 74px;
-  padding: 3px 6px 4px;
-  border: 2px solid transparent;
+  gap: 2px;
+  padding: 5px 4px 4px;
+  border: 2px solid #ddd6c7;
   border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.foot-slot:not(.active):hover { border-color: #b3a88f; }
+
+.foot-icon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* The name: one line, or two at most if a long one won't fit, never spilling out. */
+.foot-slot span {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  text-wrap: balance;
 }
 
-.foot-slot { cursor: pointer; }
-.foot-slot:not(.active):hover { background: rgb(255 255 255 / 0.6); }
-
-.foot-slot.active {
-  border-color: #c8911c;
-  background: rgb(255 244 214 / 0.95);
-  font-weight: 700;
+.foot-slot kbd {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 13px;
 }
-
-.foot-slot.empty span { opacity: 0.45; }
 
 .foot-slot b {
   position: absolute;
-  top: 1px;
-  right: 5px;
-  font-size: 11px;
+  top: 3px;
+  right: 3px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--hud-ink);
+  color: #fff;
+  font: 700 10.5px/17px var(--ui-font);
   font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* None to hand: a sunken slot and a grey picture (still about 3:1), and the name reads plainly. */
+.foot-slot.empty {
+  border-color: #e2dccf;
+  background: #ece8df;
+}
+
+.foot-slot.empty .foot-icon {
+  filter: grayscale(1) brightness(0.75);
+  opacity: 0.7;
+}
+
+.foot-slot.empty span { color: #56626d; }
+
+.foot-slot.empty b {
+  background: #d5cfc2;
+  color: #3d4955;
+}
+
+.foot-slot.active {
+  border-color: var(--hud-accent);
+  background: #fff1cf;
+  box-shadow: 0 0 0 1px var(--hud-accent);
+}
+
+.foot-slot.active span { font-weight: 700; }
+
+.foot-slot.active kbd {
+  border-color: #b07d14;
+  background: #ffe2a0;
 }
 
 .world-labels {
@@ -1135,6 +1324,20 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   pointer-events: none;
 }
 
+/* The pin over the captain when the camera's pulled back: a gold marker pointing down at them. */
+.world-pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 16px solid #f2c14e;
+  filter: drop-shadow(0 0 1.5px #2a1a0e) drop-shadow(0 0 1.5px #2a1a0e) drop-shadow(0 2px 2px rgb(0 0 0 / 0.35));
+}
+
+/* Signboards hung over doors in the world: painted, so the one place the serif belongs. */
 .world-label {
   position: absolute;
   top: 0;
@@ -1154,9 +1357,17 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   width: min(760px, 100%);
 }
 
+/* Short screens: smaller pictures, so the hotbar stays low. */
+@media (max-height: 800px) {
+  .foot-icon { width: 24px; height: 24px; }
+}
+
+/* Narrow screens: the slots share the width, their pictures shrink clear of the corners. */
 @media (max-width: 900px) {
-  .foot-slot { min-width: 0; }
-  .foot-help { font-size: 12px; }
+  .foot-slots { width: 100%; }
+  .foot-slot { flex: 1 1 0; width: auto; min-width: 0; }
+  .foot-slot span { font-size: 11px; }
+  .foot-icon { width: 24px; height: 24px; margin-top: 12px; }
 }
 
 /* Game menu */
@@ -1173,7 +1384,7 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
 }
 
 .system-buttons button { padding: 9px 14px; font-size: 16px; }
-.system-buttons button small { display: block; font: 12px system-ui, sans-serif; opacity: 0.85; }
+.system-buttons button small { display: block; font: 12px var(--ui-font); opacity: 0.85; }
 
 .save-form {
   display: flex;

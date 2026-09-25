@@ -49,6 +49,27 @@ export const Block = {
   CopperOre: 38,
   SilverOre: 39,
   GoldOre: 40,
+  // Towns: the Brethren's tarred roofs, flags, and the well
+  TarredRoof: 41,
+  FlagBlack: 42,
+  FlagCrimson: 43,
+  FlagBlue: 44,
+  WellWater: 45,
+  // Towns dressed: stalls and their goods, the quay's cargo, guns, rooms, and banners
+  Canvas: 46,
+  AwningRed: 47,
+  AwningBlue: 48,
+  Crate: 49,
+  Sack: 50,
+  Fruit: 51,
+  Greens: 52,
+  Cloth: 53,
+  Iron: 54,
+  Rope: 55,
+  Net: 56,
+  Books: 57,
+  FlagWhite: 58,
+  FlagGold: 59,
 } as const;
 
 export type BlockId = number;
@@ -100,6 +121,25 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.CopperOre]: { name: 'copper ore', color: 0x3f9a7d },
   [Block.SilverOre]: { name: 'silver ore', color: 0xc9d1d8 },
   [Block.GoldOre]: { name: 'gold ore', color: 0xe0b83a },
+  [Block.TarredRoof]: { name: 'tarred roof', color: 0x6a4e3a },
+  [Block.FlagBlack]: { name: 'black flag', color: 0x1c1c22 },
+  [Block.FlagCrimson]: { name: 'crimson flag', color: 0xa51d24 },
+  [Block.FlagBlue]: { name: 'Guild flag', color: 0x2b5da8 },
+  [Block.WellWater]: { name: 'well water', color: 0x2a4d6e },
+  [Block.Canvas]: { name: 'canvas', color: 0xece2c8 },
+  [Block.AwningRed]: { name: 'red awning', color: 0xb8422e },
+  [Block.AwningBlue]: { name: 'blue awning', color: 0x356aa3 },
+  [Block.Crate]: { name: 'crate', color: 0x8e6a3e },
+  [Block.Sack]: { name: 'sacking', color: 0xc9b283 },
+  [Block.Fruit]: { name: 'fruit', color: 0xe8892a },
+  [Block.Greens]: { name: 'greens', color: 0x78b33c },
+  [Block.Cloth]: { name: 'bolts of cloth', color: 0x7d4a93 },
+  [Block.Iron]: { name: 'iron', color: 0x4a4f57 },
+  [Block.Rope]: { name: 'rope', color: 0xb49d6b },
+  [Block.Net]: { name: 'net', color: 0x5f8a80 },
+  [Block.Books]: { name: 'books', color: 0x8c3a2c },
+  [Block.FlagWhite]: { name: 'white on a flag', color: 0xf2eee2 },
+  [Block.FlagGold]: { name: 'gold on a flag', color: 0xe3b53a },
 };
 
 const SOLID = new Uint8Array(256);
@@ -138,7 +178,33 @@ export const blocksWalker = (id: BlockId): boolean => SOLID[id] === 1 && PASSABL
 
 const FLAGS = new Uint8Array(256);
 // Trees and buildings: what the on-foot cutaway may open up. Never the ground itself.
-for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence, Block.Window, Block.Copper, Block.Barrel, Block.Deadwood]) {
+// (Awnings and the goods on the ground stay: they're low, and they're what a market is.)
+for (const id of [
+  Block.Wood,
+  Block.Leaves,
+  Block.PalmLeaves,
+  Block.Planks,
+  Block.Plaster,
+  Block.RoofTile,
+  Block.RoofSlate,
+  Block.Thatch,
+  Block.TarredRoof,
+  Block.Fence,
+  Block.Window,
+  Block.Copper,
+  Block.Barrel,
+  Block.Deadwood,
+  Block.FlagBlack,
+  Block.FlagCrimson,
+  Block.FlagBlue,
+  Block.FlagWhite,
+  Block.FlagGold,
+  Block.Rope,
+  Block.Net,
+  Block.Books,
+  // Lanterns go with the wall or post they hang from.
+  Block.Lantern,
+]) {
   FLAGS[id] |= FLAG_CUTAWAY;
 }
 // What glows after dark.

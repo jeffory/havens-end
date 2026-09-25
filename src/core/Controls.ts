@@ -17,6 +17,8 @@ export type Action =
   | 'journal'
   | 'shanty'
   | 'system'
+  // Show or tuck away the controls legend: keys only, as every pad button is taken.
+  | 'help'
   // On foot
   | 'interact'
   | 'use'
@@ -132,6 +134,7 @@ const SEA_KEYS: Bindings<string> = [
   ['KeyM', 'chart'],
   ['KeyJ', 'journal'],
   ['KeyN', 'shanty'],
+  ['KeyH', 'help'],
   ['Escape', 'system'],
 ];
 
@@ -156,6 +159,7 @@ const FOOT_KEYS: Bindings<string> = [
   ['KeyC', 'rotateRight'],
   ['KeyM', 'chart'],
   ['KeyJ', 'journal'],
+  ['KeyH', 'help'],
 ];
 
 /** Enter and Space aren't here: the browser already clicks the focused button. */

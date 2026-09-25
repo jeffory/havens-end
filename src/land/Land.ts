@@ -2,6 +2,7 @@ import { DOCK_SPEED, type Sea } from '../combat/sea';
 import { distanceToBody } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
 import { isNight } from '../core/clock';
+import type { Dress } from '../duel/dress';
 import { PACK_SIZE, PASSENGER_BERTHS } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, type Good, loadCargo, unload } from '../economy/goods';
 import type { Port, PortPlace } from '../economy/ports';
@@ -17,6 +18,7 @@ import { type Drop, dropItem, stepDrops } from './drops';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
 import { type Building, doorOf, isWorkshop, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
 import { DEPOSITS, Deposits, type DepositsSnapshot } from './deposits';
+import { stepTownsfolk, type Townsman } from './townsfolk';
 import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, type Walker } from './walker';
 
 export type Tool = 'axe' | 'pickaxe' | 'hoe';
@@ -156,6 +158,12 @@ export class Land {
   saplings: Sapling[] = [];
   /** Night creatures about the captain: not saved (they're gone by morning anyway). */
   creatures: Creature[] = [];
+  /** Townsfolk about the town the captain's walking: not saved (they're only there while you are). */
+  townsfolk: Townsman[] = [];
+  nextTownsman = 1;
+  townSpawnIn = 0;
+  /** What the last one out of a door wore: kept after they've gone back in, so the next one out never looks like them. */
+  lastOut: Dress | null = null;
   nextCreature = 1;
   spawnIn = 0;
   /** What's lying about to be picked up. */
@@ -264,6 +272,7 @@ export class Land {
     stepDrops(this, dt);
     if (watched) stepCreatures(this, dt, this.random);
     else this.creatures.length = 0;
+    stepTownsfolk(this, dt, this.random);
   }
 
   /** Torches and fires: night creatures keep out of their light. */

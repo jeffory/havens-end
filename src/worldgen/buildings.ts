@@ -74,12 +74,13 @@ export interface Door {
 }
 
 /**
- * A house: walls three high with a door in the middle of the wall facing (towardX,
- * towardZ), windows, and a stepped gable roof over the long axis.
+ * A house: walls three high a storey with a door in the middle of the wall facing
+ * (towardX, towardZ), a row of windows each storey, and a stepped gable roof over the
+ * long axis.
  */
-export function buildHouse(world: VoxelWorld, fp: Footprint, base: number, style: HouseStyle, towardX: number, towardZ: number): Door {
+export function buildHouse(world: VoxelWorld, fp: Footprint, base: number, style: HouseStyle, towardX: number, towardZ: number, storeys = 1): Door {
   const { x0, z0, w, d } = fp;
-  const top = base + 2;
+  const top = base + 2 + (storeys - 1) * 3;
   const ridgeAlongX = w >= d;
   const span = ridgeAlongX ? d : w;
   const eave = (span + 1) / 2;
@@ -107,7 +108,8 @@ export function buildHouse(world: VoxelWorld, fp: Footprint, base: number, style
       for (let y = base; y <= height; y++) {
         const isDoor = x === door.x && z === door.z && y < base + 2;
         const corner = (x === x0 || x === x0 + w - 1) && (z === z0 || z === z0 + d - 1);
-        const isWindow = !corner && !gable && y === base + 1 && (ridgeAlongX ? x - x0 === 1 || x0 + w - 1 - x === 1 : z - z0 === 1 || z0 + d - 1 - z === 1);
+        const windowRow = (y - base) % 3 === 1 && y < top;
+        const isWindow = !corner && !gable && windowRow && (ridgeAlongX ? x - x0 === 1 || x0 + w - 1 - x === 1 : z - z0 === 1 || z0 + d - 1 - z === 1);
         if (isDoor) continue;
         if (isWindow) {
           world.setVoxel(x, y, z, Block.Window);
