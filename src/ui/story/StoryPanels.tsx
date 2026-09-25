@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { NavHandlers } from '../Overlay';
 
 export interface Panel {
@@ -14,6 +14,9 @@ export function StoryPanels({ panels, done, nav, title }: { panels: readonly Pan
   const [index, setIndex] = useState(0);
   const panel = panels[index];
   const last = index === panels.length - 1;
+  const next = useRef<HTMLButtonElement>(null);
+  // Next has the focus (Enter, A), even when the screen opens during the game's heavy start-up.
+  useEffect(() => next.current?.focus({ preventScroll: true }), [index]);
   useEffect(() => {
     nav.back = done;
     nav.tab = (step) => setIndex((i) => Math.max(0, Math.min(panels.length - 1, i + step)));
@@ -35,7 +38,7 @@ export function StoryPanels({ panels, done, nav, title }: { panels: readonly Pan
               Skip
             </button>
           )}
-          <button type="button" className="primary" data-autofocus onClick={() => (last ? done() : setIndex(index + 1))}>
+          <button type="button" ref={next} className="primary" data-autofocus onClick={() => (last ? done() : setIndex(index + 1))}>
             {last ? 'Set sail' : 'Next'}
           </button>
         </div>

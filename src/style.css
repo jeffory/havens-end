@@ -1392,3 +1392,16 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
 @media (max-width: 760px) {
   .journal { grid-template-columns: 1fr; }
 }
+
+.story-words button {
+  padding: 7px 18px;
+  border: 1px solid #c8911c;
+  border-radius: 7px;
+  background: rgb(251 243 220 / 0.92);
+  color: #3a2a1a;
+  font: 600 15px Georgia, serif;
+  cursor: pointer;
+}
+
+.story-words button.primary { background: #c8911c; color: #1a120b; }
+.story-words button:focus-visible { outline: 3px solid #fbf3dc; outline-offset: 2px; }

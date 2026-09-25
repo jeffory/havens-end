@@ -51,8 +51,8 @@ export interface StorySnapshot {
 /** The Sovereign comes out to meet you from this far off her station; she and her company go home when you're beyond the second. */
 const SPAWN_RANGE = 650;
 const LEAVE_RANGE = 1100;
-/** Where she lies off the capital, and the water she needs. */
-const STATION_OFFSHORE = 240;
+/** Where she lies off the capital (from the middle of its island, toward Haven), and the water she needs. */
+const STATION_OFFSHORE = 260;
 const STATION_DEPTH = 6;
 /** Group numbers for the story's ships, clear of the encounter director's. */
 const STORY_GROUP = 900_000;
@@ -99,7 +99,7 @@ export class Story {
     const imperial = ports.filter((p) => p.faction === 'imperial').sort((a, b) => Math.hypot(a.x - haven.x, a.z - haven.z) - Math.hypot(b.x - haven.x, b.z - haven.z));
     const pirates = ports.find((p) => p.faction === 'pirate') ?? haven;
     this.ports = { haven, pirates, crown: imperial[0] ?? haven, capital: imperial[imperial.length - 1] ?? haven };
-    this.station = this.findStation(this.ports.capital);
+    this.station = this.findStation(this.ports.capital, haven);
     this.reached = { nell: sea.clock.day };
   }
 
@@ -320,18 +320,18 @@ export class Story {
     this.events.push({ kind: 'epilogue' });
   }
 
-  /** Deep, open water off the capital, out from its harbour mouth. */
-  private findStation(capital: Port): { x: number; z: number } {
-    const out = Math.atan2(capital.x - capital.islandX, capital.z - capital.islandZ);
+  /** Deep, open water off the capital, on the side it faces home from: where she guards the way in. */
+  private findStation(capital: Port, haven: Port): { x: number; z: number } {
+    const out = Math.atan2(haven.x - capital.islandX, haven.z - capital.islandZ);
     for (let i = 0; i < 24; i++) {
       const angle = out + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.26;
-      const x = capital.x + Math.sin(angle) * STATION_OFFSHORE;
-      const z = capital.z + Math.cos(angle) * STATION_OFFSHORE;
+      const x = capital.islandX + Math.sin(angle) * STATION_OFFSHORE;
+      const z = capital.islandZ + Math.cos(angle) * STATION_OFFSHORE;
       let deep = true;
       for (let dx = -20; dx <= 20 && deep; dx += 20) for (let dz = -20; dz <= 20 && deep; dz += 20) deep = this.world.surfaceHeight(Math.floor(x + dx), Math.floor(z + dz)) < SEA_LEVEL - STATION_DEPTH;
       if (deep) return { x: Math.round(x), z: Math.round(z) };
     }
-    return { x: Math.round(capital.x + Math.sin(out) * STATION_OFFSHORE * 1.5), z: Math.round(capital.z + Math.cos(out) * STATION_OFFSHORE * 1.5) };
+    return { x: Math.round(capital.islandX + Math.sin(out) * STATION_OFFSHORE * 1.5), z: Math.round(capital.islandZ + Math.cos(out) * STATION_OFFSHORE * 1.5) };
   }
 
   // ---- The journal ----

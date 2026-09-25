@@ -13,7 +13,7 @@ behind the codebase and the plan for the phases still to come.
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
-| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §12. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §13. |
 | Character art | **Tripo** (text to 3D, via ComfyUI) → **voxelizer** → `.vox` | Detailed, consistent captains without hand modelling; they end up as named-part `.vox` files you can restyle. See §7. |
 | Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
 | UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart, building, the game menu | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
@@ -795,7 +795,80 @@ said.
 The night's offers, the taken hoards and the rumour days are the `Treasure`
 snapshot. Save version 3; older saves still load.
 
-## 12. Ship art: MagicaVoxel authoring guide
+## 12. The story (Phase 8)
+
+The design, and the player's answers it came from, are in
+[phase-8-story.md](phase-8-story.md). This section covers what was built.
+
+**The words are data** (`story/script.ts`), apart from the logic:
+- **The characters:** Nell Brandt, Jonas Quill, Tobias Finch and Red Mary Kincaid, and
+  where each is found (`WHERE`): which port by role, which door, and Finch only after
+  dark.
+- **Their talks** (`TALKS`): which stages each belongs to, what must come first,
+  whether it needs Blackwood's letter or a given choice, which journal entry its words
+  are filed under, the stage it moves the thread to, and any answers that decide
+  something.
+- **The journal entries** (`ENTRIES`), and the intro and epilogue pictures with their
+  words.
+- **Placeholders.** Lines take the world's names (the pirate haven, the Crown's
+  outpost, the capital). The admiral is "the admiral" until Finch reads the letter.
+
+**The thread** (`story/Story.ts`, pure) runs through seven stages: nell, quill,
+chart, cipher, flag, sovereign, done.
+- **Who's at a door.** `talksAt(port, place)` gives the first open talk of each
+  character there.
+- **Talking.** `talk(id, answer)` hears one out, and applies the choice if there's an
+  answer. A talk that offers a choice stays open until it's answered.
+- **Moving on by itself.** `step()` moves the thread from Blackwood's chart to the
+  cipher once the captain holds the letter.
+- **The journal.** `journal()` builds its entries: text with the names as they stand,
+  objectives with their progress, and the words heard, filed under each entry.
+- **The choice.** It changes standing (with the usual standing news), fits a free
+  refit (gun drill under the black flag, a stronger hull with the letter of marque),
+  and makes up the crew.
+
+**The *Sovereign*:**
+- **The ship.** A three-masted frigate, a new ship type (`FRIGATE`), not for sale.
+  `npm run make:placeholder-ship frigate` generates her model alongside the sloop and
+  brig; that command can now make one design at a time.
+- **Her station.** She keeps station off the capital, on the side facing Haven: deep
+  water found from its island's middle. The chart marks it once the thread reaches
+  her.
+- **Coming out.** Within 650 of the station she and two brigs come out, already
+  alerted. Beyond 1,100, or once the captain is jailed, they leave until next time.
+  Vessels aren't saved, so after a load she comes out again the same way.
+- **Harrow.** She's an admiral's flagship (`Vessel.admiral`), so she's never taken
+  without the duel, struck or not. Harrow fights with `DUEL_SKILLS.admiral`: quick to
+  parry, 210 hit points.
+  - **Taken:** the thread ends with the duel ending.
+  - **Sunk:** he goes down with her.
+  - **Either way,** the epilogue shows once the verdict and any menu have cleared.
+
+**Allies.** Under the black flag, Red Mary's *Revenge* and *Gull* come out with the
+*Sovereign* (`AiState.ally`).
+- **Formation.** An ally keeps station on the player the way escorts keep station on
+  a convoy's leader.
+- **Fighting.** It goes for the nearest ship within 260 of the player that's engaging
+  or flying an admiral's flag. `engage` now takes any target ship, where it used to
+  assume the player.
+- **After Harrow,** allies sail for home.
+
+**On screen:**
+- **The intro** (`ui/story/StoryPanels`) plays on a new game: the `?new` reload, the
+  title menu's New game, or a first start. A loaded game has seen it. Its pictures
+  were painted with the asset tool's new `illustration` recipe (Nano Banana Pro, the
+  first panel the reference for the rest), and are in `public/story/` as WebP.
+- **Conversations.** People to see appear at the top of the tavern and Guildhall tabs
+  (`ui/port/People`). Talking shows their words, and choices have "Not yet".
+- **The journal** (`ui/story/JournalScreen`) opens on J, or from the game menu for
+  controllers. It lists the entries, their objectives and what people said, and can
+  replay the story so far.
+
+**Saves:** version 4 adds the story's snapshot: stage, talks heard, choice, the day
+each stage began, whether the intro was seen, and how it ended. A save from before
+Phase 8 has lived through the intro, so it doesn't play again.
+
+## 13. Ship art: MagicaVoxel authoring guide
 
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
@@ -822,7 +895,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 13. Simulation, physics and time
+## 14. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -858,7 +931,7 @@ walks instead of stepping them (§10). The coarse ledger planned here wasn't nee
 **Saves** (Phase 5): the seed, the edited chunks (run-length encoded) and the sim
 state as JSON, in IndexedDB (§9).
 
-## 14. Module map
+## 15. Module map
 
 ```
 src/
@@ -886,6 +959,8 @@ src/
                        book, the shipyard, the captain; Economy ties them together
   treasure/            treasure maps: sites and landmarks, clues, the Treasure
                        sim (offers, prizes, rumours, digging, guardians), finds
+  story/               the main story: its words (script.ts) and the Story sim
+                       (who's where, the thread, the journal, the Sovereign)
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
   worldgen/            seeded noise, island generator, archipelago plan, harbours
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
@@ -905,7 +980,8 @@ src/
                        screen and its tabs), ChartView / ChartScreen, FootHud,
                        WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu,
                        CampScreen, settings, MapsView and treasureMap (the
-                       treasure maps on parchment), buildStamp
+                       treasure maps on parchment), buildStamp; story/ (the
+                       painted panels, the journal); port/People
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -914,12 +990,12 @@ scripts/               asset generators (placeholder ships, captains via Tripo,
 public/models/         ship and character .vox files
 ```
 
-`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `treasure`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
+`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `treasure`, `story`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
 next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 15. Roadmap (proposed)
+## 16. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
@@ -929,7 +1005,7 @@ verified in the running game. None of those directories import from `render`,
 5. ✅ **On foot & camps:** walking ashore anywhere and around ports (signed doors, graded roads); axe, pickaxe, shovel and hoe; campfire claims; huts, storehouses, fences, paths, torches; sugar cane, tobacco and pepper; timber, stone and seed as trade goods; a cutaway view; autosave and named saves.
 6. ✅ **Crews, production & night:** settlers hired in taverns who farm, cut wood, fish and work six workshops (sawpit, sugar mill, distillery, curing shed, smokehouse, forge), fed each morning and housed in huts; voxel-surface pathfinding; maize, iron ore, planks and a carpenter; a configurable day and night with moonlight, lanterns and glowing windows, night raiders, slack customs, a fixer who works after dark, crabs and boar after your crops, bats and ghost lights; sleeping through the night.
 7. ✅ **Treasure hunting:** named islets; maps from the fixer, prizes and tavern talk, drawn on parchment from the real coastline (an X near home, directions further out, sun-riddles far out); landmarks and chests two spades down; cursed hoards guarded at night by a ghost captain in the duel; five unique finds; Blackwood's chart in three pieces, leading to his hoard and the letter that opens Phase 8.
-8. **Story:** the opening (orphaned, adopted by a merchant captain, the Imperial attack), the black flag, the revenge arc.
+8. ✅ **Story:** a painted intro (the foundling, the *Good Hope*, the Imperial attack); a journal whose entries gather what people tell you; Nell, Quill, Finch and Red Mary; Blackwood's letter naming Lord Admiral Harrow; the choice of the black flag or the Guild's letter of marque; the *Sovereign*, a frigate with two brigs (and the Brethren's ships beside you under the black flag), and a last duel with Harrow; an epilogue.
 
 **Later:** docks and building over water. Jetties from your camps where the ship can
 moor, and walkways or huts on stilts. Notes and open questions:

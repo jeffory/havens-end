@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Outcome } from '../../economy/economy';
 import type { Port } from '../../economy/ports';
 import type { Story, Talk } from '../../story/Story';
@@ -10,6 +10,9 @@ import type { Story, Talk } from '../../story/Story';
  */
 export function People({ port, place, story, act }: { port: Port; place: 'office' | 'tavern'; story?: Story; act: (outcome: Outcome) => void }) {
   const [shown, setShown] = useState<Talk | null>(null);
+  const answers = useRef<HTMLDivElement>(null);
+  // The talk's first answer takes the focus (the Talk button that had it is gone).
+  useEffect(() => answers.current?.querySelector('button')?.focus({ preventScroll: true }), [shown]);
   if (!story) return null;
   // What was said goes in the port's log; the journal's news with it.
   const say = (outcome: Outcome) => {
@@ -26,7 +29,7 @@ export function People({ port, place, story, act }: { port: Port; place: 'office
         {shown.lines.map((line, i) => (
           <p key={i}>“{line}”</p>
         ))}
-        <div className="buttons">
+        <div className="buttons" ref={answers}>
           {shown.choices.map((c) => (
             <button
               key={c.id}

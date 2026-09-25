@@ -65,6 +65,7 @@ exist. A plain name works wherever it's unambiguous; otherwise the tool asks whi
 | `sprite` | Characters and props as pixel art with a transparent background, `--height` px tall. `--ref a.png,b.png` passes reference images for a consistent character or style. | `public/sprites/` | nano-banana-pro |
 | `icons` | Up to 16 inventory or UI icons drawn together in one square sheet (2×2, 3×3 or 4×4, so they match), with spare cells used for extra variations. Sliced into `--size` px squares with one shared palette. | `public/sprites/icons/` | nano-banana-pro |
 | `material` | HD seamless textures: `color.png` plus `normal.png` and `height.png` (Deep Bump). Seams are repaired by default. | `public/textures/materials/<name>/` | flux-2-max |
+| `illustration` | Painted story pictures (the intro's panels): golden-age book illustration, `--width` × `--height` (default 1600 × 900), no pixel art. `--ref` passes earlier pictures so a series keeps one style and the same faces. | `public/story/<name>.webp` | nano-banana-pro |
 | `vox` | Concept art, then a textured 3D model (Tripo v3.1), then a MagicaVoxel `.vox` of `--height` voxels with a `--colors` palette. It is shrunk if any axis would pass MagicaVoxel's 256. `--image my.png` starts from your own drawing. `--glb model.glb` re-voxelizes a model you already have (a candidate's `model.glb` or one in `.assetgen/raw/`) for free, e.g. at another height. Takes about 3 minutes. | `public/models/props/<name>.vox` | nano-banana-pro (concept) |
 
 Items are written `name="description"`. Names become file names, so use letters,
@@ -129,7 +130,7 @@ scripts/assetgen/
   comfy/              HTTP client (fills widget defaults), graph builder, model registry, pipeline graphs
   image/              raster ops: pixelate, palette, seams, grid slicing, compose, sheets
   voxel/              GLB reader, voxelizer, .vox packing, isometric preview
-  recipes/            block, pattern, sprite, icons, material, vox
+  recipes/            block, pattern, sprite, icons, material, vox, illustration
 .assetgen/            candidates, sheets, graphs, raw outputs (gitignored)
 ```
 

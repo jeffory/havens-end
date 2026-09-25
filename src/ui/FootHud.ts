@@ -49,7 +49,7 @@ export class FootHud {
     this.hint.className = 'foot-hint';
     this.help.className = 'foot-help';
     this.help.innerHTML = `<kbd>WASD</kbd> walk · <kbd>Space</kbd> / click use · <kbd>F</kbd> / right-click put earth down · <kbd>E</kbd> interact ·
-      <kbd>1</kbd>–<kbd>9</kbd> tools and seed · <kbd>B</kbd> build · <kbd>M</kbd> chart · <kbd>Esc</kbd> menu
+      <kbd>1</kbd>–<kbd>9</kbd> tools and seed · <kbd>B</kbd> build · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>Esc</kbd> menu
       <span class="pad">🎮 <kbd>X</kbd> use · <kbd>LT</kbd> earth · <kbd>A</kbd> interact · <kbd>LB</kbd><kbd>RB</kbd> tools · <kbd>Y</kbd> build · <kbd>Start</kbd> menu</span>`;
     this.help.hidden = true;
     this.slots.addEventListener('pointerdown', (e) => {
