@@ -9,9 +9,11 @@ export interface NavHandlers {
   back?: () => void;
   /** The chart button: a port screen shows its chart tab. */
   chart?: () => void;
+  /** The journal key: the journal closes. */
+  journal?: () => void;
 }
 
-export type ScreenKind = 'port' | 'chart' | 'build' | 'store' | 'system' | 'camp';
+export type ScreenKind = 'port' | 'chart' | 'build' | 'store' | 'system' | 'camp' | 'journal' | 'story';
 
 /**
  * The full-screen menus (port, chart), drawn with React over the 3D view. The game
@@ -55,6 +57,7 @@ export class Overlay {
       this.handlers.tab = undefined;
       this.handlers.back = undefined;
       this.handlers.chart = undefined;
+      this.handlers.journal = undefined;
     }
     this.kind = kind;
     this.el.hidden = false;
@@ -96,6 +99,8 @@ export class Overlay {
         return this.handlers.tab?.(1);
       case 'chart':
         return this.handlers.chart?.();
+      case 'journal':
+        return this.handlers.journal?.();
     }
   }
 }

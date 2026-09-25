@@ -44,6 +44,11 @@ import { DropsView } from './render/DropsView';
 import { hasRelic, SPYGLASS_RANGE } from './treasure/relics';
 import { DEPTH } from './treasure/sites';
 import { Treasure } from './treasure/Treasure';
+import { ADMIRAL, EPILOGUE, INTRO } from './story/script';
+import { Story } from './story/Story';
+import { JournalScreen } from './ui/story/JournalScreen';
+import { type Panel, StoryPanels } from './ui/story/StoryPanels';
+import { DUEL_SKILLS } from './duel/duelAi';
 import { PeopleView } from './render/PeopleView';
 import { Shore, sleepy } from './Shore';
 import { BuildMenu } from './ui/BuildMenu';
@@ -102,7 +107,7 @@ const FRAME_MAX_SHIFT = 22;
 const CAPTAINS = ['player', 'imperial', 'merchant', 'pirate'] as const;
 const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 /** Menu actions passed to whatever screen is open. */
-const MENU_ACTIONS: readonly Action[] = ['navUp', 'navDown', 'navLeft', 'navRight', 'confirm', 'back', 'tabPrev', 'tabNext', 'chart'];
+const MENU_ACTIONS: readonly Action[] = ['navUp', 'navDown', 'navLeft', 'navRight', 'confirm', 'back', 'tabPrev', 'tabNext', 'chart', 'journal'];
 /** Orders for the ship while the captain's ashore: none. */
 const ANCHORED: PlayerOrders = { rudder: 0, sails: 0, ammo: 'round', fire: [], board: false };
 /** Sea seconds between autosaves. */
@@ -129,6 +134,7 @@ export class Game {
   readonly economy: Economy;
   readonly land: Land;
   readonly treasure: Treasure;
+  readonly story: Story;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly sky = SKY_COLOR.clone();
@@ -224,6 +230,7 @@ export class Game {
     this.land = new Land(this.world, this.sea, WORLD_SEED);
     this.treasure = new Treasure(this.world, this.sea, this.land, this.islands, this.economy.fixers, WORLD_SEED);
     this.economy.rumourSources.push((port) => this.treasure.rumour(port));
+    this.story = new Story(this.world, this.sea, this.ports);
     this.sea.clock.length = this.settings.dayMinutes * 60;
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
@@ -291,9 +298,17 @@ export class Game {
     const w = this.land.walker;
     this.rig.snapTo(this.cameraTarget.set(w?.x ?? this.ship.x, w ? w.y + 1.2 : WATER_LEVEL, w?.z ?? this.ship.z));
     this.terrain.update(STARTUP_CHUNKS, this.rig.focus); // the island in view, before the first frame
-    if (!this.restored) this.hud.toast(`Welcome to ${this.ports[0].name}. B to go ashore and trade, M for the chart, W to make sail.`);
+    if (!this.restored) this.hud.toast(`Welcome to ${this.ports[0].name}. B to go ashore and trade, M for the chart, J for your journal, W to make sail.`);
     if (title) this.openSystem(true);
+    else this.intro();
     this.loop.start();
+  }
+
+  /** A new game begins with the story's pictures (once: a loaded game has seen them). */
+  private intro(): void {
+    if (this.restored || this.story.introSeen) return;
+    this.story.introSeen = true;
+    this.openStory(INTRO, 'Haven’s End');
   }
 
   private restored = false;
@@ -309,6 +324,7 @@ export class Game {
       economy: this.economy.snapshot(),
       land: this.land.snapshot(),
       treasure: this.treasure.snapshot(),
+      story: this.story.snapshot(),
       course: this.course?.id ?? null,
       edits: this.world.editedChunks().map((c) => ({ cx: c.cx, cy: c.cy, cz: c.cz, data: encodeRuns(c.data) })),
     };
@@ -322,6 +338,9 @@ export class Game {
     this.economy.restore(data.economy);
     this.land.restore(data.land);
     if (data.treasure) this.treasure.restore(data.treasure);
+    // A save from before the story began has lived through the intro already.
+    if (data.story) this.story.restore(data.story);
+    else this.story.introSeen = true;
     this.course = data.course === null ? null : (this.ports[data.course] ?? null);
     this.seabed.rebuild();
     this.restored = true;
@@ -404,7 +423,14 @@ export class Game {
         createElement(SystemMenu, {
           title,
           summary: this.summary(),
-          resume: this.closeScreen,
+          // From the title menu, "New game" plays the world as it is: the story begins.
+          resume: title
+            ? () => {
+                this.closeMenu();
+                this.intro();
+              }
+            : this.closeScreen,
+          journal: () => this.openJournal(),
           save: (name) => this.save(name),
           load: (slot) => location.assign(`${location.pathname}?load=${encodeURIComponent(slot)}`),
           remove: (slot) => deleteSave(slot),
@@ -425,6 +451,7 @@ export class Game {
     }
     // In a menu, poring over the chart, or asleep: the sea waits.
     if (this.overlay.kind || this.sleeping) return;
+    this.story.step();
     this.autosaveIn -= dt;
     if (this.autosaveIn <= 0) this.autosave();
     if (this.land.walker) {
@@ -473,6 +500,8 @@ export class Game {
       for (const action of MENU_ACTIONS) for (let n = controls.take(action); n > 0; n--) this.overlay.nav(action);
     } else if (!this.duel && controls.take('chart') > 0) {
       this.openChart();
+    } else if (!this.duel && controls.take('journal') > 0) {
+      this.openJournal();
     } else if (!this.duel && !this.land.walker && controls.take('system') > 0) {
       this.openSystem(false);
     }
@@ -489,6 +518,12 @@ export class Game {
     this.notify(this.economy.takeNotices());
     this.notify(this.treasure.takeNotices());
     this.handleTreasure();
+    this.notify(this.story.takeNotices());
+    for (const e of this.story.takeEvents()) if (e.kind === 'epilogue') this.epilogue = true;
+    if (this.epilogue && !this.duel && !this.overlay.kind) {
+      this.epilogue = false;
+      this.openStory([{ image: EPILOGUE.image, text: EPILOGUE.text(this.story.choice, this.story.ending === 'sunk') }], 'Thorne’s due');
+    }
     this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds, dark);
 
     const pose = this.fleet.pose(player.id)!;
@@ -684,6 +719,7 @@ export class Game {
       world: this.world,
       islands: this.islands,
       camps: this.land.buildings.filter((b) => b.kind === 'campfire').map((b) => ({ x: b.x0 + 1.5, z: b.z0 + 1.5 })),
+      marks: this.story.stage === 'sovereign' ? [{ ...this.story.station, label: 'The Sovereign' }] : [],
       course: this.course,
       setCourse: (port) => {
         this.course = port;
@@ -723,6 +759,7 @@ export class Game {
           chart: this.chartProps(),
           sleep: (until) => this.sleep(until),
           treasure: this.treasure,
+          story: this.story,
         }),
       ),
     );
@@ -778,6 +815,23 @@ export class Game {
   }
 
   private readonly closeScreen = () => this.closeMenu();
+
+  /** The epilogue waits for the duel's verdict (and any menu) to clear. */
+  private epilogue = false;
+
+  /** Painted pictures and their words: the intro, the epilogue. */
+  private openStory(panels: readonly Panel[], title: string): void {
+    this.openMenu(() => this.overlay.show('story', createElement(StoryPanels, { panels, title, done: this.closeScreen, nav: this.overlay.handlers })));
+  }
+
+  private openJournal(): void {
+    this.openMenu(() =>
+      this.overlay.show(
+        'journal',
+        createElement(JournalScreen, { story: this.story, close: this.closeScreen, nav: this.overlay.handlers, replay: () => this.openStory(INTRO, 'The story so far') }),
+      ),
+    );
+  }
 
   /** The captain steps ashore: on-foot controls, camera and HUD. */
   private toFoot(message: string): void {
@@ -879,6 +933,19 @@ export class Game {
     };
     const seed = Math.floor(this.sea.random() * 2 ** 31);
     const setup = boardingDuel(player, enemy, ship, side, cast, hasRelic(this.sea.captain, 'cutlass'));
+    if (this.story.isSovereign(vesselId)) {
+      // Harrow himself, on his own quarterdeck: no crew advantage counts for much here.
+      const skill = DUEL_SKILLS.admiral;
+      Object.assign(setup, {
+        skill,
+        enemyHp: skill.hp,
+        enemyPower: skill.power,
+        title: ADMIRAL,
+        subtitle: 'on the quarterdeck of the Sovereign · no quarter asked, none given',
+        won: 'Harrow’s sword rings on the deck. It’s over.',
+        lost: 'Harrow’s blade finds you, and you are dragged below in irons.',
+      });
+    }
     this.duel = new DuelScene(setup, seed, this.duelHud, this.effects, this.rig, this.container);
     this.controls.setMode('duel');
     this.hud.setVisible(false);

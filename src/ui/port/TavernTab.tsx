@@ -6,6 +6,7 @@ import { rankName } from '../../economy/reputation';
 import { MAP_CASE, type Offer } from '../../treasure/Treasure';
 import { islandName } from '../../worldgen/archipelago';
 import { ContractCard, factionTitle, Gold, type TabProps } from './common';
+import { People } from './People';
 
 const FAVOURS = {
   imperial: 'A pardon, of sorts, from a clerk in the Governor’s office',
@@ -14,7 +15,7 @@ const FAVOURS = {
 };
 
 /** Sailors for hire, gossip for the price of a round, and the fixer in the corner. */
-export function TavernTab({ port, economy, sea, act, sleep, treasure }: TabProps) {
+export function TavernTab({ port, economy, sea, act, sleep, treasure, story }: TabProps) {
   const hands = economy.handsFor(port);
   const settlers = economy.settlersFor(port);
   const night = economy.afterDark();
@@ -28,6 +29,7 @@ export function TavernTab({ port, economy, sea, act, sleep, treasure }: TabProps
   const caseFull = sea.captain.maps.length >= MAP_CASE;
   return (
     <section className="tab-tavern">
+      <People port={port} place="tavern" story={story} act={act} />
       <h3>Sailors for hire</h3>
       <div className="yard-row">
         <span>

@@ -120,6 +120,8 @@ export interface ChartProps {
   sea: Sea;
   course: Port | null;
   setCourse: (port: Port | null) => void;
+  /** Places the story marks: where the Sovereign lies. */
+  marks?: ReadonlyArray<{ x: number; z: number; label: string }>;
 }
 
 /** The chart shows the sea, or the captain's treasure maps. */
@@ -152,7 +154,7 @@ export function ChartView(props: ChartProps & { view?: ChartMode; setView?: (vie
   );
 }
 
-function SeaChart({ world, islands, camps, economy, sea, course, setCourse }: ChartProps) {
+function SeaChart({ world, islands, camps, economy, sea, course, setCourse, marks = [] }: ChartProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [selected, setSelected] = useState<Port>(course ?? sea.docked ?? economy.ports[0]);
   const ship = sea.player.ship;
@@ -249,6 +251,34 @@ function SeaChart({ world, islands, camps, economy, sea, course, setCourse }: Ch
       g.strokeText(name, x, y + (plan.radius / frame.span) * size + 12 * px);
       g.fillText(name, x, y + (plan.radius / frame.span) * size + 12 * px);
     });
+
+    // What the story marks: a crimson pennant.
+    for (const mark of marks) {
+      const x = toX(mark.x);
+      const y = toY(mark.z);
+      g.save();
+      g.strokeStyle = '#3b2a1f';
+      g.fillStyle = '#a51d24';
+      g.lineWidth = 2 * px;
+      g.beginPath();
+      g.moveTo(x, y + 8 * px);
+      g.lineTo(x, y - 12 * px);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y - 12 * px);
+      g.lineTo(x + 14 * px, y - 8 * px);
+      g.lineTo(x, y - 4 * px);
+      g.closePath();
+      g.fill();
+      g.font = `italic 700 ${12 * px}px Georgia, serif`;
+      g.textAlign = 'center';
+      g.strokeStyle = 'rgba(246, 236, 210, 0.9)';
+      g.lineWidth = 4 * px;
+      g.strokeText(mark.label, x, y + 22 * px);
+      g.fillStyle = '#7a1418';
+      g.fillText(mark.label, x, y + 22 * px);
+      g.restore();
+    }
 
     // Your camps.
     for (const camp of camps) {

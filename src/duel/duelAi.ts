@@ -39,6 +39,11 @@ export const DUEL_SKILLS = {
     name: 'imperial', reaction: 0.18, parry: 0.5, block: 0.3, roll: 0.15, aggression: 1.1, guard: 0.6, recover: 0.7,
     hp: 150, power: 1.1, moves: { light: 5, heavy: 3, thrust: 2, kick: 1.5 },
   },
+  // Lord Admiral Harrow: the best blade in the Crown's service, and he fights dirty.
+  admiral: {
+    name: 'admiral', reaction: 0.15, parry: 0.55, block: 0.35, roll: 0.15, aggression: 1.25, guard: 0.6, recover: 0.8,
+    hp: 210, power: 1.2, moves: { light: 5, heavy: 3, thrust: 3, kick: 1.5 },
+  },
   // A cursed hoard's guardian: tireless and hard-hitting, but slow to parry, and it never kicks.
   ghost: {
     name: 'ghost', reaction: 0.24, parry: 0.3, block: 0.25, roll: 0.2, aggression: 1.35, guard: 0.45, recover: 0.6,

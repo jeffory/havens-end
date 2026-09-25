@@ -52,6 +52,8 @@ export interface Vessel {
   fate: number;
   /** Ships spawned together (a convoy and its escorts) share a group. */
   group: number;
+  /** An admiral's flagship: she's never taken without a duel with the admiral himself, struck or not. */
+  admiral?: boolean;
   ai: AiState | null;
   /** Coin aboard (for AI ships: plunder; the player's purse lives on the captain). */
   gold: number;

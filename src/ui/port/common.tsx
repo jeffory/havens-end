@@ -4,6 +4,7 @@ import type { Economy, Notice, Outcome } from '../../economy/economy';
 import { GOOD_INFO } from '../../economy/goods';
 import { FACTION_NAMES, type Port, PORT_FACTIONS, type PortFaction } from '../../economy/ports';
 import { CLOSED_AT, rankName } from '../../economy/reputation';
+import type { Story } from '../../story/Story';
 import type { Treasure } from '../../treasure/Treasure';
 
 /** Everything a port screen tab needs to show and change the game. */
@@ -17,6 +18,8 @@ export interface TabProps {
   sleep?: (until: 'morning' | 'dusk') => void;
   /** Buried treasure: the fixer's maps. */
   treasure?: Treasure;
+  /** The story's people, where they can be found. */
+  story?: Story;
 }
 
 export const Gold = ({ amount }: { amount: number }) => (

@@ -1,8 +1,8 @@
 /**
- * Generates the placeholder ships in public/models/ships/ (sloop.vox, brig.vox). They
- * double as MagicaVoxel templates: named hull / sail / flag objects and a labelled
- * palette. Open one in MagicaVoxel, restyle it, save over it.
- * Run: npm run make:placeholder-ship
+ * Generates the placeholder ships in public/models/ships/ (sloop.vox, brig.vox,
+ * frigate.vox). They double as MagicaVoxel templates: named hull / sail / flag objects
+ * and a labelled palette. Open one in MagicaVoxel, restyle it, save over it.
+ * Run: npm run make:placeholder-ship [sloop brig frigate]  (all of them if none are named)
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { writeVox, type VoxObject } from '../src/vox/writeVox';
@@ -68,6 +68,20 @@ const DESIGNS: Design[] = [
     gunsPerSide: 7,
     quarterdeck: 5,
     bowsprit: 4,
+  },
+  {
+    // A three-masted frigate: the admiral's flagship.
+    file: 'frigate.vox',
+    length: 27,
+    beam: 9,
+    masts: [
+      { y: 20, top: 21, sailWidth: 11, sailHeight: 5 },
+      { y: 13, top: 25, sailWidth: 13, sailHeight: 7 },
+      { y: 6, top: 22, sailWidth: 11, sailHeight: 6 },
+    ],
+    gunsPerSide: 10,
+    quarterdeck: 7,
+    bowsprit: 5,
   },
 ];
 
@@ -174,7 +188,8 @@ function hsv(h: number, s: number, v: number): [number, number, number] {
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
-for (const design of DESIGNS) {
+const wanted = process.argv.slice(2);
+for (const design of DESIGNS.filter((d) => wanted.length === 0 || wanted.includes(d.file.replace('.vox', '')))) {
   writeFileSync(`${OUT_DIR}/${design.file}`, writeVox(build(design), palette()));
   console.log(`wrote ${OUT_DIR}/${design.file}`);
 }

@@ -69,4 +69,21 @@ export const MERCHANT_BRIG: ShipType = {
   hold: 80,
 };
 
-export const SHIP_TYPES: readonly ShipType[] = [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG];
+/** Three masts and twenty guns: an admiral's flagship. Not for sale, and nobody else sails one. */
+export const FRIGATE: ShipType = {
+  name: 'frigate',
+  model: 'models/ships/frigate.vox',
+  draft: 2.5,
+  topSpeed: 9,
+  acceleration: 1.6,
+  turnRate: 0.3,
+  hull: 340,
+  sails: 220,
+  crew: 110,
+  gunsPerSide: 10,
+  reload: 7,
+  barrels: 0,
+  hold: 100,
+};
+
+export const SHIP_TYPES: readonly ShipType[] = [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG, FRIGATE];

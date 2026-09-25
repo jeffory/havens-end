@@ -14,6 +14,8 @@ export interface SystemMenuProps {
   load: (slot: string) => void;
   remove: (slot: string) => Promise<void>;
   newGame: () => void;
+  /** The journal (for controllers: there's no journal button). */
+  journal?: () => void;
   settings: Settings;
   changeSettings: (settings: Settings) => void;
   nav: NavHandlers;
@@ -25,7 +27,7 @@ export const describe = (s: SaveSummary) => `${s.gold.toLocaleString('en')} g ·
 const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** The game menu: carry on, save to a named slot, load, or start again. */
-export function SystemMenu({ title, summary, resume, save, load, remove, newGame, settings: initial, changeSettings, nav }: SystemMenuProps) {
+export function SystemMenu({ title, summary, resume, save, load, remove, newGame, journal, settings: initial, changeSettings, nav }: SystemMenuProps) {
   const [view, setView] = useState<View>('main');
   const [settings, setSettings] = useState(initial);
   const change = (next: Settings) => {
@@ -95,6 +97,11 @@ export function SystemMenu({ title, summary, resume, save, load, remove, newGame
             {title && (
               <button type="button" onClick={resume}>
                 New game
+              </button>
+            )}
+            {!title && journal && (
+              <button type="button" onClick={journal}>
+                Journal
               </button>
             )}
             {!title && (

@@ -14,6 +14,7 @@ export type Action =
   | 'ammoNext'
   | 'board'
   | 'chart'
+  | 'journal'
   | 'system'
   // On foot
   | 'interact'
@@ -128,6 +129,7 @@ const SEA_KEYS: Bindings<string> = [
   ['KeyR', 'ammoNext'],
   ['KeyB', 'board'],
   ['KeyM', 'chart'],
+  ['KeyJ', 'journal'],
   ['Escape', 'system'],
 ];
 
@@ -151,6 +153,7 @@ const FOOT_KEYS: Bindings<string> = [
   ['KeyZ', 'rotateLeft'],
   ['KeyC', 'rotateRight'],
   ['KeyM', 'chart'],
+  ['KeyJ', 'journal'],
 ];
 
 /** Enter and Space aren't here: the browser already clicks the focused button. */
@@ -167,6 +170,7 @@ const MENU_KEYS: Bindings<string> = [
   ['KeyE', 'tabNext'],
   ['Escape', 'back'],
   ['KeyM', 'chart'],
+  ['KeyJ', 'journal'],
 ];
 
 const DUEL_KEYS: Bindings<string> = [

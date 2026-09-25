@@ -6,6 +6,7 @@ import { cargoCount, GOOD_INFO, GOODS } from '../../economy/goods';
 import { knownRoutes } from '../../economy/logbook';
 import { FACTION_NAMES, type Port, PORT_KINDS } from '../../economy/ports';
 import { type ChartProps, ChartView } from '../ChartView';
+import type { Story } from '../../story/Story';
 import type { Treasure } from '../../treasure/Treasure';
 import { focusFirst } from '../menuNav';
 import type { NavHandlers } from '../Overlay';
@@ -42,10 +43,11 @@ export interface PortScreenProps {
   /** Takes a room at the tavern and sleeps (the screen closes). */
   sleep: (until: 'morning' | 'dusk') => void;
   treasure: Treasure;
+  story: Story;
 }
 
 /** Ashore in a port: the harbour, market, shipyard, tavern and the port's masters, as tabs. */
-export function PortScreen({ port, economy, sea, arrival, leave, close, tab: initial, nav, chart, sleep, treasure }: PortScreenProps) {
+export function PortScreen({ port, economy, sea, arrival, leave, close, tab: initial, nav, chart, sleep, treasure, story }: PortScreenProps) {
   const [tab, setTab] = useState<Tab>(initial);
   const [log, setLog] = useState<Notice[]>(arrival);
   const [, redraw] = useReducer((n: number) => n + 1, 0);
@@ -77,7 +79,7 @@ export function PortScreen({ port, economy, sea, arrival, leave, close, tab: ini
     office: OFFICE_NAMES[port.faction],
     chart: 'Chart',
   };
-  const props = { port, economy, sea, act, sleep, treasure };
+  const props = { port, economy, sea, act, sleep, treasure, story };
   return (
     <div className={`port-screen faction-${port.faction}`} role="dialog" aria-label={port.name}>
       <header className="port-header">

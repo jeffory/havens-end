@@ -1,6 +1,7 @@
 import { MAX_CONTRACTS, turnInPort } from '../../economy/contracts';
 import { FACTION_NAMES } from '../../economy/ports';
 import { ContractCard, type TabProps } from './common';
+import { People } from './People';
 
 export const OFFICE_NAMES = { imperial: 'Governor', merchant: 'Guildhall', pirate: 'Pirate lord' } as const;
 
@@ -11,13 +12,14 @@ const GREETINGS = {
 };
 
 /** Legitimate work: freight and bounties from the port's masters, and jobs to hand in. */
-export function OfficeTab({ port, economy, sea, act }: TabProps) {
+export function OfficeTab({ port, economy, sea, act, story }: TabProps) {
   const offers = economy.offers(port, 'office');
   const mine = sea.captain.contracts.filter((c) => turnInPort(c) === port.id && !(c.kind === 'delivery' && c.black));
   const full = sea.captain.contracts.length >= MAX_CONTRACTS;
   return (
     <section className="tab-office">
       <p className="lede">{GREETINGS[port.faction]}</p>
+      <People port={port} place="office" story={story} act={act} />
       {mine.length > 0 && (
         <>
           <h3>To hand in here</h3>

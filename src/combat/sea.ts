@@ -485,7 +485,7 @@ export class Sea {
   private board(): void {
     const target = this.boardingTarget();
     if (!target) return;
-    if (target.status === 'struck') {
+    if (target.status === 'struck' && !target.admiral) {
       this.capture(target);
       return;
     }

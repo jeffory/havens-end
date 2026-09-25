@@ -28,6 +28,8 @@ export interface AiState {
   /** Set once the player has attacked this ship or her group: no more peaceful cruising. */
   alerted: boolean;
   thinkIn: number;
+  /** Sails with the player (the Brethren's ships in the story): keeps station on her, and fights whoever fights her. */
+  ally?: boolean;
 }
 
 const THINK_INTERVAL = 0.25;
@@ -61,7 +63,11 @@ export function thinkCaptain(sea: Sea, v: Vessel, dt: number): void {
   v.helm.rudder = rudderFor(v, ai.course);
 }
 
+/** An ally looks for a fight within this of the player. */
+const ALLY_RANGE = 260;
+
 function decide(sea: Sea, v: Vessel, ai: AiState): void {
+  if (ai.ally) return allyDecide(sea, v, ai);
   const player = sea.player;
   const { ship } = v;
   const dx = player.ship.x - ship.x;
@@ -91,7 +97,7 @@ function decide(sea: Sea, v: Vessel, ai: AiState): void {
     (ai.alerted || (distance < WARSHIP_SIGHT * sight && huntsPlayer(standing, v.faction)) || (leader?.ai?.alerted ?? false))
   ) {
     ai.mode = 'engage';
-    course = engage(sea, v, dx, dz, distance);
+    course = engage(sea, v, player);
     v.helm.sails = 1;
   } else if (leader && leader.status === 'afloat') {
     ai.mode = 'escort';
@@ -139,11 +145,46 @@ function avoidShips(sea: Sea, v: Vessel, course: number): number {
   return course + Math.max(-1.3, Math.min(1.3, turn));
 }
 
-/** Warship tactics: close to range, then turn to bring a loaded broadside to bear, and fire. */
-function engage(sea: Sea, v: Vessel, dx: number, dz: number, distance: number): number {
-  const { ship } = v;
+/**
+ * An ally of the player: goes for the nearest ship that's fighting her (or that sails
+ * with an admiral), and otherwise keeps station on her.
+ */
+function allyDecide(sea: Sea, v: Vessel, ai: AiState): void {
   const player = sea.player;
-  v.ammo = chooseAmmo(v, player, distance);
+  const hostile = (o: Vessel) => o !== v && o.faction !== 'player' && !o.ai?.ally && o.status === 'afloat' && (o.ai?.mode === 'engage' || o.admiral === true);
+  let foe: Vessel | null = null;
+  let best = ALLY_RANGE;
+  for (const o of sea.vessels) {
+    if (!hostile(o)) continue;
+    const d = Math.hypot(o.ship.x - player.ship.x, o.ship.z - player.ship.z);
+    if (d < best) [foe, best] = [o, d];
+  }
+  const wind = sea.weather.windAt(v.ship.x, v.ship.z, sea.time);
+  let course: number;
+  if (foe) {
+    ai.mode = 'engage';
+    course = engage(sea, v, foe);
+    v.helm.sails = 1;
+  } else {
+    ai.mode = 'escort';
+    const ls = Math.sin(player.ship.heading);
+    const lc = Math.cos(player.ship.heading);
+    const tx = player.ship.x + ai.stationX * lc + ai.stationZ * ls;
+    const tz = player.ship.z - ai.stationX * ls + ai.stationZ * lc;
+    const gap = Math.hypot(tx - v.ship.x, tz - v.ship.z);
+    course = gap > 4 ? Math.atan2(tx - v.ship.x, tz - v.ship.z) : player.ship.heading;
+    v.helm.sails = gap > 12 ? 1 : Math.max(0.5, player.helm.sails);
+  }
+  ai.course = clearCourse(sea.world, v, avoidShips(sea, v, sailable(course, wind)));
+}
+
+/** Warship tactics: close to range, then turn to bring a loaded broadside to bear, and fire. */
+function engage(sea: Sea, v: Vessel, target: Vessel): number {
+  const { ship } = v;
+  const dx = target.ship.x - ship.x;
+  const dz = target.ship.z - ship.z;
+  const distance = Math.hypot(dx, dz) || 1;
+  v.ammo = chooseAmmo(v, target, distance);
   const reach = landingDistance(v.ammo, v.cls.body.deck);
 
   // Fire whatever bears.
@@ -156,8 +197,8 @@ function engage(sea: Sea, v: Vessel, dx: number, dz: number, distance: number): 
   if (distance > reach * 0.9 || v.cls.type.gunsPerSide === 0) {
     // Close in, aiming a little ahead of where the target is going.
     const lead = Math.min(3, distance / 30);
-    const px = player.ship.x + Math.sin(player.ship.heading) * player.ship.surge * lead;
-    const pz = player.ship.z + Math.cos(player.ship.heading) * player.ship.surge * lead;
+    const px = target.ship.x + Math.sin(target.ship.heading) * target.ship.surge * lead;
+    const pz = target.ship.z + Math.cos(target.ship.heading) * target.ship.surge * lead;
     return Math.atan2(px - ship.x, pz - ship.z);
   }
 
