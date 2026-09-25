@@ -134,16 +134,22 @@ back to the last port.
 In dev builds the running game is exposed as `game` in the browser console,
 e.g. `game.ship`, `game.sea.vessels` or `game.weather.windAt(0, 0, 0)`.
 
-## Sea shanties
+## Music
 
-At sea, press N (the right stick's click on a controller) and the crew strikes up a
-shanty. They carry on through a shuffled round, with a pause between songs, until you
-press it again. They fall quiet when you go ashore, fight a duel or sleep, and pick up
-mid-song when you're back at sea. The volume is in the game menu's settings. To add one, drop an
-MP3 into `src/assets/music/shanties/`. It's found at build time, and its file name
-becomes its title, so `01-haul-away-to-haven.mp3` is "Haul Away to Haven". Strip any
-tags you don't want published (`ffmpeg -i in.mp3 -map_metadata -1 -c:a copy out.mp3`):
-MP3s made with ComfyUI carry the whole workflow in them.
+On foot you'll hear "Ashore", light folk with a pause between plays. In a fight,
+"Broadsides" takes over and loops until a few seconds after the last enemy ship close
+by stops fighting you, or running from you. It also plays in duels. At sea, press N
+(the right stick's click on a controller) and the crew strikes up a shanty. They carry
+on through a shuffled round, with a pause between songs, until you press it again. They
+fall quiet when you go ashore, fight or sleep, and pick up mid-song afterwards. The
+volume, or Off, is in the game menu's settings.
+
+To add a shanty, drop an MP3 into `src/assets/music/shanties/`. It's found at build
+time, and its file name becomes its title, so `01-haul-away-to-haven.mp3` is "Haul Away
+to Haven". Strip any tags you don't want published (`ffmpeg -i in.mp3 -map_metadata -1
+-c:a copy out.mp3`): MP3s made with ComfyUI carry the whole workflow in them. How the
+music is generated (MiniMax Music 3 for songs, Sonilo for instrumentals), with every
+track's exact prompt and how its level was set, is in [docs/music.md](docs/music.md).
 
 ## Ship art
 

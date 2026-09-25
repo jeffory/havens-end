@@ -494,6 +494,29 @@ describe('harbours', () => {
     expect(sea.docked).toBeNull();
   });
 
+  it('know a fight when there is one: a ship close by fighting you, or running from your guns', () => {
+    const sea = newSea();
+    Object.assign(sea.player.ship, { x: 200, z: 0 });
+    const hunter = place(sea, SLOOP, 'pirate', 200, -80);
+    hunter.ai = createAi(0, 0, 0);
+    expect(sea.inBattle()).toBe(false); // just sailing by
+    hunter.ai.mode = 'engage';
+    expect(sea.inBattle()).toBe(true);
+    hunter.ship.z = -400;
+    expect(sea.inBattle()).toBe(false); // too far off to count
+    const prize = place(sea, MERCHANT_SLOOP, 'merchant', 200, 60);
+    prize.ai = createAi(0, 0, 0);
+    prize.ai.mode = 'flee';
+    expect(sea.inBattle()).toBe(false); // only wary
+    prize.ai.alerted = true; // fired on
+    expect(sea.inBattle()).toBe(true);
+    prize.status = 'struck';
+    expect(sea.inBattle()).toBe(false);
+    const friend = place(sea, SLOOP, 'pirate', 200, 40);
+    friend.ai = { ...createAi(0, 0, 0), mode: 'engage', alerted: true, ally: true };
+    expect(sea.inBattle()).toBe(false); // an ally, fighting on your side
+  });
+
   it('after losing her ship the captain starts again in a sloop, whatever she sailed before', () => {
     const sea = newSea();
     sea.refit(sea.classFor(BRIG), 'Your brig');

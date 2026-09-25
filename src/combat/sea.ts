@@ -100,6 +100,8 @@ export const HARBOUR_RADIUS = 45;
 export const DOCK_SPEED = 3;
 /** No docking while a ship that's fighting you is this close. */
 const DOCK_CLEARANCE = 90;
+/** A ship fighting you, or fleeing you, this close means a fight is on (a lookout sees 140). */
+const BATTLE_RANGE = 160;
 const CAPTURED_SECONDS = 1.5;
 const BOARDING_GAP = 5;
 const BOARDING_SPEED = 4;
@@ -402,6 +404,19 @@ export class Sea {
   hunted(): boolean {
     const p = this.player.ship;
     return this.vessels.some((v) => v.ai?.mode === 'engage' && v.status === 'afloat' && Math.hypot(v.ship.x - p.x, v.ship.z - p.z) < DOCK_CLEARANCE);
+  }
+
+  /** Is there a fight on? A ship close by is coming for the player, or running from her guns. */
+  inBattle(): boolean {
+    const p = this.player.ship;
+    return this.vessels.some(
+      (v) =>
+        v.status === 'afloat' &&
+        !!v.ai &&
+        !v.ai.ally &&
+        (v.ai.mode === 'engage' || v.ai.alerted) &&
+        Math.hypot(v.ship.x - p.x, v.ship.z - p.z) < BATTLE_RANGE,
+    );
   }
 
   /** Where a ship of this hull lies at a port: the berth, or as near it as she fits. */

@@ -40,8 +40,8 @@ import { type Building, isWorkshop } from './land/structures';
 import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
 import { NightLife } from './render/NightLife';
-import { SHANTIES } from './audio/shanties';
-import { ShantyPlayer } from './audio/ShantyPlayer';
+import { Soundtrack } from './audio/Soundtrack';
+import { SHANTIES } from './audio/tracks';
 import { DropsView } from './render/DropsView';
 import { hasRelic, SPYGLASS_RANGE } from './treasure/relics';
 import { DEPTH } from './treasure/sites';
@@ -160,8 +160,8 @@ export class Game {
   private readonly landView: LandView;
   private readonly people = new PeopleView();
   private readonly drops = new DropsView();
-  /** Sea shanties while sailing, if they're wanted. */
-  private readonly shanties = new ShantyPlayer(SHANTIES);
+  /** The music: shanties at sea if they're wanted, a tune ashore, and another in a fight. */
+  private readonly music = new Soundtrack();
   private readonly nightLights = new NightLights();
   private readonly nightLife: NightLife;
   private readonly settings: Settings = loadSettings();
@@ -236,8 +236,8 @@ export class Game {
     this.economy.rumourSources.push((port) => this.treasure.rumour(port));
     this.story = new Story(this.world, this.sea, this.ports);
     this.sea.clock.length = this.settings.dayMinutes * 60;
-    this.shanties.volume = this.settings.musicVolume;
-    this.shanties.onTrack = (track) => this.hud.toast(`♪ The crew strikes up “${track.title}”`);
+    this.music.volume = this.settings.musicVolume;
+    this.music.shanties.onTrack = (track) => this.hud.toast(`♪ The crew strikes up “${track.title}”`);
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
     this.input = new Input(this.renderer.domElement);
@@ -420,7 +420,7 @@ export class Game {
     Object.assign(this.settings, settings);
     saveSettings(this.settings);
     this.sea.clock.length = this.settings.dayMinutes * 60;
-    this.shanties.volume = this.settings.musicVolume;
+    this.music.volume = this.settings.musicVolume;
   }
 
   private openSystem(title: boolean): void {
@@ -585,9 +585,11 @@ export class Game {
     const hoards = this.sea.captain.maps.filter((m) => m.tier === 'cursed').map((m) => ({ x: m.site.x, y: m.site.y + DEPTH, z: m.site.z }));
     this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time, hoards);
     this.hud.setClock(sea.clock.day, clockText(phase), isNight(phase));
-    // Shanties while sailing: hushed ashore, in a duel, asleep, or while the tab is hidden.
-    const sailing = !walker && !this.duel && !this.sleeping && player.status === 'afloat' && !document.hidden;
-    this.shanties.update(this.settings.shanties && sailing, frameSeconds);
+    // The music: quiet asleep or while the tab is hidden; Broadsides in a fight or a duel,
+    // hushing the shanties; Ashore on foot.
+    const where = this.sleeping || document.hidden ? null : walker ? 'land' : player.status === 'afloat' ? 'sea' : null;
+    const fighting = this.duel !== null || (where === 'sea' && this.sea.inBattle());
+    this.music.update({ where, fighting, singing: this.settings.shanties }, frameSeconds);
 
     this.terrain.update(REMESH_BUDGET, focus);
     this.wakes.update(time);
@@ -835,7 +837,7 @@ export class Game {
       return;
     }
     this.applySettings({ ...this.settings, shanties: !this.settings.shanties });
-    if (this.settings.shanties) this.shanties.strikeUp();
+    if (this.settings.shanties) this.music.shanties.restart();
     else this.hud.toast('The crew falls quiet.');
   }
 

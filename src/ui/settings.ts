@@ -6,12 +6,12 @@ export interface Settings {
   dayMinutes: number;
   /** The crew sings shanties while sailing (N at sea starts and stops them). */
   shanties: boolean;
-  /** How loud the shanties are, 0 to 1. */
+  /** How loud the music is (shanties, the tune ashore, the fight music), 0 (off) to 1. */
   musicVolume: number;
 }
 
 /** The volumes offered. */
-export const VOLUME_CHOICES: readonly number[] = [0.25, 0.5, 0.75, 1];
+export const VOLUME_CHOICES: readonly number[] = [0, 0.25, 0.5, 0.75, 1];
 
 const KEY = 'havens-end-settings';
 const DEFAULTS: Settings = { dayMinutes: DEFAULT_DAY_MINUTES, shanties: false, musicVolume: 0.5 };

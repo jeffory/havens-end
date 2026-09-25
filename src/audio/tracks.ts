@@ -1,12 +1,21 @@
 /**
- * The sea shanties: every MP3 in src/assets/music/shanties/, found at build time, so
- * adding one is just dropping it in the folder. Its title comes from its file name:
- * "haul-away-to-haven.mp3" is "Haul Away to Haven".
+ * The music (how it was made: docs/music.md). The sea shanties are every MP3 in
+ * src/assets/music/shanties/, found at build time, so adding one is just dropping it in
+ * the folder. Its title comes from its file name: "haul-away-to-haven.mp3" is "Haul Away
+ * to Haven".
  */
+import ashoreUrl from '../assets/music/ashore.mp3?url';
+import broadsidesUrl from '../assets/music/broadsides.mp3?url';
+
 export interface Track {
   url: string;
   title: string;
 }
+
+/** On foot ashore: light, unhurried folk. */
+export const ASHORE: Track = { url: ashoreUrl, title: 'Ashore' };
+/** In a fight at sea or a duel: fast and loud, round and round. */
+export const BROADSIDES: Track = { url: broadsidesUrl, title: 'Broadsides' };
 
 /** Little words stay lower-case inside a title. */
 const SMALL = new Set(['a', 'an', 'and', 'the', 'to', 'of', 'in', 'on', 'for', 'o']);
