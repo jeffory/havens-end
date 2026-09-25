@@ -11,7 +11,7 @@ import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { type IslandPlan, islandName } from '../worldgen/archipelago';
 import { mulberry32 } from '../worldgen/noise';
 import { RELIC_LIST, RELICS, type RelicId } from './relics';
-import { clueFor, planSite, raiseLandmark, type Site } from './sites';
+import { clueFor, DEPTH, planSite, raiseLandmark, type Site } from './sites';
 
 /** How hard a map is to follow, from how far out its islet lies (or what haunts it). */
 export type Tier = 'near' | 'mid' | 'far' | 'cursed' | 'legend';
@@ -230,13 +230,17 @@ export class Treasure {
    * player, if anything. A chest comes up here; a cursed one raises its guardian instead.
    */
   dig(x: number, y: number, z: number): string | null {
-    let loose = false;
+    let loose: string | null = null;
     for (const map of this.captain.maps) {
       const s = map.site;
       const off = Math.max(Math.abs(x - s.x), Math.abs(z - s.z));
       if (off > LOOSE_RANGE) continue;
-      if (off > FIND_RANGE || y > s.y) {
-        loose = true;
+      if (off > FIND_RANGE) {
+        loose ??= 'The earth here is loose, as if it has been dug before.';
+        continue;
+      }
+      if (y > s.y) {
+        loose = 'The earth here is soft and loose: keep digging.';
         continue;
       }
       if (map.tier === 'cursed') {
@@ -247,7 +251,7 @@ export class Treasure {
       this.open(map, x, y, z);
       return 'Your spade strikes wood: a chest!';
     }
-    return loose ? 'The earth here is loose, as if it has been dug before.' : null;
+    return loose;
   }
 
   /** The guardian of a cursed hoard is beaten: the chest is yours. */
@@ -288,7 +292,8 @@ export class Treasure {
     const loot = map.loot;
     captain.gold += loot.gold;
     for (const [good, n] of Object.entries(loot.goods) as Array<[Good, number]>) {
-      for (let left = n; left > 0; left -= PILE) this.land.drop(good, x + 0.5, y + 1.2, z + 0.5, Math.min(PILE, left));
+      // Out of the hole and onto the ground about it, where they can be picked up.
+      for (let left = n; left > 0; left -= PILE) this.land.drop(good, x + 0.5, y + DEPTH + 0.8, z + 0.5, Math.min(PILE, left));
     }
     const found: string[] = [`${loot.gold} gold`];
     for (const [good, n] of Object.entries(loot.goods) as Array<[Good, number]>) found.push(`${n} ${GOOD_INFO[good].label.toLowerCase()}`);

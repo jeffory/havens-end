@@ -904,6 +904,7 @@ export class Game {
     this.controls.setMode('duel');
     this.landView.setVisible(false);
     this.footHud.setVisible(false);
+    this.hud.setVisible(false);
   }
 
   private endDuel(won: boolean): void {
@@ -915,6 +916,7 @@ export class Game {
       this.scene.remove(guardian.ground);
       this.controls.setMode('foot');
       this.landView.setVisible(true);
+      this.hud.setVisible(true);
       this.showPanels();
       if (won) {
         this.treasure.guardianBeaten(guardian.map, guardian.x, guardian.y, guardian.z);

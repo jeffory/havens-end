@@ -96,8 +96,9 @@ export function planSite(
     let x = lx;
     let z = lz;
     for (let i = 0; i < legs; i++) {
-      // Never straight back the way it came.
-      const choices = HEADING_LIST.filter((h) => !walk.length || (HEADINGS[h].dx !== -HEADINGS[walk[walk.length - 1].heading].dx || HEADINGS[h].dz !== -HEADINGS[walk[walk.length - 1].heading].dz));
+      // Each leg turns a corner: never on the way it was going, nor straight back.
+      const last = walk.length ? HEADINGS[walk[walk.length - 1].heading] : null;
+      const choices = HEADING_LIST.filter((h) => !last || HEADINGS[h].dx * last.dx + HEADINGS[h].dz * last.dz === 0);
       const heading = choices[Math.floor(random() * choices.length)];
       const paces = PACES[0] + Math.floor(random() * (PACES[1] - PACES[0] + 1));
       walk.push({ heading, paces });

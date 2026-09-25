@@ -13,7 +13,7 @@ behind the codebase and the plan for the phases still to come.
 | Tests | **Vitest** | The simulation core has no rendering dependencies, so it is tested headless. |
 | Noise | **simplex-noise** | Tiny, seedable, and well tested. |
 | Physics | **Custom (no engine)** | See §5. |
-| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §11. |
+| Ship art | **MagicaVoxel `.vox`**, own parser | Artists work in the standard voxel editor; ships are meshed by our own mesher, so they match the islands. See §12. |
 | Character art | **Tripo** (text to 3D, via ComfyUI) → **voxelizer** → `.vox` | Detailed, consistent captains without hand modelling; they end up as named-part `.vox` files you can restyle. See §7. |
 | Input | **Keyboard + Gamepad API** (standard mapping) | One `Controls` layer merges both. |
 | UI | **Plain DOM** for the HUD; **React (DOM only)** for menus: ports, the chart, building, the game menu | Menus are where React pays off (and it keeps focus across re-renders, which controller navigation needs); the 3D scene is not. |
@@ -699,7 +699,103 @@ the hull at 1.5 points a second, using a plank for every 4 points.
 workshop batches). Version 1 saves still load: the clock is worked out from the sea's
 time, and there are no settlers yet.
 
-## 11. Ship art: MagicaVoxel authoring guide
+## 11. Treasure hunting (Phase 7)
+
+The design, and the player's answers it came from, are in
+[phase-7-treasure.md](phase-7-treasure.md). This section covers what was built.
+
+**Islets have names** (`planArchipelago`): plain ones like "Gull Cay", grim ones for
+the three cursed isles. Names come from their own seeded numbers, so the islands
+don't move. The sea chart labels every islet, and marks with a red X each one a map
+of yours leads to.
+
+**Sites** (`treasure/sites.ts`, pure):
+- **Where.** `planSite` picks open ground on an islet for a landmark: a 3 × 3 patch
+  within a block of level, with no trees. The chest lies a walk of one or two legs
+  of 4 to 9 paces from it.
+- **The walk.** A second leg always turns a corner. The X must be dry, open earth
+  with no tree on it, and the chest lies `DEPTH` (2) blocks under it.
+- **Kept clear.** Sites keep off your camps' claims and the ports' towns.
+- **The landmark** is a skull rock (bone-white, dark eyes, grinning south), a cairn
+  or a dead tree. `raiseLandmark` builds it into the world, with footings on a
+  slope, only once the map is the captain's. It's saved with the other edited
+  chunks, and nothing can dig, mine or fell it.
+- **Clues** get plainer the nearer home. "7 paces west" further out becomes "seven
+  paces toward the sunset" far out: the sun rises at +x, and north is −z, as on the
+  chart.
+
+**Maps** (`treasure/Treasure.ts`):
+- **Tiers** go by distance from Haven: near (< 700), mid (< 1500), far, and cursed.
+  - The style follows the tier (`MAP_STYLES`): a coastline with an X, then a
+    coastline with directions, then a riddle.
+  - The loot is rolled when the map is made: gold, one staple, the chance of a
+    unique find, and for a cursed hoard a piece of Blackwood's chart.
+- **Where they come from:**
+  - **The fixer** (`offersFor`), after dark: two maps a night per port, fixed for the
+    night. At a pirate haven the first is always a cursed one; elsewhere a quarter
+    of the time.
+  - **A prize's papers** (`prize`, when a ship is captured): 40% of pirates, 25% of
+    merchants, 15% of the Crown's ships.
+  - **Tavern talk** (`rumour`), through `Economy.rumourSources`: up to 45% of rounds
+    at night, at most once a day per port. The rumour is written straight into the
+    case as a map.
+- **One chest at a time.** An islet has at most one waiting, in the case or on
+  offer.
+- **The case holds 8.**
+
+**Digging** (`Treasure.dig`, called by the `Land` after every block the shovel
+digs out):
+- **What the shovel turns up.** Within a block of the X at chest depth, a chest.
+  Above it, "soft and loose: keep digging". Within three blocks, loose earth, "as if
+  it has been dug before".
+- **What's in the chest.** A `Chest` block is left in the hole. Goods pop out in
+  piles of five as dropped items. Gold and unique finds go straight to the captain.
+- **Cursed hoards.** By day they won't give. At night the chest raises a `guardian`
+  event, and the loot waits until it's beaten (`guardianBeaten`). A guardian that
+  wins takes a tenth of your gold (`guardianWon`), and you wake at dawn with the map
+  still in your case.
+- **The ghost lights** of an isle gather low over a cursed hoard you hold the map
+  for.
+- **Blackwood's chart.** With the third piece, the pieces join into a legendary map
+  to the islet farthest from Haven. That hoard holds every unique find not yet found,
+  and the sealed letter that will open the Phase 8 story.
+
+**The guardian's duel.** Duels take a `DuelSetup`: where, who, how strong, and what's
+said.
+- **`boardingDuel`** is the old boarding fight, on the prize's `deckStage`.
+- **`guardianDuel`** is fought on a `groundStage`: a group set down where the captain
+  stands, turned so the fight runs across the view the walking camera had.
+- **The ghost** is the pirate captain's model washed pale sea-green (`ghostModel`),
+  drawn see-through and faintly glowing (`CharacterView` with `ghost`). It fights
+  with its own `DUEL_SKILLS.ghost`: tireless and hard-hitting, but slow to parry,
+  and it never kicks.
+
+**Unique finds** (`treasure/relics.ts`) belong to the captain:
+
+| Find | Where it acts |
+|---|---|
+| The Admiral's Spyglass | ship names read 1.75× further off (`Game.shipLabels`) |
+| Blackwood's Cutlass | +25% damage in any duel (both setups) |
+| The Lodestone | on foot within 20 paces of a chest you have a map for, the HUD says which way it tugs |
+| The Smuggler's Ledger | customs never find muskets (`Economy.arrive`) |
+| The Lucky Doubloon | captured ships give up 25% more gold (`Sea.capture`) |
+
+**On screen:**
+- **The chart has two views** (`ChartView`): the sea chart and the treasure maps. Q/E
+  switches between them on the chart screen, and tabs do it in a port's chart.
+- **Each map is drawn on parchment** (`ui/treasureMap.ts`): stains, a torn edge, a
+  north arrow.
+  - Near and mid maps sketch the islet from the world's own heights, with the
+    landmark, and the X near home.
+  - Riddles are words and a doodle.
+  - The finds and the chart pieces are listed beside.
+- **A compass on foot** shows north for counting paces.
+
+**Saves:** the captain's maps, finds, pieces and letter go in the `Sea` snapshot.
+The night's offers, the taken hoards and the rumour days are the `Treasure`
+snapshot. Save version 3; older saves still load.
+
+## 12. Ship art: MagicaVoxel authoring guide
 
 Ships live in `public/models/ships/*.vox`; handling and combat stats are in
 `sailing/ships.ts`. `npm run make:placeholder-ship` regenerates the placeholder sloop
@@ -726,7 +822,7 @@ pivot. The loader assumes the pivot is the voxel corner at `floor(size / 2)`, th
 only choice that keeps voxels on the grid, and our writer uses the same rule. If a
 real file shows parts offset by one voxel, the fix is in `instanceVoxels()`.
 
-## 12. Simulation, physics and time
+## 13. Simulation, physics and time
 
 **Loop.** `GameLoop` polls input (`beginFrame`), runs the **simulation at a fixed
 60 Hz** (`FixedStep`, accumulator with a 250 ms clamp), then **renders at display
@@ -762,7 +858,7 @@ walks instead of stepping them (§10). The coarse ledger planned here wasn't nee
 **Saves** (Phase 5): the seed, the edited chunks (run-length encoded) and the sim
 state as JSON, in IndexedDB (§9).
 
-## 13. Module map
+## 14. Module map
 
 ```
 src/
@@ -785,9 +881,11 @@ src/
                        AI captains, encounters
   duel/                captains' duel: moves, fighters, AI swordsmen, character
                        models (.vox parts → joints), cutlass; settlerModel
-                       (settlers built from code, same joints)
+                       (settlers built from code, same joints); ghostModel
   economy/             goods and cargo, markets, reputation, contracts, the price
                        book, the shipyard, the captain; Economy ties them together
+  treasure/            treasure maps: sites and landmarks, clues, the Treasure
+                       sim (offers, prizes, rumours, digging, guardians), finds
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
   worldgen/            seeded noise, island generator, archipelago plan, harbours
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
@@ -806,7 +904,8 @@ src/
                        menuNav (React menus, controller focus), port/ (the port
                        screen and its tabs), ChartView / ChartScreen, FootHud,
                        WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu,
-                       CampScreen, settings
+                       CampScreen, settings, MapsView and treasureMap (the
+                       treasure maps on parchment), buildStamp
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -815,12 +914,12 @@ scripts/               asset generators (placeholder ships, captains via Tripo,
 public/models/         ship and character .vox files
 ```
 
-`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
+`voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `treasure`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
 next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. Only `Game.ts` knows about everything.
 
-## 14. Roadmap (proposed)
+## 15. Roadmap (proposed)
 
 1. ✅ **Foundation:** loop, camera, voxel chunks + mesher, ocean, island, dig/place.
 2. ✅ **Sailing:** ship handling, regional weather, grounding, `.vox` ships, gamepad, wake and wind streaks.
@@ -829,7 +928,7 @@ verified in the running game. None of those directories import from `render`,
 4. ✅ **Ports & economy:** a seeded five-port archipelago with harbours and towns; supply-and-demand markets, the price book and rumours; freight, bounties and smuggling; reputation with three factions and a fixer; shipyard refits and ships; crew hiring; the chart; React menus driven by keyboard or controller.
 5. ✅ **On foot & camps:** walking ashore anywhere and around ports (signed doors, graded roads); axe, pickaxe, shovel and hoe; campfire claims; huts, storehouses, fences, paths, torches; sugar cane, tobacco and pepper; timber, stone and seed as trade goods; a cutaway view; autosave and named saves.
 6. ✅ **Crews, production & night:** settlers hired in taverns who farm, cut wood, fish and work six workshops (sawpit, sugar mill, distillery, curing shed, smokehouse, forge), fed each morning and housed in huts; voxel-surface pathfinding; maize, iron ore, planks and a carpenter; a configurable day and night with moonlight, lanterns and glowing windows, night raiders, slack customs, a fixer who works after dark, crabs and boar after your crops, bats and ghost lights; sleeping through the night.
-7. **Treasure hunting:** hand-drawn-style maps of real terrain, riddles generated from landmarks, dig sites. Hooks in place and open questions: [phase-7-treasure.md](phase-7-treasure.md).
+7. ✅ **Treasure hunting:** named islets; maps from the fixer, prizes and tavern talk, drawn on parchment from the real coastline (an X near home, directions further out, sun-riddles far out); landmarks and chests two spades down; cursed hoards guarded at night by a ghost captain in the duel; five unique finds; Blackwood's chart in three pieces, leading to his hoard and the letter that opens Phase 8.
 8. **Story:** the opening (orphaned, adopted by a merchant captain, the Imperial attack), the black flag, the revenge arc.
 
 **Later:** docks and building over water. Jetties from your camps where the ship can

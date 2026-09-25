@@ -30,7 +30,7 @@ export function drawTreasureMap(canvas: HTMLCanvasElement, world: VoxelWorld, is
   g.fillText(style === 'riddle' ? (map.tier === 'legend' ? 'Blackwood’s Chart' : 'A Riddle') : islandName(plan), size / 2, 64 * u);
 
   if (style === 'riddle') {
-    doodle(g, size, u, map.tier);
+    doodle(g, size, u * 1.7, map.tier);
     writeClue(g, map.clue, size / 2, 200 * u, 440 * u, 30 * u, 22 * u);
     return;
   }
@@ -157,7 +157,7 @@ function mark(g: CanvasRenderingContext2D, l: Landmark, ox: number, oz: number, 
 /** A skull and crossbones for the cursed, a compass rose for the rest. */
 function doodle(g: CanvasRenderingContext2D, size: number, u: number, tier: TreasureMap['tier']): void {
   const x = size / 2;
-  const y = 130 * u;
+  const y = size * 0.23;
   g.save();
   g.strokeStyle = tier === 'cursed' ? RED : INK;
   g.fillStyle = g.strokeStyle;

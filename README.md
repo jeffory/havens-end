@@ -19,7 +19,7 @@ npm run characters:generate    # Tripo via ComfyUI -> art-source/characters/*.gl
 npm run characters:voxelize    # -> public/models/characters/*.vox
 ```
 
-## Controls (Phase 6: crews, production and night)
+## Controls (Phase 7: treasure hunting)
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
@@ -28,7 +28,7 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | Fire port / starboard broadside | Q / E | LT / RT |
 | Round / chain / grape shot | 1 / 2 / 3 (R cycles) | X cycles |
 | Board a ship alongside / dock in a harbour / row ashore | B | B |
-| Sea chart | M | View (Back) |
+| Sea chart (Q / E: your treasure maps) | M | View (Back) |
 | **Menus:** move / choose | arrows or WASD / Enter | d-pad or left stick / A |
 | **Menus:** switch place / back | Q / E, Esc | LB / RB, B |
 | Game menu: save, load, new game | Esc | Start |
@@ -105,6 +105,16 @@ business. Ashore, crabs and boar come for your crops: fence your fields and ligh
 torches, or catch them for the pot. Sleep through the night in a hut, or take a room
 at a tavern. Something glows over a few islets after dark...
 
+**Treasure.** Fixers sell treasure maps after dark, captured ships sometimes carry
+them, and sailors talk of treasure over a round. Read them on the chart (M, then Q/E).
+Near home a map is a sketch of the real islet with an X; further out it gives
+directions from a landmark (a skull rock, a cairn, a dead tree); far out it's a riddle
+that counts paces by the sun. A pace is a block, and the compass on foot shows north.
+Dig two spades deep at the spot. Chests hold gold, goods and sometimes one of five
+unique finds. On the three cursed isles, the dead guard their hoards: dig by night and
+a ghostly captain rises to duel you. Each cursed hoard holds a piece of a pirate
+king's chart...
+
 Board a ship that hasn't struck and her captain fights you on deck. Watch the ring on
 their blade: white can be blocked, and tapped block **as it turns gold** is a parry;
 red can only be dodged with a roll. Kicks break a raised guard. Win and she's yours,
@@ -118,7 +128,7 @@ e.g. `game.ship`, `game.sea.vessels` or `game.weather.windAt(0, 0, 0)`.
 
 Ships are MagicaVoxel `.vox` files in `public/models/ships/`. The authoring
 conventions (axes, naming the `hull` / `sail` / `flag` objects) are in
-[docs/ARCHITECTURE.md §11](docs/ARCHITECTURE.md#11-ship-art-magicavoxel-authoring-guide).
+[docs/ARCHITECTURE.md §12](docs/ARCHITECTURE.md#12-ship-art-magicavoxel-authoring-guide).
 
 ## Generated art
 
@@ -130,7 +140,7 @@ icons, HD materials and `.vox` props through a ComfyUI server. Copy `.env.exampl
 ## Docs
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack decisions, world
-model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, settlers, workshops and the night, the character art pipeline, simulation rules and roadmap.
+model, voxel/ocean/sailing/combat/duel pipelines, ports and the economy, going ashore, camps and saves, settlers, workshops and the night, treasure hunting, the character art pipeline, simulation rules and roadmap.
 
 ## Deploy
 

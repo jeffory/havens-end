@@ -70,7 +70,7 @@ export class Hud {
     const help = document.createElement('div');
     help.className = 'hud';
     help.innerHTML = `
-      <div class="hud-title">Haven's End <span>phase 6 · crews, production &amp; night</span></div>
+      <div class="hud-title">Haven's End <span>phase 7 · treasure hunting</span></div>
       <div class="hud-help">
         <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
         <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />

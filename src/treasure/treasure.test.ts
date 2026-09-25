@@ -117,6 +117,7 @@ describe('treasure maps', () => {
       }
       expect([x, z]).toEqual([site.x, site.z]);
       expect(site.legs).toHaveLength(tier === 'mid' ? 1 : 2);
+      if (site.legs.length === 2) expect(HEADINGS[site.legs[0].heading].dx * HEADINGS[site.legs[1].heading].dx + HEADINGS[site.legs[0].heading].dz * HEADINGS[site.legs[1].heading].dz).toBe(0);
       expect(clue).toMatch(tier === 'mid' ? /paces (north|south|east|west)/ : /toward the (sunrise|sunset|pole star|noonday sun)/);
     }
   });
