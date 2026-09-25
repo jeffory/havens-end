@@ -220,6 +220,10 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFShadowMap;
     this.renderer.toneMapping = NeutralToneMapping; // keeps the palette's hues, unlike ACES
+    // Each frame draws the scene twice (once under the sea, for the water to look into): shadows
+    // are drawn for the first only, and the stats count both.
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.info.autoReset = false;
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = this.sky;
@@ -579,6 +583,7 @@ export class Game {
     const overhead = this.weather.windAt(focus.x, focus.z, time);
     this.sun.setSky(phase, overhead.squall);
     this.sky.copy(this.sun.skyColor);
+    this.ocean.setSky(this.sky, 1 - dark, overhead.squall);
     this.fog.color.copy(this.sky);
     this.sun.follow(focus, this.duel ? 25 : rig.distance);
     this.fog.near = rig.distance * 1.4 * (1 - 0.5 * dark);
@@ -598,6 +603,7 @@ export class Game {
     this.music.update({ where, fighting, singing: this.settings.shanties }, frameSeconds);
 
     this.terrain.update(REMESH_BUDGET, focus);
+    this.terrain.setTime(time);
     this.wakes.update(time);
     this.ocean.update(time, rig.focus);
     this.streaks.update(rig.focus, rig.distance * 0.9, time, frameSeconds);
@@ -608,6 +614,9 @@ export class Game {
     this.effects.update(frameSeconds);
     this.handleLand(time);
 
+    this.renderer.info.reset();
+    this.renderer.shadowMap.needsUpdate = true;
+    this.ocean.renderBelow(this.renderer, this.scene, rig.camera);
     this.renderer.render(this.scene, rig.camera);
     this.signs.update(paused ? [] : signs, rig.camera, this.container.clientWidth, this.container.clientHeight);
     if (!paused && !this.land.walker) {
@@ -632,7 +641,7 @@ export class Game {
       const light = BUILDING_LIGHT[b.kind];
       if (light) sources.push({ x: b.x0 + b.w / 2, y: b.y + light.height, z: b.z0 + b.d / 2, strength: light.strength, flicker: true });
     }
-    for (const port of this.ports) for (const lamp of port.lamps) sources.push({ ...lamp, y: lamp.y + 1.2, strength: 0.8, flicker: false });
+    for (const port of this.ports) for (const lamp of port.lamps) sources.push({ ...lamp, y: lamp.y + 1.2, strength: 0.8, flicker: false, halo: lamp.y });
     const p = this.fleet.pose(this.sea.player.id);
     if (p && !this.land.walker) sources.push({ x: p.x, y: WATER_LEVEL + this.sea.player.cls.body.top * 0.5, z: p.z, strength: 0.6, flicker: false });
     // Ashore after dark, the captain carries a lantern.

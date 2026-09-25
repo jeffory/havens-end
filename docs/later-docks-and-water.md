@@ -12,8 +12,8 @@ Build out over the water:
 
 ## What's in the game already
 
-- **Piers and docking.** Every port has a pier (`worldgen/harbour.ts`, with a lamp
-  at its head). The ship comes alongside it (`Sea.docked`, `DOCK_SPEED`), and the
+- **Piers and docking.** Every port has a pier (`worldgen/harbour.ts`, with lamps
+  at its head and down its sides). The ship comes alongside it (`Sea.docked`, `DOCK_SPEED`), and the
   captain steps off (`Land.landAtPort`). A camp jetty could reuse all of this.
 - **Building one cell at a time.** Fences and paths are free-form pieces
   (`land/structures.ts`, `freeform`), placed through the build menu. The rules are in

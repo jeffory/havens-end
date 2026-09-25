@@ -62,8 +62,9 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
   for (const door of doors) buildRoad(world, foot.x, foot.z, door, plots);
   const end = site.deep + PIER_REACH;
   buildPier(world, island, dx, dz, site.landing, end);
-  // Lamps at the pier head, to find the berth by after dark.
+  // Lamps at the pier head, to find the berth by after dark, and down its sides to the beach.
   const lamps = [-1, 1].map((w) => lampPost(world, at(end - 0.5, w)));
+  for (let t = end - 6.5, w = 1; t > site.landing + 1; t -= 6, w = -w) lamps.push(lampPost(world, at(t, w)));
   if (beacon) lamps.push(beacon);
 
   // Moored alongside, bow out to sea.

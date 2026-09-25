@@ -1,4 +1,5 @@
-import { Group, PointLight } from 'three';
+import { Group, PointLight, Sprite, type SpriteMaterial } from 'three';
+import { glowMaterial } from './glow';
 
 /** Something that lights its surroundings after dark: a fire, a torch, a lamp or a lantern. */
 export interface LightSource {
@@ -10,6 +11,8 @@ export interface LightSource {
   strength: number;
   /** Flames flicker; lamps behind glass don't. */
   flicker: boolean;
+  /** The height of a lamp's glass, for a halo round it. Fires have none: their embers glow. */
+  halo?: number;
 }
 
 /** A fixed number of point lights, so the shaders never recompile as lights come and go. */
@@ -26,6 +29,7 @@ const REACH = 90;
 export class NightLights {
   readonly group = new Group();
   private readonly lights: PointLight[] = [];
+  private readonly halos: Array<Sprite & { material: SpriteMaterial }> = [];
 
   constructor() {
     this.group.name = 'night-lights';
@@ -33,7 +37,11 @@ export class NightLights {
       const light = new PointLight(0xffa040, 0, RANGE, 1.6);
       light.castShadow = false;
       this.lights.push(light);
-      this.group.add(light);
+      const halo = new Sprite(glowMaterial(0xffb45a));
+      halo.scale.setScalar(4);
+      halo.visible = false;
+      this.halos.push(halo);
+      this.group.add(light, halo);
     }
   }
 
@@ -49,6 +57,8 @@ export class NightLights {
             .slice(0, POOL);
     this.lights.forEach((light, i) => {
       const e = near[i];
+      const halo = this.halos[i];
+      halo.visible = e?.s.halo !== undefined;
       if (!e) {
         light.intensity = 0;
         return;
@@ -57,6 +67,10 @@ export class NightLights {
       const flicker = s.flicker ? 0.85 + 0.15 * Math.sin(time * 11 + i * 1.7) * Math.sin(time * 7.3 + i) : 1;
       light.position.set(s.x, s.y, s.z);
       light.intensity = INTENSITY * s.strength * dark * flicker;
+      if (s.halo !== undefined) {
+        halo.position.set(s.x, s.halo, s.z);
+        halo.material.opacity = dark * 0.85;
+      }
     });
   }
 }

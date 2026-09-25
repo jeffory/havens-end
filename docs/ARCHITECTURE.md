@@ -104,9 +104,34 @@ per frame: ChunkRenderer.update(budget)
   accurate after hours of play.
 - **Depth-aware colour.** `SeabedMap` keeps a 256×256 byte map of terrain height
   around the camera, uploaded as a texture. It re-centres as you sail, keeping the
-  overlap and reading only the new strip from the world. The shader uses it for the turquoise-to-navy ramp,
-  see-through shallows, beach surf, and to collapse columns inside dry land. It
-  follows terrain edits, so digging a channel floods it.
+  overlap and reading only the new strip from the world. The shader uses it for beach
+  surf, and to collapse columns inside dry land. It follows terrain edits, so digging a
+  channel floods it.
+- **See-through water.** Each frame the scene is first drawn without the sea into a
+  colour + depth target (`OceanRenderer.renderBelow`); then the normal render draws
+  the water, which looks into it. From the depth it knows how much water lies between
+  the eye and whatever is below, and fades that toward the water's colour: red is
+  soaked up first, so sand turns turquoise, then blue, then is lost. So the shallows
+  show the stepped seabed, and hulls and waders show below the waterline. The water
+  is opaque (it does its own blending), so nothing depends on draw order.
+  - Each cell bends the view by the swell's slope across it, so the seabed wobbles in
+    blocks. It never bends in something standing out of the water in front.
+  - Where something breaks the surface out in open water (a hull, a post, a wader's
+    legs), the water is thin, and it foams in a dithered ring.
+  - Shadows are drawn once, for the first pass (`shadowMap.autoUpdate` is off), and
+    the stats count both passes. On a Radeon 890M the extra pass costs about 1 ms of
+    CPU a frame; the GPU time didn't measurably change.
+- **Glints and reflections.** Each cell's top tilts with the slope of the swell (and
+  shivers a little), so the sun and the moon glint off the sea in blocks: a patch of
+  glitter under the moon at night. Each cell also reflects the sky and a layer of
+  drifting clouds, looked up along its own tilt; the cells work that out once a corner,
+  in the vertex shader, not for every pixel. Lamps and lanterns (the point lights,
+  §10) shine back off the water as broken streaks running down the screen: a cell
+  is lit if it's near the line from a lamp's mirror image toward the viewer, twinkling.
+- **Caustics** (`ChunkRenderer`). Under the water, light on the seabed is focused into
+  a drifting web of bright lines, four spots to a voxel: brightest just under the
+  surface and gone about eight down. They scale the direct light, so they follow the
+  sun, the moon and the lamps, and never show in shadow.
 - **Foam.** Ship wakes and shot splashes are points in a pool (`render/Wake.ts`).
   Each frame the ocean stamps them into a 160×160 foam texture aligned with the
   water grid. The shader samples it once and dithers it into blocky foam. (A
@@ -352,7 +377,7 @@ Each port island gets a harbour:
 - **Pier.** The builder walks out from the island's centre (square to the grid first,
   then diagonals, so piers come out clean). It picks a spot where deep water comes
   close to the beach with open sea beyond, then runs a pier of planks on pilings out
-  past the drop-off.
+  past the drop-off. Lamp posts stand at its head and every 6 voxels down its sides.
 - **Town.** Built behind the landing, in the faction's style:
   - free ports: plaster and slate;
   - Imperial ports: plaster and terracotta, plus a stone watchtower;
@@ -642,7 +667,8 @@ straight into the storehouses.
     mesh, alongside the cutaway flag.
   - Six point lights, a fixed pool so shaders never recompile, go to the nearest
     campfires, torches, forges, pier lamps, Imperial beacons, your ship, and the
-    lantern the captain carries ashore.
+    lantern the captain carries ashore. Pier lamps and beacons get a halo, and every
+    light in the pool shines back off the water as a streak (§4).
   - Every ship shows a stern lantern with a halo, which is how you spot her in the dark.
 - **At sea:**
   - Lookouts see 55% as far.

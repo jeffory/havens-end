@@ -1,4 +1,5 @@
 import { Color, Group, Mesh, MeshLambertMaterial, Vector3, Vector4 } from 'three';
+import { glslFloat, WATER_LEVEL } from '../ocean/waves';
 import { BLOCK_PALETTE, type BlockId } from '../voxel/blocks';
 import type { Chunk } from '../voxel/Chunk';
 import { CHUNK_SIZE } from '../voxel/Chunk';
@@ -27,6 +28,8 @@ export class ChunkRenderer {
   /** Land marked out on the ground (a town's): centre x, z, radius, and how strongly it shows (0 = not at all). */
   private readonly zone = { value: new Vector4(0, 0, 0, 0) };
   private readonly zoneColor = { value: new Color(ZONE_COLOR) };
+  /** Seconds, to move the caustics on the seabed. */
+  private readonly time = { value: 0 };
 
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
@@ -36,6 +39,7 @@ export class ChunkRenderer {
       shader.uniforms.uGlow = this.glow;
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
+      shader.uniforms.uTime = this.time;
       // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;')
@@ -46,7 +50,30 @@ export class ChunkRenderer {
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
-          '#include <common>\nuniform vec4 uCut;\nuniform vec3 uCutView;\nuniform float uGlow;\nuniform vec4 uZone;\nuniform vec3 uZoneColor;\nvarying vec3 vCutWorld;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;',
+          /* glsl */ `#include <common>
+uniform vec4 uCut;
+uniform vec3 uCutView;
+uniform float uGlow;
+uniform vec4 uZone;
+uniform vec3 uZoneColor;
+uniform float uTime;
+varying vec3 vCutWorld;
+varying float vCutaway;
+varying float vGlow;
+varying float vUp;
+/** Light focused by the swell onto the seabed: a drifting web of bright lines, 0 to 1. */
+float caustics(vec2 p, float t) {
+  p = mod(p, 6.2831853) - 250.0;
+  vec2 i = p;
+  float c = 1.0;
+  for (int n = 0; n < 4; n++) {
+    float s = t * (1.0 - 3.5 / float(n + 1));
+    i = p + vec2(cos(s - i.x) + sin(s + i.y), sin(s - i.y) + cos(s + i.x));
+    c += 1.0 / length(vec2(p.x / (sin(i.x + s) / 0.005), p.y / (cos(i.y + s) / 0.005)));
+  }
+  c = 1.17 - pow(c / 4.0, 1.4);
+  return pow(abs(c), 8.0);
+}`,
         )
         .replace(
           '#include <color_fragment>',
@@ -59,6 +86,19 @@ if (uZone.w > 0.0) {
   float stripe = step(0.5, fract((vCutWorld.x + vCutWorld.z) * 0.2));
   float inside = step(d, uZone.z) * step(0.5, vUp) * (0.22 + 0.2 * stripe) * uZone.w;
   diffuseColor.rgb = mix(diffuseColor.rgb, uZoneColor, max(zoneEdge, inside));
+}`,
+        )
+        .replace(
+          '#include <lights_fragment_end>',
+          /* glsl */ `#include <lights_fragment_end>
+// Under the water, sunlight (and lamplight) dances on the seabed: brightest just under the surface,
+// gone a few voxels down. In blocks, four to a voxel, to suit the rest of the world.
+float under = ${glslFloat(WATER_LEVEL)} - vCutWorld.y;
+if (under > 0.0) {
+  vec2 spot = floor(vCutWorld.xz * 4.0) / 4.0;
+  // Focused, not added: bright lines, dimmer between them, much the same light overall.
+  float caustic = 3.5 * caustics(spot * 0.8, uTime * 0.6) - 0.35;
+  reflectedLight.directDiffuse *= 1.0 + caustic * smoothstep(0.0, 0.5, under) * (1.0 - smoothstep(2.0, 8.0, under));
 }`,
         )
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow + uZoneColor * zoneEdge * 0.5;')
@@ -82,6 +122,12 @@ if (uCut.w > 0.0 && vCutaway > 0.5 && cutHeight > 2.3 && dot(vCutWorld.xz - uCut
   setZone(zone: { x: number; z: number; radius: number; amount: number } | null): void {
     if (zone) this.zone.value.set(zone.x, zone.z, zone.radius, zone.amount);
     else this.zone.value.w = 0;
+  }
+
+  /** Moves the caustics on the seabed along. */
+  setTime(seconds: number): void {
+    // Wrapped so the shader's sines keep their precision; the pattern jumps once an hour, unnoticed.
+    this.time.value = seconds % 3600;
   }
 
   /** How strongly glowing blocks light themselves: 0 not at all, ~2 on a dark night. */
