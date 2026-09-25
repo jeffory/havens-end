@@ -940,6 +940,9 @@ src/
   main.ts              entry: loads the ship, starts the game; `game` on window in dev
   core/                FixedStep, GameLoop, Input, Controls (keyboard + gamepad),
                        clock (time of day)
+  audio/               sea shanties: the tracks (every MP3 in assets/music/shanties,
+                       found at build time) and the ShantyPlayer (N at sea strikes
+                       up a shuffled round; hushed ashore, it resumes mid-song)
   voxel/               engine-agnostic voxel core, no three.js imports
     blocks.ts          block ids, colours, solidity
     palette.ts         colour + solidity tables for the mesher

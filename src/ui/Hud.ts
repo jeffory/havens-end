@@ -74,11 +74,11 @@ export class Hud {
       <div class="hud-help">
         <kbd>W</kbd><kbd>S</kbd> sails · <kbd>A</kbd><kbd>D</kbd> steer ·
         <kbd>Q</kbd><kbd>E</kbd> fire port / starboard · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> shot<br />
-        <kbd>B</kbd> board / dock / row ashore · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>Esc</kbd> menu · <kbd>Z</kbd><kbd>C</kbd> view · wheel zoom
+        <kbd>B</kbd> board / dock / row ashore · <kbd>M</kbd> chart · <kbd>J</kbd> journal · <kbd>N</kbd> shanty · <kbd>Esc</kbd> menu · <kbd>Z</kbd><kbd>C</kbd> view · wheel zoom
       </div>
       <div class="hud-help hud-pad" hidden>
         🎮 <kbd>LS</kbd> steer · <kbd>↑</kbd><kbd>↓</kbd> sails · <kbd>LT</kbd><kbd>RT</kbd> fire · <kbd>X</kbd> shot<br />
-        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>Start</kbd> menu · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
+        <kbd>B</kbd> board / ashore · <kbd>View</kbd> chart · <kbd>RS</kbd> shanty · <kbd>Start</kbd> menu · <kbd>LB</kbd><kbd>RB</kbd> view · <kbd>RS</kbd> zoom
       </div>
       <div class="hud-stats"></div>`;
 

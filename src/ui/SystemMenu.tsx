@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { DAY_MINUTE_CHOICES } from '../core/clock';
 import { AUTOSAVE, listSaves, type SaveListing, type SaveSummary } from '../save/storage';
-import type { Settings } from './settings';
+import { SHANTIES } from '../audio/shanties';
+import { type Settings, VOLUME_CHOICES } from './settings';
 import { focusFirst } from './menuNav';
 import type { NavHandlers } from './Overlay';
 
@@ -143,6 +144,24 @@ export function SystemMenu({ title, summary, resume, save, load, remove, newGame
             <p className="hint">
               A whole day and night takes {settings.dayMinutes} minutes of play; about a third of it is night. Settlers work by day and sleep at night, when
               pirates prowl and creatures come out.
+            </p>
+            <h3>Shanty volume</h3>
+            <div className="choice-row">
+              {VOLUME_CHOICES.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={v === settings.musicVolume ? 'active' : ''}
+                  aria-pressed={v === settings.musicVolume}
+                  onClick={() => change({ ...settings, musicVolume: v })}
+                >
+                  {Math.round(v * 100)}%
+                </button>
+              ))}
+            </div>
+            <p className="hint">
+              At sea, press N (the right stick on a controller) and the crew strikes up a shanty; press it again and they fall quiet.
+              {SHANTIES.length > 0 && ` They know ${SHANTIES.length === 1 ? 'one' : SHANTIES.length}: ${SHANTIES.map((t) => t.title).join(', ')}.`}
             </p>
           </>
         )}

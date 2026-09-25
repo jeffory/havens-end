@@ -30,6 +30,7 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | Board a ship alongside / dock in a harbour / row ashore | B | B |
 | Sea chart (Q / E: your treasure maps) | M | View (Back) |
 | Journal: the story so far | J | Start, then Journal |
+| The crew strikes up a shanty, or falls quiet | N | Right stick click |
 | **Menus:** move / choose | arrows or WASD / Enter | d-pad or left stick / A |
 | **Menus:** switch place / back | Q / E, Esc | LB / RB, B |
 | Game menu: save, load, new game | Esc | Start |
@@ -132,6 +133,17 @@ back to the last port.
 
 In dev builds the running game is exposed as `game` in the browser console,
 e.g. `game.ship`, `game.sea.vessels` or `game.weather.windAt(0, 0, 0)`.
+
+## Sea shanties
+
+At sea, press N (the right stick's click on a controller) and the crew strikes up a
+shanty. They carry on through a shuffled round, with a pause between songs, until you
+press it again. They fall quiet when you go ashore, fight a duel or sleep, and pick up
+mid-song when you're back at sea. The volume is in the game menu's settings. To add one, drop an
+MP3 into `src/assets/music/shanties/`. It's found at build time, and its file name
+becomes its title, so `01-haul-away-to-haven.mp3` is "Haul Away to Haven". Strip any
+tags you don't want published (`ffmpeg -i in.mp3 -map_metadata -1 -c:a copy out.mp3`):
+MP3s made with ComfyUI carry the whole workflow in them.
 
 ## Ship art
 

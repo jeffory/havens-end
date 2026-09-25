@@ -23,6 +23,11 @@ describe('readPad', () => {
     expect(readPad(pad(undefined, [PAD.RIGHT]), new Set()).rudder).toBe(1);
   });
 
+  it('has the crew strike up a shanty (or fall quiet) on the right stick’s click, at sea only', () => {
+    expect(readPad(pad(undefined, [PAD.RS]), new Set()).actions).toEqual(['shanty']);
+    expect(readPad(pad(undefined, [PAD.RS]), new Set(), 'foot').actions).toEqual([]);
+  });
+
   it('reports a button as an action only on the frame it goes down', () => {
     const first = readPad(pad(undefined, [PAD.UP, PAD.RB]), new Set());
     expect(first.actions.sort()).toEqual(['rotateRight', 'sailUp']);

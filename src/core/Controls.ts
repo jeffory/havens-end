@@ -15,6 +15,7 @@ export type Action =
   | 'board'
   | 'chart'
   | 'journal'
+  | 'shanty'
   | 'system'
   // On foot
   | 'interact'
@@ -54,7 +55,7 @@ export type Action =
 export type ControlMode = 'sea' | 'duel' | 'menu' | 'foot';
 
 /** Button indices in the W3C "standard" gamepad layout, with Xbox names. */
-export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
+export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, LS: 10, RS: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
 const AXIS = { LX: 0, LY: 1, RY: 3 } as const;
 /** How far the stick must go to count as a menu move, and the auto-repeat while it's held. */
 const STICK_NAV = 0.55;
@@ -77,6 +78,7 @@ const SEA_PAD: Bindings<number> = [
   [PAD.B, 'board'],
   [PAD.BACK, 'chart'],
   [PAD.START, 'system'],
+  [PAD.RS, 'shanty'],
 ];
 
 const FOOT_PAD: Bindings<number> = [
@@ -130,6 +132,7 @@ const SEA_KEYS: Bindings<string> = [
   ['KeyB', 'board'],
   ['KeyM', 'chart'],
   ['KeyJ', 'journal'],
+  ['KeyN', 'shanty'],
   ['Escape', 'system'],
 ];
 
