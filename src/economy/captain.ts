@@ -1,3 +1,5 @@
+import type { RelicId } from '../treasure/relics';
+import type { TreasureMap } from '../treasure/Treasure';
 import type { Contract } from './contracts';
 import type { Cargo } from './goods';
 import type { Logbook } from './logbook';
@@ -16,6 +18,14 @@ export interface Captain {
   pack: Cargo;
   /** Settlers hired in a tavern, aboard until they're settled at a camp. */
   passengers: number;
+  /** Treasure maps in the captain's case. */
+  maps: TreasureMap[];
+  /** Unique finds from buried treasure. */
+  relics: RelicId[];
+  /** Pieces of Blackwood's chart found. */
+  pieces: number;
+  /** The sealed letter from Blackwood's hoard. */
+  letter: boolean;
 }
 
 export const STARTING_GOLD = 200;
@@ -25,5 +35,5 @@ export const PACK_SIZE = 40;
 export const PASSENGER_BERTHS = 8;
 
 export function createCaptain(home: Port): Captain {
-  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {}, passengers: 0 };
+  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {}, passengers: 0, maps: [], relics: [], pieces: 0, letter: false };
 }

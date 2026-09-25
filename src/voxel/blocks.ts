@@ -39,6 +39,11 @@ export const Block = {
   MaizeStalk: 30,
   MaizeCob: 31,
   Sapling: 32,
+  // Phase 7: buried treasure, and the landmarks that point to it
+  Chest: 33,
+  Bone: 34,
+  Deadwood: 35,
+  Cairn: 36,
 } as const;
 
 export type BlockId = number;
@@ -82,6 +87,10 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.MaizeStalk]: { name: 'maize', color: 0x86b847 },
   [Block.MaizeCob]: { name: 'maize cobs', color: 0xe9c85a },
   [Block.Sapling]: { name: 'sapling', color: 0x5f9e3a },
+  [Block.Chest]: { name: 'treasure chest', color: 0x6b3f1d },
+  [Block.Bone]: { name: 'bone-white rock', color: 0xe6dfcb },
+  [Block.Deadwood]: { name: 'dead wood', color: 0x7d766b },
+  [Block.Cairn]: { name: 'cairn stone', color: 0x6f777d },
 };
 
 const SOLID = new Uint8Array(256);
@@ -120,7 +129,7 @@ export const blocksWalker = (id: BlockId): boolean => SOLID[id] === 1 && PASSABL
 
 const FLAGS = new Uint8Array(256);
 // Trees and buildings: what the on-foot cutaway may open up. Never the ground itself.
-for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence, Block.Window, Block.Copper, Block.Barrel]) {
+for (const id of [Block.Wood, Block.Leaves, Block.PalmLeaves, Block.Planks, Block.Plaster, Block.RoofTile, Block.RoofSlate, Block.Thatch, Block.Fence, Block.Window, Block.Copper, Block.Barrel, Block.Deadwood]) {
   FLAGS[id] |= FLAG_CUTAWAY;
 }
 // What glows after dark.

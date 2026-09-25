@@ -3,7 +3,7 @@ import { SEA_LEVEL } from '../config';
 import { Block } from '../voxel/blocks';
 import { collides, STEP_UP, standable } from '../land/walker';
 import { VoxelWorld } from '../voxel/VoxelWorld';
-import { buildArchipelago, planArchipelago } from './archipelago';
+import { buildArchipelago, islandName, planArchipelago } from './archipelago';
 
 describe('planArchipelago', () => {
   it('is deterministic in its seed', () => {
@@ -28,6 +28,16 @@ describe('planArchipelago', () => {
     const cursed = islands.filter((i) => i.cursed);
     expect(cursed).toHaveLength(3);
     expect(cursed.every((i) => !i.port)).toBe(true);
+  });
+
+  it('names every islet, each its own name, and the cursed ones grimly', () => {
+    const islands = planArchipelago(1717);
+    const islets = islands.filter((i) => !i.port);
+    const names = islets.map(islandName);
+    expect(new Set(names).size).toBe(islets.length);
+    expect(islets.every((i) => i.name)).toBe(true);
+    expect(islands.filter((i) => i.cursed).every((i) => ["Dead Man's Cay", 'Wraith Key', 'Weeping Isle', 'Hollow Cay', 'Bonefire Key'].includes(i.name!))).toBe(true);
+    expect(islandName(islands[0])).toBe('Haven');
   });
 
   it('keeps islands apart, and islets well clear of harbours', () => {

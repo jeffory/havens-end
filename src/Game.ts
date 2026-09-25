@@ -40,6 +40,7 @@ import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
 import { NightLife } from './render/NightLife';
 import { DropsView } from './render/DropsView';
+import { Treasure } from './treasure/Treasure';
 import { PeopleView } from './render/PeopleView';
 import { Shore, sleepy } from './Shore';
 import { BuildMenu } from './ui/BuildMenu';
@@ -124,6 +125,7 @@ export class Game {
   readonly sea: Sea;
   readonly economy: Economy;
   readonly land: Land;
+  readonly treasure: Treasure;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly sky = SKY_COLOR.clone();
@@ -215,6 +217,8 @@ export class Game {
     this.sea = new Sea(this.world, this.weather, classes, SLOOP, this.ports, WORLD_SEED);
     this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
     this.land = new Land(this.world, this.sea, WORLD_SEED);
+    this.treasure = new Treasure(this.world, this.sea, this.land, this.islands, this.economy.fixers, WORLD_SEED);
+    this.economy.rumourSources.push((port) => this.treasure.rumour(port));
     this.sea.clock.length = this.settings.dayMinutes * 60;
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
@@ -299,6 +303,7 @@ export class Game {
       sea: this.sea.snapshot(),
       economy: this.economy.snapshot(),
       land: this.land.snapshot(),
+      treasure: this.treasure.snapshot(),
       course: this.course?.id ?? null,
       edits: this.world.editedChunks().map((c) => ({ cx: c.cx, cy: c.cy, cz: c.cz, data: encodeRuns(c.data) })),
     };
@@ -311,6 +316,7 @@ export class Game {
     this.sea.restore(data.sea);
     this.economy.restore(data.economy);
     this.land.restore(data.land);
+    if (data.treasure) this.treasure.restore(data.treasure);
     this.course = data.course === null ? null : (this.ports[data.course] ?? null);
     this.seabed.rebuild();
     this.restored = true;
@@ -476,6 +482,7 @@ export class Game {
     const dark = darkness(phase);
     this.handleEvents(sea.takeEvents(), time);
     this.notify(this.economy.takeNotices());
+    this.notify(this.treasure.takeNotices());
     this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds, dark);
 
     const pose = this.fleet.pose(player.id)!;
@@ -616,6 +623,7 @@ export class Game {
           const loot = [e.gold > 0 && `${e.gold} gold`, e.goods > 0 && `${e.goods} goods`].filter(Boolean).join(' and ');
           const hands = e.joined > 0 ? `${e.joined} of her crew sign on.` : 'No room aboard for any of her crew.';
           this.hud.toast(`The ${e.name} is ours!${loot ? ` Plunder: ${loot}.` : ''} ${hands}`, 'good');
+          this.treasure.prize(e.faction, e.name);
           break;
         }
         case 'boardingFight':

@@ -10,6 +10,8 @@ import { applyDeed, type Deed, portOpen } from '../economy/reputation';
 import { hullContacts, type ShipSpec, stepShip } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { Weather } from '../sailing/weather';
+import { DOUBLOON_GOLD, hasRelic, type RelicId } from '../treasure/relics';
+import type { TreasureMap } from '../treasure/Treasure';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { mulberry32 } from '../worldgen/noise';
 import { thinkCaptain } from './ai';
@@ -81,6 +83,10 @@ export interface SeaSnapshot {
     logbook: Logbook;
     pack: Cargo;
     passengers?: number;
+    maps?: TreasureMap[];
+    relics?: RelicId[];
+    pieces?: number;
+    letter?: boolean;
   };
 }
 
@@ -187,6 +193,10 @@ export class Sea {
         logbook: structuredClone(c.logbook),
         pack: { ...c.pack },
         passengers: c.passengers,
+        maps: structuredClone(c.maps),
+        relics: [...c.relics],
+        pieces: c.pieces,
+        letter: c.letter,
       },
     };
   }
@@ -217,6 +227,10 @@ export class Sea {
       logbook: structuredClone(c.logbook),
       pack: { ...c.pack },
       passengers: c.passengers ?? 0,
+      maps: structuredClone(c.maps ?? []),
+      relics: [...(c.relics ?? [])],
+      pieces: c.pieces ?? 0,
+      letter: c.letter ?? false,
     });
     this.docked = s.docked === null ? null : (this.ports[s.docked] ?? null);
     this.ashore = s.ashore;
@@ -502,6 +516,8 @@ export class Sea {
     const joined = Math.max(0, Math.min(p.cls.type.crew - Math.floor(p.crew), Math.floor(target.crew * 0.5)));
     p.crew += joined;
     syncCondition(p);
+    // The doubloon's luck: her purser turns out every pocket.
+    if (hasRelic(this.captain, 'doubloon')) target.gold = Math.round(target.gold * DOUBLOON_GOLD);
     this.captain.gold += target.gold;
     const moved = loadCargo(p.cargo, target.cargo, p.cls.type.hold - cargoCount(p.cargo));
     target.status = 'captured';

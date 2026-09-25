@@ -3,6 +3,7 @@ import { isNight } from '../core/clock';
 import type { Sea } from '../combat/sea';
 import { syncCondition } from '../combat/vessel';
 import type { ShipType } from '../sailing/ships';
+import { hasRelic } from '../treasure/relics';
 import { mulberry32 } from '../worldgen/noise';
 import { type Captain, PASSENGER_BERTHS } from './captain';
 import { type Bounty, type Contract, contractTitle, type Delivery, FAILURE_PENALTY, MAX_CONTRACTS, turnInPort } from './contracts';
@@ -104,6 +105,8 @@ export class Economy {
   readonly states: PortState[];
   /** The shady character in each port's tavern. */
   readonly fixers: string[];
+  /** Other talk a round can turn up (treasure), each asked in turn; they return a rumour or null. */
+  readonly rumourSources: Array<(port: Port) => string | null> = [];
   private readonly random: () => number;
   private readonly shocks: Shock[] = [];
   private shockIn = SHOCK_EVERY;
@@ -226,7 +229,9 @@ export class Economy {
     const muskets = cargo.muskets ?? 0;
     if (port.faction === 'imperial' && muskets > 0) {
       const night = isNight(this.sea.clock.phase) ? NIGHT_CUSTOMS : 0;
-      const chance = CUSTOMS_CHANCE + (standing.imperial < 0 ? 0.2 : 0) - (standing.imperial >= 50 ? 0.2 : 0) + night;
+      // The smuggler's ledger: a hold with false bottoms fools every search.
+      const ledger = hasRelic(this.captain, 'ledger') ? -Infinity : 0;
+      const chance = CUSTOMS_CHANCE + (standing.imperial < 0 ? 0.2 : 0) - (standing.imperial >= 50 ? 0.2 : 0) + night + ledger;
       if (this.random() < chance) {
         unload(cargo, 'muskets', muskets);
         const fine = Math.min(this.captain.gold, muskets * CUSTOMS_FINE);
@@ -438,6 +443,10 @@ export class Economy {
     const state = this.states[port.id];
     const heard: string[] = [];
     const want = this.afterDark() ? NIGHT_RUMOURS : RUMOURS_PER_ROUND;
+    for (const source of this.rumourSources) {
+      const rumour = source(port);
+      if (rumour) heard.push(rumour);
+    }
     for (let tries = 0; tries < 8 && heard.length < want; tries++) {
       const rumour = this.rumour(port);
       if (rumour && !state.rumours.includes(rumour) && !heard.includes(rumour)) heard.push(rumour);

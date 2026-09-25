@@ -155,6 +155,8 @@ export class Land {
   nextDrop = 1;
   /** When the captain was last told their pack is full. */
   fullToldAt = -Infinity;
+  /** Buried treasure, told of every block the shovel digs out: returns what to tell the captain, if anything. */
+  buried: { dig(x: number, y: number, z: number): string | null } | null = null;
   nextId = 1;
   private events: LandEvent[] = [];
   private readonly random: () => number;
@@ -650,6 +652,11 @@ export class Land {
         const id = world.getVoxel(x, y, z);
         this.drop(id === Block.Sand ? 'sand' : id === Block.Stone ? 'stone' : 'earth', x + 0.5, y + 0.5, z + 0.5);
         world.setVoxel(x, y, z, Block.Air);
+        const found = this.buried?.dig(x, y, z);
+        if (found) {
+          this.events.push({ kind: 'work', action: 'dig', x, y, z });
+          return done(found);
+        }
         break;
       }
       case 'till':

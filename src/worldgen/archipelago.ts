@@ -15,6 +15,8 @@ export interface IslandPlan extends IslandParams {
   port: PortPlan | null;
   /** An islet sailors won't go near: ghost lights hang over it at night. */
   cursed?: boolean;
+  /** What sailors call an islet (a port island goes by its port's name). */
+  name?: string;
 }
 
 /** How many of the islets are cursed. */
@@ -38,6 +40,12 @@ const NAMES: Record<PortFaction, string[]> = {
   pirate: ["Rook's Nest", 'Blackwater Cove', 'Gallows Key', 'Scupper Bay'],
   imperial: ['Fort Aldmar', 'San Cristóbal', 'Kingsreach', 'Port Regent', 'Castell Sorn', 'Aldmar Royal'],
 };
+
+const ISLET_NAMES = [
+  'Gull Cay', 'Pelican Key', 'Turtle Rock', 'Mangrove Isle', 'Coral Head', 'Parrot Cay', 'Brandy Key', 'Driftwood Cay',
+  'Saltpan Isle', 'Heron Key', 'Lantern Cay', 'Cutlass Key', 'Barracuda Cay', 'Conch Isle', 'Palmetto Key', 'Sandpiper Cay',
+];
+const CURSED_NAMES = ["Dead Man's Cay", 'Wraith Key', 'Weeping Isle', 'Hollow Cay', 'Bonefire Key'];
 
 const HOME: IslandPlan = { seed: 0, centerX: 0, centerZ: 0, radius: 58, peak: 22, port: { name: 'Haven', faction: 'merchant' } };
 const ISLETS = 14;
@@ -89,8 +97,16 @@ export function planArchipelago(seed: number): IslandPlan[] {
   // A few islets are shunned. Chosen by their own seeds, so the rest of the plan is as it was.
   const islets = islands.filter((i) => !i.port).sort((a, b) => hash2(a.seed, 7, seed) - hash2(b.seed, 7, seed));
   for (const islet of islets.slice(0, CURSED)) islet.cursed = true;
+  // Names from their own numbers too.
+  const naming = mulberry32(seed ^ 0x15e7);
+  const plain = shuffle(ISLET_NAMES, naming);
+  const grim = shuffle(CURSED_NAMES, naming);
+  for (const islet of islands.filter((i) => !i.port)) islet.name = (islet.cursed ? grim : plain).shift() ?? `Islet ${islands.indexOf(islet)}`;
   return islands;
 }
+
+/** An island's name: its port's, or the islet's own. */
+export const islandName = (plan: IslandPlan): string => plan.port?.name ?? plan.name ?? 'an unnamed islet';
 
 /**
  * Writes the whole archipelago into the world: every island, and a harbour and town on
