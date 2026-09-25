@@ -18,6 +18,10 @@ export interface FootReadout {
   hintOk: boolean;
   /** Placing a building: what, and the keys. */
   placing: string | null;
+  /** Which way north is on screen: radians clockwise from up. */
+  north: number;
+  /** The lodestone's pull toward buried treasure, if it's stirring. */
+  lodestone: string | null;
 }
 
 /** The on-foot overlay: the hotbar of tools and seed, the pack, and what's to hand. */
@@ -28,7 +32,11 @@ export class FootHud {
   private readonly prompt = document.createElement('div');
   private readonly hint = document.createElement('div');
   private readonly help = document.createElement('div');
+  private readonly compass = document.createElement('div');
+  private readonly needle = document.createElement('div');
+  private readonly lodestone = document.createElement('div');
   private shownSlots = '';
+  private shownNorth = NaN;
   /** A hotbar slot was clicked. */
   onSelect: ((index: number) => void) | null = null;
 
@@ -50,13 +58,21 @@ export class FootHud {
       e.preventDefault();
       this.onSelect?.(Number(slot.dataset.index));
     });
-    this.root.append(this.prompt, this.hint, this.pack, this.slots);
-    parent.append(this.help, this.root);
+    this.compass.className = 'foot-compass';
+    this.compass.title = 'North: riddles count paces by the compass and the sun';
+    this.needle.className = 'foot-needle';
+    this.needle.innerHTML = '<b>N</b>';
+    this.compass.append(this.needle);
+    this.compass.hidden = true;
+    this.lodestone.className = 'foot-lodestone';
+    this.root.append(this.lodestone, this.prompt, this.hint, this.pack, this.slots);
+    parent.append(this.help, this.compass, this.root);
   }
 
   setVisible(visible: boolean): void {
     this.root.hidden = !visible;
     this.help.hidden = !visible;
+    this.compass.hidden = !visible;
   }
 
   update(r: FootReadout): void {
@@ -82,6 +98,12 @@ export class FootHud {
     set(this.hint, r.hint ?? '');
     this.hint.hidden = !r.hint;
     this.hint.classList.toggle('ok', r.hintOk);
+    set(this.lodestone, r.lodestone ?? '');
+    this.lodestone.hidden = !r.lodestone;
+    if (r.north !== this.shownNorth) {
+      this.shownNorth = r.north;
+      this.needle.style.transform = `rotate(${r.north}rad)`;
+    }
   }
 }
 

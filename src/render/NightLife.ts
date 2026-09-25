@@ -24,7 +24,7 @@ interface Bat {
 export class NightLife {
   readonly group = new Group();
   private readonly bats: Bat[] = [];
-  private readonly wisps: Array<{ sprite: Sprite; x: number; z: number; y: number; r: number; phase: number }> = [];
+  private readonly wisps: Array<{ sprite: Sprite; x: number; z: number; y: number; r: number; phase: number; reach: number }> = [];
 
   constructor(islands: readonly IslandPlan[]) {
     this.group.name = 'night-life';
@@ -51,13 +51,17 @@ export class NightLife {
         sprite.scale.setScalar(2.6);
         sprite.visible = false;
         this.group.add(sprite);
-        this.wisps.push({ sprite, x: isle.centerX, z: isle.centerZ, y: 12 + isle.peak + 3 + (i % 3) * 1.5, r: isle.radius * (0.2 + 0.12 * i), phase: i * 2.3 });
+        this.wisps.push({ sprite, x: isle.centerX, z: isle.centerZ, y: 12 + isle.peak + 3 + (i % 3) * 1.5, r: isle.radius * (0.2 + 0.12 * i), phase: i * 2.3, reach: isle.radius * 1.5 });
       }
     }
   }
 
-  /** `bats` when the captain is ashore; `dark` 0 by day, 1 at night. */
-  update(focus: { x: number; y: number; z: number }, dark: number, bats: boolean, time: number): void {
+  /**
+   * `bats` when the captain is ashore; `dark` 0 by day, 1 at night. The ghost lights of
+   * an isle gather low over its hoard when the captain has a map to it (`hoards`: the
+   * ground over each chest).
+   */
+  update(focus: { x: number; y: number; z: number }, dark: number, bats: boolean, time: number, hoards: ReadonlyArray<{ x: number; y: number; z: number }> = []): void {
     const night = dark > 0.5;
     for (const b of this.bats) {
       b.root.visible = night && bats;
@@ -76,7 +80,13 @@ export class NightLife {
       w.sprite.visible = night && near;
       if (!w.sprite.visible) continue;
       const a = time * 0.25 + w.phase;
-      w.sprite.position.set(w.x + Math.sin(a) * w.r, w.y + Math.sin(time * 0.9 + w.phase) * 1.2, w.z + Math.cos(a * 0.8) * w.r);
+      const hoard = hoards.find((h) => Math.hypot(h.x - w.x, h.z - w.z) < w.reach);
+      if (hoard) {
+        const r = 1 + w.phase * 0.25;
+        w.sprite.position.set(hoard.x + 0.5 + Math.sin(a * 2) * r, hoard.y + 1.5 + (w.phase % 3) * 0.6 + Math.sin(time * 0.9 + w.phase) * 0.4, hoard.z + 0.5 + Math.cos(a * 1.6) * r);
+      } else {
+        w.sprite.position.set(w.x + Math.sin(a) * w.r, w.y + Math.sin(time * 0.9 + w.phase) * 1.2, w.z + Math.cos(a * 0.8) * w.r);
+      }
       w.sprite.material.opacity = (dark - 0.5) * 2 * (0.55 + 0.45 * Math.sin(time * 1.7 + w.phase * 3));
     }
   }

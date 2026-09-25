@@ -8,7 +8,8 @@ import { GOOD_INFO, GOODS } from '../economy/goods';
 import { FACTION_NAMES, type Port, PORT_KINDS } from '../economy/ports';
 import { portOpen, rankName } from '../economy/reputation';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import type { IslandPlan } from '../worldgen/archipelago';
+import { type IslandPlan, islandName } from '../worldgen/archipelago';
+import { MapsView } from './MapsView';
 import { age } from './port/common';
 import { RouteList } from './port/PortScreen';
 
@@ -121,8 +122,37 @@ export interface ChartProps {
   setCourse: (port: Port | null) => void;
 }
 
-/** The sea chart: where everything is, who'll have you, and what your price book knows. */
-export function ChartView({ world, islands, camps, economy, sea, course, setCourse }: ChartProps) {
+/** The chart shows the sea, or the captain's treasure maps. */
+export type ChartMode = 'chart' | 'maps';
+
+/**
+ * The sea chart: where everything is, who'll have you, and what your price book knows;
+ * and beside it, the treasure maps in the captain's case. `view` and `setView` let a
+ * screen switch between them from its keys; without them the chart keeps its own.
+ */
+export function ChartView(props: ChartProps & { view?: ChartMode; setView?: (view: ChartMode) => void }) {
+  const [own, setOwn] = useState<ChartMode>('chart');
+  const view = props.view ?? own;
+  const setView = props.setView ?? setOwn;
+  const tabs = (
+    <div className="chart-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected={view === 'chart'} onClick={() => setView('chart')}>
+        Sea chart
+      </button>
+      <button type="button" role="tab" aria-selected={view === 'maps'} onClick={() => setView('maps')}>
+        Treasure maps · {props.sea.captain.maps.length}
+      </button>
+    </div>
+  );
+  return (
+    <div className="chart-views">
+      {tabs}
+      {view === 'maps' ? <MapsView world={props.world} islands={props.islands} sea={props.sea} /> : <SeaChart {...props} />}
+    </div>
+  );
+}
+
+function SeaChart({ world, islands, camps, economy, sea, course, setCourse }: ChartProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [selected, setSelected] = useState<Port>(course ?? sea.docked ?? economy.ports[0]);
   const ship = sea.player.ship;
@@ -193,6 +223,32 @@ export function ChartView({ world, islands, camps, economy, sea, course, setCour
       g.strokeText(label, x, y + 24 * px);
       g.fillText(label, x, y + 24 * px);
     }
+
+    // The islets, by name; those your maps lead to, marked.
+    const mapped = new Set(sea.captain.maps.map((m) => m.site.island));
+    g.textAlign = 'center';
+    islands.forEach((plan, i) => {
+      if (plan.port) return;
+      const x = toX(plan.centerX);
+      const y = toY(plan.centerZ);
+      if (mapped.has(i)) {
+        g.strokeStyle = '#a3261d';
+        g.lineWidth = 3 * px;
+        g.beginPath();
+        g.moveTo(x - 6 * px, y - 6 * px);
+        g.lineTo(x + 6 * px, y + 6 * px);
+        g.moveTo(x + 6 * px, y - 6 * px);
+        g.lineTo(x - 6 * px, y + 6 * px);
+        g.stroke();
+      }
+      g.font = `italic ${mapped.has(i) ? '600 ' : ''}${11 * px}px Georgia, serif`;
+      g.fillStyle = plan.cursed ? '#5b2d4a' : mapped.has(i) ? '#7a1f18' : 'rgba(43, 30, 20, 0.7)';
+      g.strokeStyle = 'rgba(246, 236, 210, 0.8)';
+      g.lineWidth = 3 * px;
+      const name = islandName(plan);
+      g.strokeText(name, x, y + (plan.radius / frame.span) * size + 12 * px);
+      g.fillText(name, x, y + (plan.radius / frame.span) * size + 12 * px);
+    });
 
     // Your camps.
     for (const camp of camps) {

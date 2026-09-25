@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { Color, Group, Mesh, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { cutlassCells, type CharacterModel, type PartName } from '../duel/characterModel';
 import type { Fighter } from '../duel/duel';
 import { MOVES, PARRY_WINDOW, ROLL } from '../duel/moves';
@@ -7,6 +7,8 @@ import type { Point3 } from '../sailing/shipModel';
 import { paletteFromRgba } from '../voxel/palette';
 import { meshCells } from './voxelGeometry';
 
+/** The faint light a ghost gives off. */
+const GHOST_GLOW = 0x1f6b55;
 /**
  * A pose, in the character's own frame: +z is forward (toward the opponent), +y up,
  * -x the character's right (the sword side). Limbs are given as directions, which
@@ -84,7 +86,12 @@ export class CharacterView {
   private readonly q = new Quaternion();
   private readonly hand = new Vector3();
 
-  constructor(private readonly model: CharacterModel) {
+  constructor(
+    private readonly model: CharacterModel,
+    /** A ghost: see-through, and glowing faintly of itself. */
+    ghost = false,
+  ) {
+    if (ghost) Object.assign(this.material, { transparent: true, opacity: 0.72, emissive: new Color(GHOST_GLOW) });
     const { parts, feet } = model;
     const palette = paletteFromRgba(model.palette);
     const hip = parts.torso.pivot;

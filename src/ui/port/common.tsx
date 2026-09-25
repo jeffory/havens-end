@@ -4,6 +4,7 @@ import type { Economy, Notice, Outcome } from '../../economy/economy';
 import { GOOD_INFO } from '../../economy/goods';
 import { FACTION_NAMES, type Port, PORT_FACTIONS, type PortFaction } from '../../economy/ports';
 import { CLOSED_AT, rankName } from '../../economy/reputation';
+import type { Treasure } from '../../treasure/Treasure';
 
 /** Everything a port screen tab needs to show and change the game. */
 export interface TabProps {
@@ -14,6 +15,8 @@ export interface TabProps {
   act: (outcome: Outcome) => void;
   /** A room above the tavern: sleep until morning, or until dusk. */
   sleep?: (until: 'morning' | 'dusk') => void;
+  /** Buried treasure: the fixer's maps. */
+  treasure?: Treasure;
 }
 
 export const Gold = ({ amount }: { amount: number }) => (

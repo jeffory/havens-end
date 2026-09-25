@@ -1,14 +1,15 @@
-import { Vector3 } from 'three';
+import { type Group, Vector3 } from 'three';
 import type { Vessel } from './combat/vessel';
 import type { CharacterModel } from './duel/characterModel';
 import { Duel, type DuelEvent, type DuelIntent, type Side } from './duel/duel';
-import { DUEL_SKILLS } from './duel/duelAi';
+import { DUEL_SKILLS, type DuelSkill } from './duel/duelAi';
 import { MOVES, PARRY_WINDOW } from './duel/moves';
 import { impactIn, windup } from './duel/timing';
 import type { CameraRig } from './render/CameraRig';
-import { DuelView } from './render/DuelView';
+import { deckStage, type DuelStage, DuelView, groundStage } from './render/DuelView';
 import type { Effects } from './render/Effects';
 import type { ShipView } from './render/ShipView';
+import { CUTLASS_POWER } from './treasure/relics';
 import type { DuelHud, PopTone } from './ui/DuelHud';
 
 /** Heights on a captain, in world units above the deck. */
@@ -21,6 +22,71 @@ const VERDICT_SECONDS = 2.8;
 export interface DuelCast {
   player: CharacterModel;
   enemy: CharacterModel;
+}
+
+/** Everything about one duel: where it's fought, who by, how strong each is, and what's said. */
+export interface DuelSetup {
+  /** What the captains stand in: the prize's hull, or a group set down on open ground. */
+  parent: Group;
+  stage: DuelStage;
+  cast: DuelCast;
+  ghost: boolean;
+  skill: DuelSkill;
+  playerHp: number;
+  playerPower: number;
+  enemyHp: number;
+  enemyPower: number;
+  title: string;
+  subtitle: string;
+  /** The verdict, won and lost. */
+  won: string;
+  lost: string;
+}
+
+/** Boarders away: the captains meet on the prize's deck, and the bigger crew gives its captain an edge. */
+export function boardingDuel(player: Vessel, enemy: Vessel, ship: ShipView, playerSide: number, cast: DuelCast, cutlass: boolean): DuelSetup {
+  const skill = DUEL_SKILLS[enemy.faction === 'imperial' ? 'imperial' : enemy.faction === 'merchant' ? 'merchant' : 'pirate'];
+  const advantage = Math.max(-1, Math.min(1, (player.crew - enemy.crew) / Math.max(1, player.crew + enemy.crew)));
+  const odds = advantage > 0.15 ? 'your crew has the upper hand' : advantage < -0.15 ? 'her crew outnumbers yours' : 'the crews are evenly matched';
+  const title = { imperial: 'Imperial officer', merchant: 'Merchant captain', pirate: 'Pirate captain', player: 'Captain' }[enemy.faction];
+  return {
+    parent: ship.body,
+    stage: deckStage(ship.model, playerSide),
+    cast,
+    ghost: false,
+    skill,
+    playerHp: Math.round(100 * (1 + 0.25 * advantage)),
+    playerPower: (1 + 0.15 * advantage) * (cutlass ? CUTLASS_POWER : 1),
+    enemyHp: Math.round(skill.hp * (1 - 0.25 * advantage)),
+    enemyPower: skill.power * (1 - 0.15 * advantage),
+    title,
+    subtitle: `aboard the ${enemy.name} · ${odds}`,
+    won: `The ${enemy.name} is yours.`,
+    lost: 'You are overpowered and clapped in irons.',
+  };
+}
+
+/** How far each way a fight on open ground can range. */
+const GROUND_HALF_LENGTH = 4;
+
+/** A cursed hoard's guardian, risen from the hole you dug, fought on the ground where you stand. */
+export function guardianDuel(parent: Group, island: string, cast: DuelCast, cutlass: boolean): DuelSetup {
+  const skill = DUEL_SKILLS.ghost;
+  return {
+    parent,
+    stage: groundStage(GROUND_HALF_LENGTH),
+    cast,
+    ghost: true,
+    skill,
+    playerHp: 100,
+    playerPower: cutlass ? CUTLASS_POWER : 1,
+    enemyHp: skill.hp,
+    enemyPower: skill.power,
+    title: 'The guardian',
+    subtitle: `a dead captain rises from the hoard on ${island}`,
+    won: 'The spectre crumbles into mist. The hoard is yours.',
+    lost: 'Cold hands drag you down into the dark…',
+  };
 }
 
 /**
@@ -40,34 +106,24 @@ export class DuelScene {
   private readonly point = new Vector3();
 
   constructor(
-    player: Vessel,
-    readonly enemy: Vessel,
-    enemyShip: ShipView,
-    /** Which side of the prize the player's ship lies (ship-local x sign). */
-    playerSide: number,
-    cast: DuelCast,
+    private readonly setup: DuelSetup,
     seed: number,
     private readonly hud: DuelHud,
     private readonly effects: Effects,
     private readonly rig: CameraRig,
     private readonly container: HTMLElement,
   ) {
-    const skill = DUEL_SKILLS[enemy.faction === 'imperial' ? 'imperial' : enemy.faction === 'merchant' ? 'merchant' : 'pirate'];
-    // The crews fight around the captains: the bigger crew gives its captain an edge.
-    const advantage = Math.max(-1, Math.min(1, (player.crew - enemy.crew) / Math.max(1, player.crew + enemy.crew)));
-    this.view = new DuelView(enemyShip.body, enemyShip.model, cast.player, cast.enemy, playerSide);
+    this.view = new DuelView(setup.parent, setup.stage, setup.cast.player, setup.cast.enemy, setup.ghost);
     this.duel = new Duel({
       halfLength: this.view.halfLength,
-      playerHp: Math.round(100 * (1 + 0.25 * advantage)),
-      playerPower: 1 + 0.15 * advantage,
-      enemyHp: Math.round(skill.hp * (1 - 0.25 * advantage)),
-      enemyPower: skill.power * (1 - 0.15 * advantage),
-      enemySkill: skill,
+      playerHp: setup.playerHp,
+      playerPower: setup.playerPower,
+      enemyHp: setup.enemyHp,
+      enemyPower: setup.enemyPower,
+      enemySkill: setup.skill,
       seed,
     });
-    const odds = advantage > 0.15 ? 'your crew has the upper hand' : advantage < -0.15 ? 'her crew outnumbers yours' : 'the crews are evenly matched';
-    const title = { imperial: 'Imperial officer', merchant: 'Merchant captain', pirate: 'Pirate captain', player: 'Captain' }[enemy.faction];
-    this.hud.show(title, `aboard the ${enemy.name} · ${odds}`);
+    this.hud.show(setup.title, setup.subtitle);
   }
 
   /** Where the action is, for the shadow camera. */
@@ -167,7 +223,7 @@ export class DuelScene {
         const won = e.side === 'enemy';
         this.slow(1.4, 0.25);
         this.verdictIn = VERDICT_SECONDS;
-        this.hud.result(won, won ? `The ${this.enemy.name} is yours.` : 'You are overpowered and clapped in irons.');
+        this.hud.result(won, won ? this.setup.won : this.setup.lost);
         break;
       }
     }

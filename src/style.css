@@ -914,6 +914,20 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
 }
 
 .chart-side { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+
+/* Sea chart or treasure maps. */
+.chart-views { display: flex; flex-direction: column; gap: 10px; }
+.chart-tabs { display: flex; gap: 6px; }
+.chart-tabs button[aria-selected='true'] { background: #fff1c7; border-color: var(--accent); font-weight: 700; }
+.treasure-map { border: none; background: transparent; filter: drop-shadow(0 3px 8px rgb(60 40 20 / 0.35)); }
+.treasure-empty { align-self: center; max-width: 36em; font-style: italic; opacity: 0.8; }
+.treasure-maps h4 { margin: 0; }
+.treasure-maps .chart-port .dot { background: #8a6412; }
+.treasure-maps .chart-port.cursed .dot { background: #a3261d; }
+.finds { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.finds li { display: grid; }
+.finds small { opacity: 0.8; }
+.chart-info .warn { margin: 4px 0 0; color: #a3261d; }
 .chart-ports { display: grid; gap: 4px; }
 
 .port-screen .chart-port {
@@ -1020,6 +1034,56 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   border-radius: 8px;
   background: rgb(255 255 255 / 0.6);
   font-variant-numeric: tabular-nums;
+}
+
+/* The compass on foot: north, for the riddles. */
+.foot-compass {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  width: 46px;
+  height: 46px;
+  border: 2px solid rgb(18 50 74 / 0.35);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.foot-needle {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.3s ease;
+}
+
+.foot-needle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  border: 6px solid transparent;
+  border-bottom: 15px solid #a3261d;
+  border-top: none;
+  transform: translateX(-50%);
+}
+
+.foot-needle b {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  transform: translateX(-50%);
+  font: 700 10px/1 Georgia, serif;
+  color: #12324a;
+}
+
+.foot-lodestone {
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: rgb(60 30 60 / 0.75);
+  color: #f3e6ff;
+  font-size: 13px;
+  font-style: italic;
 }
 
 .foot-slots {

@@ -6,6 +6,8 @@ import { PACK_SIZE } from './economy/captain';
 import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
 import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
+import { hasRelic, LODESTONE_RANGE } from './treasure/relics';
+import type { Treasure } from './treasure/Treasure';
 import { PLANTABLE } from './land/crops';
 import { type Building, STRUCTURES, type Structure } from './land/structures';
 import type { CameraRig } from './render/CameraRig';
@@ -74,6 +76,7 @@ export class Shore {
 
   constructor(
     private readonly land: Land,
+    private readonly treasure: Treasure,
     private readonly view: LandView,
     private readonly hud: FootHud,
     private readonly rig: CameraRig,
@@ -299,11 +302,31 @@ export class Shore {
       packSize: PACK_SIZE,
       packSummary: (Object.entries(pack) as Array<[Good, number]>).map(([g, n]) => `${n} ${GOOD_INFO[g].label.toLowerCase()}`).join(', '),
       prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase),
+      north: this.north(),
+      lodestone: this.lodestone(),
       hint,
       hintOk,
       placing,
     });
     return this.signs();
+  }
+
+  /** Which way north is on screen, clockwise from up (radians), for the compass. */
+  private north(): number {
+    const { forwardZ, rightZ } = this.rig.groundAxes();
+    return Math.atan2(-rightZ, -forwardZ);
+  }
+
+  /** With the lodestone, which way it tugs toward a buried chest you hold the map for. */
+  private lodestone(): string | null {
+    const w = this.land.walker;
+    if (!w || !hasRelic(this.land.sea.captain, 'lodestone')) return null;
+    const pull = this.treasure.pull(w.x, w.z, LODESTONE_RANGE);
+    if (!pull) return null;
+    if (pull.distance < 1.5) return 'The lodestone pulls straight down: dig!';
+    const points = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+    const point = points[Math.round(((Math.atan2(pull.dx, -pull.dz) / (Math.PI * 2)) * 8 + 8) % 8) % 8];
+    return `The lodestone tugs to the ${point}.`;
   }
 
   /** Signs over the doors of the port you're walking in. */

@@ -3,6 +3,8 @@ import { ROOM_COST, ROUND_COST } from '../../economy/economy';
 import { GOOD_INFO } from '../../economy/goods';
 import { PORT_FACTIONS } from '../../economy/ports';
 import { rankName } from '../../economy/reputation';
+import { MAP_CASE, type Offer } from '../../treasure/Treasure';
+import { islandName } from '../../worldgen/archipelago';
 import { ContractCard, factionTitle, Gold, type TabProps } from './common';
 
 const FAVOURS = {
@@ -12,7 +14,7 @@ const FAVOURS = {
 };
 
 /** Sailors for hire, gossip for the price of a round, and the fixer in the corner. */
-export function TavernTab({ port, economy, sea, act, sleep }: TabProps) {
+export function TavernTab({ port, economy, sea, act, sleep, treasure }: TabProps) {
   const hands = economy.handsFor(port);
   const settlers = economy.settlersFor(port);
   const night = economy.afterDark();
@@ -22,6 +24,8 @@ export function TavernTab({ port, economy, sea, act, sleep }: TabProps) {
   const black = economy.lines(port, true);
   const blackJobs = sea.captain.contracts.filter((c) => c.kind === 'delivery' && c.black && c.port === port.id);
   const runs = economy.offers(port, 'fixer');
+  const maps = treasure?.offersFor(port) ?? [];
+  const caseFull = sea.captain.maps.length >= MAP_CASE;
   return (
     <section className="tab-tavern">
       <h3>Sailors for hire</h3>
@@ -128,6 +132,30 @@ export function TavernTab({ port, economy, sea, act, sleep }: TabProps) {
         </>
       )}
 
+      {night && treasure && maps.length > 0 && (
+        <>
+          <h4>Treasure maps</h4>
+          <p className="lede">“Charts, captain. Some honest, some less so. All of them lead somewhere.”</p>
+          {maps.map((offer) => {
+            const { title, detail } = describeOffer(offer, islandName(treasure.islands[offer.map.site.island]));
+            return (
+              <div key={offer.map.id} className="yard-item">
+                <div>
+                  <b>{title}</b>
+                  <small>
+                    {detail}
+                    {caseFull && ' · your map case is full'}
+                  </small>
+                </div>
+                <button type="button" disabled={gold < offer.price || caseFull} onClick={() => act(treasure.buy(port, offer.map.id))}>
+                  <Gold amount={offer.price} />
+                </button>
+              </div>
+            );
+          })}
+        </>
+      )}
+
       {night && runs.length > 0 && (
         <>
           <h4>{port.faction === 'pirate' ? 'A job for the Brethren' : 'A quiet job'}</h4>
@@ -182,4 +210,18 @@ export function TavernTab({ port, economy, sea, act, sleep }: TabProps) {
       )}
     </section>
   );
+}
+
+/** How the fixer describes a map without giving the spot away. */
+function describeOffer(offer: Offer, island: string): { title: string; detail: string } {
+  switch (offer.map.tier) {
+    case 'near':
+      return { title: `A scrap of chart: ${island}, with an X`, detail: 'In home waters. Easy digging.' };
+    case 'mid':
+      return { title: `A sketch of ${island}`, detail: 'Paces from a landmark, out in the contested seas.' };
+    case 'far':
+      return { title: 'A riddle on sailcloth', detail: `It names ${island}, among the far islands.` };
+    default:
+      return { title: `A map to ${island}`, detail: 'Where the ghost lights hang. The dead guard what’s theirs.' };
+  }
 }

@@ -1,12 +1,13 @@
 import { createElement } from 'react';
-import { Color, Fog, NeutralToneMapping, PCFShadowMap, Scene, Vector3, WebGLRenderer } from 'three';
+import { Color, Fog, Group, NeutralToneMapping, PCFShadowMap, Scene, Vector3, WebGLRenderer } from 'three';
 import { type Ammo, AMMO_TYPES } from './combat/ammo';
 import { REGION_NAMES, regionTier } from './combat/encounters';
 import { type DockProblem, type PlayerOrders, Sea, type SeaEvent } from './combat/sea';
 import { reloadTime, type ShipClass, shipClass, type Side, toLocal } from './combat/vessel';
 import { SIM_HZ } from './config';
 import { clockText, darkness, isNight, WAKE_AT, secondsUntil } from './core/clock';
-import { type DuelCast, DuelScene } from './DuelScene';
+import { boardingDuel, type DuelCast, DuelScene, guardianDuel } from './DuelScene';
+import { ghostModel } from './duel/ghostModel';
 import { buildCharacterModel, type CharacterModel } from './duel/characterModel';
 import type { DuelIntent } from './duel/duel';
 import { BOUNTY_NOUNS } from './economy/contracts';
@@ -40,6 +41,8 @@ import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
 import { NightLife } from './render/NightLife';
 import { DropsView } from './render/DropsView';
+import { hasRelic, SPYGLASS_RANGE } from './treasure/relics';
+import { DEPTH } from './treasure/sites';
 import { Treasure } from './treasure/Treasure';
 import { PeopleView } from './render/PeopleView';
 import { Shore, sleepy } from './Shore';
@@ -63,7 +66,7 @@ import { PortScreen, type Tab } from './ui/port/PortScreen';
 import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
 import { VoxelWorld } from './voxel/VoxelWorld';
-import { buildArchipelago, type IslandPlan, planArchipelago } from './worldgen/archipelago';
+import { buildArchipelago, type IslandPlan, islandName, planArchipelago } from './worldgen/archipelago';
 
 const WORLD_SEED = 1717;
 const SKY_COLOR = new Color(0xa9d9ea);
@@ -169,6 +172,8 @@ export class Game {
   private screen: (() => void) | null = null;
   /** The captains' duel in progress, if boarding led to one. The sea waits while it's on. */
   private duel: DuelScene | null = null;
+  /** A cursed hoard's guardian being fought: which map, where the chest is, and the ground the fight stands on. */
+  private guardian: { map: number; x: number; y: number; z: number; ground: Group } | null = null;
   /** Seconds spent in duels and menus: keeps the waves moving while the sea simulation waits. */
   private pausedTime = 0;
 
@@ -240,7 +245,7 @@ export class Game {
     this.nightLife = new NightLife(this.islands);
     this.sleepFade.className = 'sleep-fade';
     container.append(this.sleepFade);
-    this.shore = new Shore(this.land, this.landView, this.footHud, this.rig, this.input, {
+    this.shore = new Shore(this.land, this.treasure, this.landView, this.footHud, this.rig, this.input, {
       openPort: (place) => this.openPort(place),
       openStore: (building) => this.openStore(building),
       openCamp: (fire, building) => this.openCamp(fire, building),
@@ -483,6 +488,7 @@ export class Game {
     this.handleEvents(sea.takeEvents(), time);
     this.notify(this.economy.takeNotices());
     this.notify(this.treasure.takeNotices());
+    this.handleTreasure();
     this.fleet.update(sea, paused ? 1 : alpha, time, frameSeconds, dark);
 
     const pose = this.fleet.pose(player.id)!;
@@ -532,7 +538,8 @@ export class Game {
     this.nightLights.update(this.lightSources(), focus, dark, time);
     this.people.update(this.land, paused ? 1 : alpha, paused ? 0 : frameSeconds, time, focus);
     this.drops.update(this.land.drops, paused ? 1 : alpha, time, focus);
-    this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time);
+    const hoards = this.sea.captain.maps.filter((m) => m.tier === 'cursed').map((m) => ({ x: m.site.x, y: m.site.y + DEPTH, z: m.site.z }));
+    this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time, hoards);
     this.hud.setClock(sea.clock.day, clockText(phase), isNight(phase));
 
     this.terrain.update(REMESH_BUDGET, focus);
@@ -715,6 +722,7 @@ export class Game {
           nav: this.overlay.handlers,
           chart: this.chartProps(),
           sleep: (until) => this.sleep(until),
+          treasure: this.treasure,
         }),
       ),
     );
@@ -798,6 +806,17 @@ export class Game {
     this.labels.setVisible(!ashore);
   }
 
+  /** A chest dug up glitters; a cursed one's guardian rises. */
+  private handleTreasure(): void {
+    for (const e of this.treasure.takeEvents()) {
+      if (e.kind === 'found') {
+        this.effects.emit('parrySparks', e.x + 0.5, e.y + 1.2, e.z + 0.5);
+        this.effects.emit('dust', e.x + 0.5, e.y + 1, e.z + 0.5);
+      }
+      if (e.kind === 'guardian') this.startGuardian(e.map, e.x, e.y, e.z);
+    }
+  }
+
   /** Work and building on land as dust and smoke; settlers' news as messages. */
   private handleLand(_time: number): void {
     const focus = this.rig.focus;
@@ -859,15 +878,53 @@ export class Game {
       enemy: this.captains.get(enemy.faction === 'player' ? 'pirate' : enemy.faction)!,
     };
     const seed = Math.floor(this.sea.random() * 2 ** 31);
-    this.duel = new DuelScene(player, enemy, ship, side, cast, seed, this.duelHud, this.effects, this.rig, this.container);
+    const setup = boardingDuel(player, enemy, ship, side, cast, hasRelic(this.sea.captain, 'cutlass'));
+    this.duel = new DuelScene(setup, seed, this.duelHud, this.effects, this.rig, this.container);
     this.controls.setMode('duel');
     this.hud.setVisible(false);
     this.labels.setVisible(false);
   }
 
+  /** A cursed hoard struck at night: its guardian rises, and you fight it where you stand. */
+  private startGuardian(mapId: number, x: number, y: number, z: number): void {
+    const walker = this.land.walker;
+    const map = this.treasure.map(mapId);
+    if (!walker || !map || this.duel) return;
+    // The fight runs across the view, the duel camera on the side the walking camera was.
+    const ground = new Group();
+    const { forwardX, forwardZ } = this.rig.groundAxes();
+    ground.position.set(walker.x, walker.y, walker.z);
+    ground.rotation.y = Math.atan2(forwardZ, -forwardX);
+    this.scene.add(ground);
+    this.guardian = { map: mapId, x, y, z, ground };
+    const cast: DuelCast = { player: this.captains.get('player')!, enemy: ghostModel(this.captains.get('pirate')!) };
+    const island = islandName(this.islands[map.site.island]);
+    const seed = Math.floor(this.sea.random() * 2 ** 31);
+    this.duel = new DuelScene(guardianDuel(ground, island, cast, hasRelic(this.sea.captain, 'cutlass')), seed, this.duelHud, this.effects, this.rig, this.container);
+    this.controls.setMode('duel');
+    this.landView.setVisible(false);
+    this.footHud.setVisible(false);
+  }
+
   private endDuel(won: boolean): void {
     this.duel?.dispose();
     this.duel = null;
+    const guardian = this.guardian;
+    if (guardian) {
+      this.guardian = null;
+      this.scene.remove(guardian.ground);
+      this.controls.setMode('foot');
+      this.landView.setVisible(true);
+      this.showPanels();
+      if (won) {
+        this.treasure.guardianBeaten(guardian.map, guardian.x, guardian.y, guardian.z);
+      } else {
+        const toll = this.treasure.guardianWon();
+        this.hud.toast(`You come to at dawn beside the hole, ${toll} gold lighter. The hoard is still there, and so is its guardian.`, 'bad');
+        this.sleep('morning');
+      }
+      return;
+    }
     this.sea.finishBoarding(won);
     this.controls.setMode('sea');
     this.hud.setVisible(true);
@@ -938,7 +995,8 @@ export class Game {
     for (const v of this.sea.vessels) {
       if (v.faction === 'player' || v.status === 'captured') continue;
       const pose = this.fleet.pose(v.id);
-      const range = isNight(this.sea.clock.phase) ? NIGHT_LABEL_RANGE : LABEL_RANGE;
+      const spyglass = hasRelic(this.sea.captain, 'spyglass') ? SPYGLASS_RANGE : 1;
+      const range = (isNight(this.sea.clock.phase) ? NIGHT_LABEL_RANGE : LABEL_RANGE) * spyglass;
       if (!pose || Math.hypot(pose.x - player.x, pose.z - player.z) > range) continue;
       const mode = v.status === 'struck' ? 'struck her colours' : v.status === 'sinking' ? 'sinking' : v.ai?.mode;
       const note = { flee: 'fleeing', engage: 'engaging', escort: 'escorting', cruise: 'under way' }[mode as string] ?? mode ?? '';

@@ -11,39 +11,63 @@ const CAMERA_DISTANCE = 11.5;
 const CAMERA_HEIGHT = 7.5;
 
 /**
- * The duel on stage: two captains on the prize's deck, riding her motion, framed from
- * the side. Duel x runs along her keel; it's laid out so +x is screen right from the
- * side the camera watches (the one away from the player's ship).
+ * Where two captains fight, in the space of the group they stand in: along its z axis,
+ * `lateral` off its centre line, on a floor at `floor`, watched from its +x side
+ * (`side` 1) or −x side (−1).
+ */
+export interface DuelStage {
+  floor: number;
+  centre: number;
+  halfLength: number;
+  side: 1 | -1;
+  lateral: number;
+}
+
+/** A prize's deck: the longest flat stretch, on the side away from the player's ship (`playerSide`, ship-local x sign). */
+export function deckStage(ship: ShipModel, playerSide: number): DuelStage {
+  const side = playerSide > 0 ? -1 : 1;
+  const run = flatDeck(ship, side * LATERAL);
+  return { floor: ship.deck, centre: (run.from + run.to) / 2, halfLength: Math.max(2.5, (run.to - run.from) / 2 - 0.6), side, lateral: side * LATERAL };
+}
+
+/** Open ground, the group set down where the fight is and turned so its z runs across the view. */
+export const groundStage = (halfLength: number): DuelStage => ({ floor: 0, centre: 0, halfLength, side: 1, lateral: 0 });
+
+/**
+ * The duel on stage: two captains on the prize's deck (riding her motion) or on open
+ * ground, framed from the side. Duel x runs along the stage; it's laid out so +x is
+ * screen right from the side the camera watches.
  */
 export class DuelView {
   readonly stage = new Group();
   readonly halfLength: number;
   private readonly fighters: Record<Side, CharacterView>;
-  /** +1: the camera watches from the ship's port side (local +x); -1: starboard. */
+  /** +1: the camera watches from the stage's +x side; -1: from −x. */
   private readonly side: 1 | -1;
   private readonly centre: number;
   private readonly deckY: number;
+  private readonly lateral: number;
   private readonly scratch = new Vector3();
 
   constructor(
     private readonly deck: Group,
-    ship: ShipModel,
+    where: DuelStage,
     playerModel: CharacterModel,
     enemyModel: CharacterModel,
-    /** Which side of the prize the player's ship lies (ship-local x sign). */
-    playerSide: number,
+    /** A ghost fights the player: pale, glowing and see-through. */
+    ghost = false,
   ) {
-    this.side = playerSide > 0 ? -1 : 1;
-    this.deckY = ship.deck;
-    const run = flatDeck(ship, this.side * LATERAL);
-    this.centre = (run.from + run.to) / 2;
-    this.halfLength = Math.max(2.5, (run.to - run.from) / 2 - 0.6);
-    this.fighters = { player: new CharacterView(playerModel), enemy: new CharacterView(enemyModel) };
+    this.side = where.side;
+    this.deckY = where.floor;
+    this.centre = where.centre;
+    this.lateral = where.lateral;
+    this.halfLength = where.halfLength;
+    this.fighters = { player: new CharacterView(playerModel), enemy: new CharacterView(enemyModel, ghost) };
     this.stage.add(this.fighters.player.root, this.fighters.enemy.root);
     // A soft fill from the camera's side, so dark coats still read against a dark hull.
     const fill = new DirectionalLight(0xfff1dc, 0.9);
     fill.position.set(this.side * 10, this.deckY + 6, this.centre);
-    fill.target.position.set(this.side * LATERAL, this.deckY + 1, this.centre);
+    fill.target.position.set(this.lateral, this.deckY + 1, this.centre);
     this.stage.add(fill, fill.target);
     this.stage.name = 'duel';
     deck.add(this.stage);
@@ -90,7 +114,7 @@ export class DuelView {
   }
 
   private local(x: number, height: number): Vector3 {
-    return this.scratch.set(this.side * LATERAL, this.deckY + height, this.centre - this.side * x).clone();
+    return this.scratch.set(this.lateral, this.deckY + height, this.centre - this.side * x).clone();
   }
 }
 
