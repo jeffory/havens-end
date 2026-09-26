@@ -253,7 +253,12 @@ Each step ends with the tests passing and a look at the game.
 
 - **Old saves.** A save keeps every chunk the player changed whole. A town chunk the
   player changed keeps its old full-block rises. Harmless: they still work, as they
-  did before.
+  did before. Only a chunk that straddles the edge of a town's land can be changed
+  (nobody builds or digs in town), and such a chunk keeps its other old blocks too:
+  no porch deck or canopy by a porch's posts and rails, and the old `Lantern` blocks
+  where lantern props now stand, so a prop lantern shows inside one. Cosmetic only.
+  The ship on the stocks is never in a chunk that can be changed. At seed 1717 it's
+  Haven's tavern porch and a few street lamps in each port.
 - **Performance.** The shapes add a handful of faces each. The props cost about one
   draw call per kind per visible town, with small triangle counts. Measure CPU and GPU
   frame time in Haven at night before and after (the method used for the water:

@@ -607,9 +607,12 @@ your pack is stowed in the hold.
 - **Heights come in half-block steps.** The walker's box is tested against a stair's
   or slab's own boxes (`voxel/shapes.ts`), not the whole cell, and it climbs half a
   block at a time: a stair or a slab is one half-step, a whole block two. Each is a
-  one-tick move, as a whole step always was. Pathfinding (`land/paths.ts`: settlers,
-  creatures and townsfolk) stands each node on its real top, whole or half, under the
-  same rise limits, and dropped items come to rest on a slab or a stair's step.
+  one-tick move, as a whole step always was. Pathfinding (`land/paths.ts`, used by
+  settlers and townsfolk; creatures only step, with `stepWalker`) stands each node on
+  the ground under its cell's middle, under the same rise limits. On a slab that's its
+  half-block top. On a stair it's the whole block: the middle lies on the line between
+  the two steps, and `topIn` gives the higher there. Dropped items come to rest on a
+  slab or a stair's step.
 - Crops are drawn but walkable. A separate `blocksWalker` test sits alongside
   `isSolid`.
 
@@ -761,7 +764,8 @@ straight into the storehouses.
   and plank and stone stairs and slabs (a timber or a stone each). Q and R turn a
   stair to climb the way you want. Stairs and slabs go on a whole solid block, so a
   flight can be built up a slope. A fence or a torch won't go on a stair or a slab
-  either: it fills its cell from the foot, so it would float half a block over the step.
+  either: it fills its cell from the foot, so it would float half a block over the
+  step.
 - **Materials** come from your pack, then any storehouse nearby, then the ship's hold
   if she's anchored within 60. So a hut can be built from timber bought in port.
 - **Taking things down.** The axe or pickaxe takes up fences, paths, torches, stairs
@@ -798,6 +802,14 @@ straight into the storehouses.
   generated world. That keeps restoring simple: nothing from the old session has to
   be unwound.
 - **At startup,** if there's an autosave, the menu offers to continue it.
+- **Towns in older saves.** Nobody builds or digs in a town, but a chunk that reaches
+  out past a town's land can be changed there, and it's saved whole, town blocks and
+  all. So in a save from before the stairs and props, such a chunk keeps the town as
+  it was: full-block rises in the streets (they still work), no porch deck or
+  canopy, and the old `Lantern` blocks where the lantern props now stand. That's only
+  for the look of it: a porch's posts and rails over the bare pad, a prop lantern
+  inside an old one. The ship on the stocks is never in such a chunk. At seed 1717
+  it's Haven's tavern porch, and a few street lamps in each port.
 
 ## 10. Crews, production and night (Phase 6)
 
