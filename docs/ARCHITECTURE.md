@@ -91,6 +91,18 @@ per frame: ChunkRenderer.update(budget)
   underside faces (and tools refuse to dig y = 0). Models turn this off.
 - **Picking and hit tests** use a voxel DDA raycast (`voxel/raycast.ts`), which reads
   voxel data directly and is never stale.
+- **Stairs and slabs** are ordinary block ids (60–74): gravel, stone and planks, each
+  cut into a slab and four stairs, one for each way it climbs (`FACING_DIRS`). So
+  chunks, edits and saves are unchanged. The terrain palette's `shapes` gives each its
+  boxes, in cell units (`voxel/blocks.ts`); colour and flags come from the material
+  (`baseOf`). The mesher draws a box's face unless it lies on the cell's side against a
+  whole cube; a face inside the cell (a stair's riser) always shows. It shades the face
+  by blending the cube face's corner occlusion across the box. A whole cube is drawn as
+  it always was, and only a whole cube hides a neighbour's face. Heights on foot are in
+  `voxel/shapes.ts` (§9).
+- **The blocker** (75) is solid to walkers and ships, but never drawn, never picked
+  (`isPickable`) and casts no shade. `surfaceHeight` skips it, so the sea under the ship
+  on the stocks is still drawn. It keeps people out of a prop (§8).
 
 ## 4. Ocean
 
@@ -383,7 +395,11 @@ Each port island gets a harbour:
   - **Streets.** A ramp climbs from the pier to a paved square (15 across, 10 deep,
     with a well in it). A main street runs inland from the square, with a cross
     street 22 along. Streets are gravel. The main street is level across the
-    crossing and climbs at most a block a cell.
+    crossing and climbs at most a block a cell. Where a paved cell stands a block
+    above exactly one of its paved neighbours, its paving becomes a gravel stair
+    climbing away from that neighbour (`laySteps`), so the ramp is a flight of
+    half-steps. At a corner or a crossing (a block above two) the whole-block rise
+    stays.
   - **Lots.** The market, tavern and office face the square. Houses line both
     streets, at least 4 apart, each on a pad levelled to its street's height. Stone
     quay is filled over the sea round the pads and the square. The land blends back
@@ -394,12 +410,12 @@ Each port island gets a harbour:
     barrels by the door. The market is an open hall of stalls. The office (the
     Guildhall, the Governor's House or the Pirate Lord's Hall) is two storeys, three
     in Imperial ports, and flies the faction's flag. Floors are boarded.
-  - **Shipyard.** A slipway seven wide runs down into the water, with a ship on the
-    stocks. She's broadest aft of amidships, narrowing to a stem at the bow, and her
-    sheer rises fore and aft. Aft she's planked to the gunwale and closed by a
-    transom; forward, only her bottom strakes are on and her frames stand bare. Her
-    mast is stepped, with a yard across it. A timber shed stands beside the slipway,
-    and the berth is on the pier's other side.
+  - **Shipyard.** A slipway seven wide runs down into the water, with the sloop on
+    the stocks (a prop, below): her own hull without sails, a block a voxel, stern to
+    the land and bow to the sea. Stocks stand under her keel every third cell. She's
+    18 long and outruns every slipway, so past its end they carry on out over the
+    water, standing on the seabed. A timber shed stands beside the slipway, and the
+    berth is on the pier's other side.
   - **Dressing.** Two stalls stand either side of the way to the market's door, each
     with a counter of goods and a striped awning (blue at the free port, red
     elsewhere). Benches stand at the square's top, and a cart of timber by the
@@ -412,6 +428,46 @@ Each port island gets a harbour:
   - **Doors you can enter.** Each has a timber frame, a stone step and a lantern
     beside it. The market hall has lanterns at its front corners, and the shed at
     its front posts. Each sign hangs just out from its door.
+  - **Porches.** The tavern and the office have one where there's dry pad before the
+    door: a deck of plank slabs three wide and two deep (one where the street comes
+    closer), a plank-slab canopy a storey up, posts at the deck's front corners and a
+    rail either side of the way in. The deck is the half-step up to the door, so the
+    place (`Door.outY`) and the townsfolk's spots on it are at deck height.
+  - **Props** (`props/`, drawn by `render/PropsView.ts`) are decoration finer than a
+    block. The town builder returns them with the town (`Town.decor`), and they reach
+    the game as `Port.decor`. Like the rest of the town they come from the seed and
+    aren't saved.
+    - *Lanterns,* an eighth of a block a voxel: glass all round between an iron base
+      and roof (bars across it made two lit panes, which read as eyes at night). One
+      stands on every lamp post (the streets and the pier) and one hangs on a bracket
+      beside each door with a frame. The glass glows after dark, and each one's light
+      is in `Port.lamps`, so when it's among the nearest it gets a point light and a
+      halo.
+    - *Signs:* the tavern and the office hang a signboard with their device (a
+      tankard, a seal) on a bracket beside the door. The market's open hall and the
+      shipyard's shed have no wall there, so they get a signpost (scales, an anchor)
+      whose post stands in two blocker cells.
+    - *The clock,* two blocks across, over the office door, standing on the porch's
+      canopy. It goes up only where the wall is behind the whole of it and nothing is
+      in front of its face (the Pirate Lord's Hall's eave is, so it has none). The
+      porches' posts and rails. The sloop on the stocks.
+    - *Models* are drawn in code with a `Sketch` (`props/models.ts`), a quarter of a
+      block a voxel unless said otherwise, or read from a `.vox` file
+      (`propFromVox`). The sloop's is her own ship file (`props/catalog.ts`). All are
+      meshed with `meshCells`, as ships are.
+    - *Drawing:* one `InstancedMesh` a kind for every town at once, lit like the
+      terrain and casting shadows. That's ten draw calls and about 39,000 triangles a
+      pass (the shadow map and the water's reflection draw them too), never culled,
+      since each mesh spans every town; at Haven at night the frame time stayed
+      within the noise of the build before them. A prop hung on a wall names that
+      block as its anchor, and the shader discards it while the anchor is lifted away
+      on foot (the lift test in `render/lifts.ts`, shared with the terrain). So a
+      sign, a door lantern or the clock goes with its wall, and street furniture,
+      with no anchor, never lifts.
+    - *Reserved cells:* a prop drawn a block a voxel can keep people out of the cells
+      it fills. `reserveProps` writes the blocker into the sloop's, once, straight
+      after worldgen and before `trackEdits`, so they're part of the generated world
+      and never of a save.
   - **Banners.** Five by three, on a pole: the Brethren's black with a skull over two
     bones, the Crown's crimson with a gold cross, the Guild's blue with a white band
     and a gold boss.
@@ -421,9 +477,11 @@ Each port island gets a harbour:
     terracotta, a stone watchtower, a crimson flag. The pirate haven: plank shacks
     under tarred roofs, with black flags at the top of the ramp.
   - **Tests** (`town.test.ts`) build all five real ports and check the spacing, the
-    flat square and gentle streets, level pads, no trees in town, the slipway and
-    hull, the market on the square, the roofs, flags and floors of each style, and
-    signs on their buildings.
+    flat square and gentle streets, the stairs at the rises, level pads, no trees in
+    town, the slipway and the sloop on it, the market on the square, the roofs, flags
+    and floors of each style, the porches, and signs, lanterns and the clock where
+    they belong. The props' own tests (`props/*.test.ts`) check the models, the
+    placement maths and the reserved cells.
 - **Berth.** Alongside the pier head, bow out to sea: where ships dock, leave and
   respawn.
 
@@ -540,6 +598,12 @@ your pack is stowed in the hold.
 - An axis-separated box, 0.6 wide and 1.7 tall, under gravity.
 - It scrambles up ledges of up to two voxels, but not a three-voxel wall. It wades
   into water up to a voxel deep, and no further.
+- **Heights come in half-block steps.** The walker's box is tested against a stair's
+  or slab's own boxes (`voxel/shapes.ts`), not the whole cell, and it climbs half a
+  block at a time: a stair or a slab is one half-step, a whole block two. Each is a
+  one-tick move, as a whole step always was. Pathfinding (`land/paths.ts`: settlers,
+  creatures and townsfolk) stands each node on its real top, whole or half, under the
+  same rise limits, and dropped items come to rest on a slab or a stair's step.
 - Crops are drawn but walkable. A separate `blocksWalker` test sits alongside
   `isSolid`.
 
@@ -577,7 +641,8 @@ opens up whatever hides the captain, as in a doll's house.
   a storey above its floor, or from its eaves if those are lower, lifts, so no roof
   is left hanging. If the line of sight passes through lower down (the captain just
   behind a tall building's wall), it lifts from there. Lanterns go with the wall or
-  post they hang from. It's held for 0.6 s after the captain moves clear.
+  post they hang from, and a prop hung on a wall goes with its anchor (§8). It's held
+  for 0.6 s after the captain moves clear.
 - **Beside you in port.** With the camera nearer than 60, a roofed building within
   2 of the captain lifts too (the one whose door they're at, say), so you see in; the
   rest of the town keeps its roofs. (Lifting every roof within 12 made the town read
@@ -686,10 +751,14 @@ straight into the storehouses.
   - a storehouse (150 goods);
   - they're levelled onto ground that varies by up to two voxels, with foundations
     filling the gaps.
-- **Free-form pieces** go down one cell at a time: fences, gravel paths and torches.
+- **Free-form pieces** go down one cell at a time: fences, gravel paths and torches,
+  and plank and stone stairs and slabs (a timber or a stone each). Q and R turn a
+  stair to climb the way you want. Stairs and slabs go on a whole solid block, so a
+  flight can be built up a slope.
 - **Materials** come from your pack, then any storehouse nearby, then the ship's hold
   if she's anchored within 60. So a hut can be built from timber bought in port.
-- **Taking things down.** The axe or pickaxe takes up fences, paths and torches.
+- **Taking things down.** The axe or pickaxe takes up fences, paths, torches, stairs
+  and slabs.
   Buildings come down from the build menu, for half their materials back.
 
 **Farms** (`land/crops.ts`):
@@ -1105,11 +1174,12 @@ src/
                        crossfades its end into its start) and the Soundtrack that
                        picks one: a fight (Sea.inBattle, or a duel) over the rest
   voxel/               engine-agnostic voxel core, no three.js imports
-    blocks.ts          block ids, colours, solidity
+    blocks.ts          block ids, colours, solidity, the stair and slab shapes
     palette.ts         colour + solidity tables for the mesher
     Chunk.ts           32³ storage
     VoxelWorld.ts      sparse chunks, edits, dirty tracking, column queries
     mesher.ts          padded volume + face-culled AO mesher
+    shapes.ts          heights and collision on stairs and slabs
     raycast.ts         voxel DDA
   vox/                 MagicaVoxel .vox parser (scene graph) and writer
   sailing/             ship handling, hull outline, point of sail, weather,
@@ -1128,13 +1198,20 @@ src/
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
   worldgen/            seeded noise, island generator, archipelago plan, harbours,
                        deposits (where outcrops go)
+  props/               the towns' decoration finer than a block: types, sketch
+                       (drawing a model voxel by voxel), models (lanterns, signs,
+                       the clock, porch posts and rails), catalog (every kind, the
+                       sloop's hull among them), place (a placement's matrix) and
+                       reserve (the blocker in a prop's cells)
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
   render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
                        Wake, WindStreaks, voxelGeometry, DuelView, CharacterView,
                        LandView (the captain on foot, tool marker, build ghost),
                        toolModels, PeopleView (settlers, creatures), NightLights,
-                       NightLife (bats, ghost lights), glow
+                       NightLife (bats, ghost lights), glow, PropsView (the props,
+                       one instanced mesh a kind), lifts (the roof lift's shader
+                       test, shared by the terrain and the props)
   land/                on foot: the walker, tools, camps and buildings, crops,
                        settlers and their paths, workshops, night creatures,
                        deposits (outcrops of stone and ore)
@@ -1159,7 +1236,9 @@ public/models/         ship and character .vox files
 `voxel`, `vox`, `sailing`, `combat`, `duel`, `economy`, `land`, `treasure`, `story`, `save`, `worldgen`, `ocean` and `core` are unit-tested (`*.test.ts`
 next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
-`tools`, `ui` or three.js. Only `Game.ts` knows about everything.
+`tools`, `ui` or three.js. `props` is unit-tested too; it imports nothing from
+`render` or `ui`, and three.js only for a placement's matrix (`place.ts`). Only
+`Game.ts` knows about everything.
 
 ## 16. Roadmap (proposed)
 
@@ -1185,14 +1264,45 @@ verified in the running game. None of those directories import from `render`,
       out), the camera pulls back to 36, and the HUD is clearer, with help that
       hides after two days (H shows it). The visual critic ran four passes. It
       stayed at 4/10, held back by the on-foot art, so the rest is below.
+    - ✅ **Stairs, slabs and props**
+      ([design](superpowers/specs/2026-09-25-block-shapes-and-props-design.md)).
+      Gravel, stone and plank stairs and slabs, walked in half-steps by the captain,
+      settlers, creatures and townsfolk. Town streets climb by stairs, and camps can
+      build them. The towns have props finer than a block: lanterns on the posts and
+      by the doors, signboards and signposts, a clock on the office, porches before
+      the tavern and the office, and the sloop on the stocks.
     - **Next: a town art pass.** The critic's open points from its last pass
       (`.playwright-mcp/critic-town-4/report.md`, not in git):
-      - The Tavern, Guildhall and Governor's House get shapes of their own (a porch,
-        a hanging signboard, columns, a clock), not the house every dwelling uses.
+      - ✅ The Tavern, Guildhall and Governor's House have a porch, a hanging
+        signboard and (the last two) a clock. Still open: columns, and shapes of their
+        own rather than the house every dwelling uses.
       - Each faction lays its town out its own way, not one kit re-roofed.
-      - The ship on the stocks should read as a ship from above.
+      - ✅ The ship on the stocks reads as a ship from above: she's the sloop's own
+        hull.
       - The captain should read at a glance (a lighter, more distinct figure).
       - Night: bats read as debris, and moonlit plaster turns royal blue.
+
+      The critic's pass after the props (`.playwright-mcp/critic-town-5/report.md`,
+      3/10 from another model, so not to be set against the 4/10 above) read the night
+      lanterns as dark figures with glowing eyes; their glass now runs unbroken round
+      them. Still open, from that pass and from the look at the game that went with it:
+      - Lifting a roof shows a bare room, and on foot the square is ringed with
+        roofless boxes (as before).
+      - The tool's red target outline, half hidden, reads as stray debug lines.
+      - Wind streaks read as white glitches over the town and the water.
+      - The broadside range dots show in port, a dotted line across the sea.
+      - The ports look alike from the sea, and the HUD's text is small. Place labels
+        (serif on cream) and prompts (sans on white) look like two kits, and the
+        prompt at a door sits over the captain.
+      - From the sea at night a lantern is a point of light, where the old lantern
+        block was a whole glowing cube, so the pier reads less well.
+      - Haven's market signpost stands in the gap at a stall's end, hidden by the
+        awnings from most views.
+      - The ship on the stocks never lifts on foot (a prop with no anchor), so at the
+        yard her hull and mast can stand between the camera and the captain.
+      - At Kingsreach, in the street between the tavern and the Governor's House with
+        the camera from the south-west, a roof hides the captain and doesn't lift (the
+        same on `main`).
 11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
 12. **Farming:** growth cycles, seeds, the hoe, watering and harvest yields, built on the crops already there.
 
