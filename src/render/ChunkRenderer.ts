@@ -6,14 +6,11 @@ import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import { MAX_LIFTS } from './RoofLifter';
+import { LIFT_GLSL, Lifts } from './lifts';
 import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
 const ZONE_COLOR = 0xe0583a;
-/** How many boxes can be lifted away at once (the roof lifter's limit), and the height of one that isn't in use. */
-const LIFTS = MAX_LIFTS;
-const NEVER = 1e6;
 
 /**
  * Keeps one Three.js mesh per non-empty chunk in sync with the voxel data. It never
@@ -24,13 +21,8 @@ export class ChunkRenderer {
   private readonly meshes = new Map<Chunk, Mesh>();
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
   private readonly scratch = new Uint8Array(PADDED ** 3);
-  /**
-   * Lifted away on foot (roofs, upper storeys, canopies in the captain's way): up to
-   * `LIFTS` boxes, each (x0, z0, x1, z1), and the height above which a tree's or a
-   * building's blocks in it go. An unused box sits under an impossible height.
-   */
-  private readonly liftBoxes = { value: Array.from({ length: LIFTS }, () => new Vector4()) };
-  private readonly liftFrom = { value: new Array<number>(LIFTS).fill(NEVER) };
+  /** What's lifted away on foot: shared with the props hung on buildings. */
+  readonly lifts = new Lifts();
   /** How brightly embers, lanterns and windows glow: faintly by day, strongly at night. */
   private readonly glow = { value: 0.2 };
   /** Land marked out on the ground (a town's): centre x, z, radius, and how strongly it shows (0 = not at all). */
@@ -42,8 +34,7 @@ export class ChunkRenderer {
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
     this.material.onBeforeCompile = (shader) => {
-      shader.uniforms.uLiftBox = this.liftBoxes;
-      shader.uniforms.uLiftFrom = this.liftFrom;
+      Object.assign(shader.uniforms, this.lifts.uniforms);
       shader.uniforms.uGlow = this.glow;
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
@@ -59,8 +50,7 @@ export class ChunkRenderer {
         .replace(
           '#include <common>',
           /* glsl */ `#include <common>
-uniform vec4 uLiftBox[${LIFTS}];
-uniform float uLiftFrom[${LIFTS}];
+${LIFT_GLSL}
 uniform float uGlow;
 uniform vec4 uZone;
 uniform vec3 uZoneColor;
@@ -119,13 +109,7 @@ if (under > 0.0) {
 // The voxel a fragment belongs to: half a block back into it from its face. (Per
 // fragment: a face's corners sit in different cells, so a per-vertex cell would drift
 // across the face, and cut the last row under a lift away but for its top.)
-if (vCutaway > 0.5) {
-  vec3 cell = floor(vCutWorld - vFace * 0.5) + 0.5;
-  for (int k = 0; k < ${LIFTS}; k++) {
-    vec4 b = uLiftBox[k];
-    if (cell.y > uLiftFrom[k] && cell.x > b.x && cell.x < b.z && cell.z > b.y && cell.z < b.w) discard;
-  }
-}`,
+if (vCutaway > 0.5 && lifted(floor(vCutWorld - vFace * 0.5) + 0.5)) discard;`,
         );
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
@@ -154,22 +138,12 @@ if (vCutaway > 0.5) {
    * captain's way. An empty list lifts nothing.
    */
   setLifts(lifts: ReadonlyArray<{ x0: number; z0: number; x1: number; z1: number; from: number }>): void {
-    for (let k = 0; k < LIFTS; k++) {
-      const l = lifts[k];
-      this.liftBoxes.value[k].set(l?.x0 ?? 0, l?.z0 ?? 0, l?.x1 ?? 0, l?.z1 ?? 0);
-      this.liftFrom.value[k] = l ? l.from : NEVER;
-    }
+    this.lifts.set(lifts);
   }
 
   /** Is this voxel lifted away, so the mouse should pick through it? The shader's test, at the voxel's centre. */
   hides(x: number, y: number, z: number, id: BlockId): boolean {
-    if (((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) === 0) return false;
-    const boxes = this.liftBoxes.value;
-    for (let k = 0; k < LIFTS; k++) {
-      const b = boxes[k];
-      if (y + 0.5 > this.liftFrom.value[k] && x + 0.5 > b.x && x + 0.5 < b.z && z + 0.5 > b.y && z + 0.5 < b.w) return true;
-    }
-    return false;
+    return ((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) !== 0 && this.lifts.holds(x, y, z);
   }
 
   get meshCount(): number {
