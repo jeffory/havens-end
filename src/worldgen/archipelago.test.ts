@@ -96,8 +96,10 @@ describe('buildArchipelago', () => {
 });
 
 /**
- * Every column someone on foot could reach from a point, by the walker's rules:
- * scramble up to STEP_UP, drop any height, never into water over their depth.
+ * Every column someone on foot could reach from a point, by the walker's rules: it walks
+ * across at the current height first (dropping to whatever ground is there, any height
+ * down), and only tries to climb (up to STEP_UP, and only where there's headroom) when
+ * the way across is blocked; never into water over their depth.
  */
 function walkableFrom(world: VoxelWorld, x: number, y: number, z: number, radius: number): Set<string> {
   const seen = new Set<string>();
@@ -113,8 +115,10 @@ function walkableFrom(world: VoxelWorld, x: number, y: number, z: number, radius
       const nx = cx + dx;
       const nz = cz + dz;
       if (Math.abs(nx - x0) > radius || Math.abs(nz - z0) > radius || seen.has(`${nx},${nz}`)) continue;
-      const ny = standable(world, nx + 0.5, nz + 0.5, cy + STEP_UP + 0.5);
-      if (ny === null || (ny > cy && collides(world, cx + 0.5, ny, cz + 0.5))) continue;
+      // Walk across at the current height first, as the walker does; climb only when blocked.
+      const clear = !collides(world, nx + 0.5, cy, nz + 0.5);
+      const ny = clear ? standable(world, nx + 0.5, nz + 0.5, cy + 0.5) : standable(world, nx + 0.5, nz + 0.5, cy + STEP_UP + 0.5);
+      if (ny === null || (!clear && ny > cy && collides(world, cx + 0.5, ny, cz + 0.5))) continue;
       queue.push([nx, ny, nz]);
     }
   }
