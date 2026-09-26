@@ -665,9 +665,11 @@ function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: Readonly
   const stern = lane.u1 - 2;
   const keel = heights.get(stern)!;
   for (let u = stern; u > stern - HULL_ON_STOCKS_LENGTH; u -= 3) {
-    const deck = heights.get(u);
-    if (deck === undefined) continue; // past the slipway's end, over the water
-    for (let y = deck; y < keel; y++) place(world, f, u, centre, y, Block.Wood);
+    // A cradle running out into the water where the slipway is shorter than she is: past
+    // its end, a post stands on the seabed instead of on the falling planks.
+    const { x, z } = at(f, u, centre);
+    const foot = heights.get(u) ?? groundHeight(world, x, z);
+    for (let y = foot; y < keel; y++) place(world, f, u, centre, y, Block.Wood);
   }
   // Her origin is the middle of her stern's face: between her stern's cell and the one landward of it.
   const here = at(f, stern, centre);
