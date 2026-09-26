@@ -1,4 +1,4 @@
-import { FLAG_CUTAWAY, FLAG_GLOW, srgbToLinear, type VoxelPalette } from './palette';
+import { type Box, FLAG_CUTAWAY, FLAG_GLOW, srgbToLinear, type VoxelPalette } from './palette';
 
 /** Block ids stored in chunk voxel arrays (one byte each, so up to 256 kinds). */
 export const Block = {
@@ -70,6 +70,24 @@ export const Block = {
   Books: 57,
   FlagWhite: 58,
   FlagGold: 59,
+  // Stairs and slabs (see the shape table): gravel for streets, stone for steps, planks for floors and porches
+  GravelSlab: 60,
+  GravelStairS: 61,
+  GravelStairE: 62,
+  GravelStairN: 63,
+  GravelStairW: 64,
+  StoneSlab: 65,
+  StoneStairS: 66,
+  StoneStairE: 67,
+  StoneStairN: 68,
+  StoneStairW: 69,
+  PlanksSlab: 70,
+  PlanksStairS: 71,
+  PlanksStairE: 72,
+  PlanksStairN: 73,
+  PlanksStairW: 74,
+  // Taken by a prop that mustn't be walked through (the ship on the stocks): solid, never drawn, never picked
+  Blocker: 75,
 } as const;
 
 export type BlockId = number;
@@ -142,6 +160,76 @@ const DEFS: Record<BlockId, BlockDef> = {
   [Block.FlagGold]: { name: 'gold on a flag', color: 0xe3b53a },
 };
 
+/** The way a stair climbs (and a building's `rot`): 0 toward +z (south), 1 +x (east), 2 −z (north), 3 −x (west). */
+export const FACING_DIRS: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [1, 0],
+  [0, -1],
+  [-1, 0],
+];
+
+/** What's cut into stairs and slabs: the material, its slab (its four stairs follow, by facing), and what they're called. */
+const CUT: ReadonlyArray<readonly [BlockId, BlockId, string]> = [
+  [Block.Gravel, Block.GravelSlab, 'gravel'],
+  [Block.Stone, Block.StoneSlab, 'stone'],
+  [Block.Planks, Block.PlanksSlab, 'plank'],
+];
+
+const SLAB_BOXES: readonly Box[] = [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 0.5, z1: 1 }];
+
+/** A stair climbing toward `facing`: a low step on the half you come from, the full height on the half you climb to. */
+function stairBoxes(facing: number): Box[] {
+  const [dx, dz] = FACING_DIRS[facing];
+  const low: Box = { x0: 0, y0: 0, z0: 0, x1: 1, y1: 0.5, z1: 1 };
+  const high: Box = { x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 };
+  if (dx > 0) low.x1 = high.x0 = 0.5;
+  else if (dx < 0) low.x0 = high.x1 = 0.5;
+  else if (dz > 0) low.z1 = high.z0 = 0.5;
+  else low.z0 = high.z1 = 0.5;
+  return [low, high];
+}
+
+const SHAPES = new Array<readonly Box[] | null>(256).fill(null);
+const BASE = Uint8Array.from({ length: 256 }, (_, id) => id);
+const FACING = new Int8Array(256).fill(-1);
+const SLABS = new Map<BlockId, BlockId>();
+for (const [material, slab, name] of CUT) {
+  const { color } = DEFS[material];
+  SLABS.set(material, slab);
+  DEFS[slab] = { name: `${name} slab`, color };
+  SHAPES[slab] = SLAB_BOXES;
+  BASE[slab] = material;
+  for (let facing = 0; facing < 4; facing++) {
+    const stair = slab + 1 + facing;
+    DEFS[stair] = { name: `${name} stairs`, color };
+    SHAPES[stair] = stairBoxes(facing);
+    BASE[stair] = material;
+    FACING[stair] = facing;
+  }
+}
+DEFS[Block.Blocker] = { name: 'blocker', color: 0x000000 };
+
+/** Solid but never drawn, and hiding nothing: the blocker a prop stands in. */
+const HIDDEN = new Uint8Array(256);
+HIDDEN[Block.Blocker] = 1;
+
+/** The boxes a stair or slab is made of; null for a whole cube (or air). */
+export const shapeOf = (id: BlockId): readonly Box[] | null => SHAPES[id];
+/** What a stair or slab is cut from; any other block is its own. */
+export const baseOf = (id: BlockId): BlockId => BASE[id];
+/** Which way a stair climbs (see FACING_DIRS); -1 for anything else. */
+export const stairFacing = (id: BlockId): number => FACING[id];
+
+/** A material's slab. Only gravel, stone and planks are cut into slabs and stairs. */
+export function slabOf(material: BlockId): BlockId {
+  const slab = SLABS.get(material);
+  if (slab === undefined) throw new Error(`slabOf: block ${material} isn't cut into slabs`);
+  return slab;
+}
+
+/** A material's stair climbing toward `facing` (a quarter turn, as in FACING_DIRS). */
+export const stairOf = (material: BlockId, facing: number): BlockId => slabOf(material) + 1 + (((facing % 4) + 4) % 4);
+
 const SOLID = new Uint8Array(256);
 const BLOCK_COLORS = new Float32Array(256 * 3);
 
@@ -155,6 +243,9 @@ for (const [key, def] of Object.entries(DEFS)) {
 
 /** Solid blocks are drawn, occlude neighbouring faces and stop rays (tools hit them). */
 export const isSolid = (id: BlockId): boolean => SOLID[id] === 1;
+
+/** Picked by the mouse and stopped by rays: drawn and solid (not the blocker a prop stands in). */
+export const isPickable = (id: BlockId): boolean => SOLID[id] === 1 && HIDDEN[id] === 0;
 
 /** Drawn and hit by tools, but you walk through them: crops. */
 const PASSABLE = new Uint8Array(256);
@@ -210,5 +301,8 @@ for (const id of [
 // What glows after dark.
 for (const id of [Block.Embers, Block.Window, Block.Lantern]) FLAGS[id] |= FLAG_GLOW;
 
+// Stairs and slabs are what they're cut from: plank ones lift with the building they're part of.
+for (let id = 0; id < 256; id++) if (BASE[id] !== id) FLAGS[id] = FLAGS[BASE[id]];
+
 /** Terrain colours, solidity and flags, in the form the mesher takes. */
-export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID, flags: FLAGS };
+export const BLOCK_PALETTE: VoxelPalette = { colors: BLOCK_COLORS, solid: SOLID, flags: FLAGS, shapes: SHAPES, hidden: HIDDEN };

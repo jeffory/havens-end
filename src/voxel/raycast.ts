@@ -1,4 +1,4 @@
-import { isSolid, type BlockId } from './blocks';
+import { isPickable, type BlockId } from './blocks';
 
 export interface VoxelReader {
   getVoxel(x: number, y: number, z: number): BlockId;
@@ -19,7 +19,8 @@ export interface VoxelHit {
 /**
  * Walks the voxel grid cell by cell along a ray (Amanatides & Woo DDA). Exact and
  * cheap, and it reads the voxel data directly, so it never goes stale when terrain
- * is dug. Used for tool picking now, and for cannonball-vs-terrain later.
+ * is dug. Used for tool picking now, and for cannonball-vs-terrain later. It stops
+ * at what's drawn and solid (rays pass through the blocker a prop stands in).
  */
 export function raycastVoxels(
   world: VoxelReader,
@@ -45,7 +46,7 @@ export function raycastVoxels(
   let t = 0;
 
   while (t <= maxDistance) {
-    if (isSolid(world.getVoxel(x, y, z))) return { x, y, z, nx, ny, nz, distance: t };
+    if (isPickable(world.getVoxel(x, y, z))) return { x, y, z, nx, ny, nz, distance: t };
 
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
       x += stepX;

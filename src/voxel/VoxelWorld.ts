@@ -106,7 +106,7 @@ export class VoxelWorld {
     this.edited?.add(chunkKey(cx, cy, cz));
   }
 
-  /** Height of the first empty cell above the highest solid voxel in a column (0 if the column is empty). */
+  /** Height of the first empty cell above the highest solid voxel in a column (0 if the column is empty). The blocker a prop stands in is no part of the ground. */
   surfaceHeight(x: number, z: number, maxY = MAX_TERRAIN_HEIGHT): number {
     const cx = x >> CHUNK_SHIFT;
     const cz = z >> CHUNK_SHIFT;
@@ -119,7 +119,8 @@ export class VoxelWorld {
         y = (cy << CHUNK_SHIFT) - 1; // skip the whole empty chunk
         continue;
       }
-      if (chunk.data[Chunk.index(lx, y & CHUNK_MASK, lz)] !== Block.Air) return y + 1;
+      const id = chunk.data[Chunk.index(lx, y & CHUNK_MASK, lz)];
+      if (id !== Block.Air && id !== Block.Blocker) return y + 1;
       y--;
     }
     return 0;
