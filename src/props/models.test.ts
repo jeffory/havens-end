@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { meshCells } from '../render/voxelGeometry';
 import { buildShipModel, type ShipModel } from '../sailing/shipModel';
 import { SLOOP } from '../sailing/ships';
 import { FLAG_GLOW } from '../voxel/palette';
 import { parseVox, type VoxFile } from '../vox/parseVox';
+import { writeVox } from '../vox/writeVox';
 import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
 import { hullOnStocks, propCatalog, propFromVox } from './catalog';
 import { clock, lantern, signboard, wallLantern } from './models';
@@ -108,5 +110,22 @@ describe('prop models', () => {
     const b = bounds(m);
     expect(m.origin.y).toBe(b.minY);
     expect(m.origin.x).toBe((b.minX + b.maxX + 1) / 2);
+  });
+
+  it('load a .vox prop from its bytes and mesh it as ships are meshed', () => {
+    // A little post and its cap, written out as a MagicaVoxel file and read back.
+    const rgba = new Uint8Array(256 * 4);
+    rgba.set([120, 80, 40, 255], 1 * 4);
+    rgba.set([200, 180, 60, 255], 2 * 4);
+    const bytes = writeVox([{ name: 'post', size: [1, 1, 3], min: [0, 0, 0], voxels: [[0, 0, 0, 1], [0, 0, 1, 1], [0, 0, 2, 2]] }], rgba);
+    const m = propFromVox(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer));
+    expect(m.cells.length).toBe(12);
+    expect(bounds(m).maxY - bounds(m).minY).toBe(2); // MagicaVoxel's z is the game's y: it stands up
+    const geometry = meshCells(m.cells, m.palette);
+    expect(geometry.getAttribute('position').count).toBeGreaterThan(0);
+    expect(geometry.getIndex()!.count).toBeGreaterThan(0);
+    // The whole post, three voxels tall.
+    geometry.computeBoundingBox();
+    expect(geometry.boundingBox!.max.y - geometry.boundingBox!.min.y).toBeCloseTo(3);
   });
 });

@@ -358,6 +358,27 @@ describe('towns', () => {
     expect(tried).toBeGreaterThan(0);
   });
 
+  it('set out the same props from the same seed', () => {
+    const plans = planArchipelago(1717).filter((plan) => plan.port);
+    PORTS.forEach(({ name, home, harbour }, i) => {
+      const world = new VoxelWorld();
+      generateIsland(world, plans[i]);
+      const again = buildHarbour(world, plans[i], plans[i].port!.faction, home);
+      expect(harbour.decor.length, name).toBeGreaterThan(0);
+      expect(again.decor, name).toEqual(harbour.decor);
+    });
+  });
+
+  it('stand every prop that stands on the ground on something solid: lanterns on their posts, porch posts and rails on the deck, signposts', () => {
+    const standing = new Set(['lantern', 'porchPost', 'porchRail', 'signpostMarket', 'signpostShipyard']);
+    for (const { name, world, harbour } of PORTS) {
+      const props = harbour.decor.filter((d) => standing.has(d.kind));
+      expect(props.length, name).toBeGreaterThan(0);
+      // Looking down from under its foot (a signpost's own cells are the blocker), the top of what's there is where it stands.
+      for (const d of props) expect(groundBelow(world, d.x, d.z, d.y - 0.5), `${name} ${d.kind} at ${d.x},${d.y},${d.z}`).toBe(d.y);
+    }
+  });
+
   it('put a clock over the office door, where it has an upper storey to hang on', () => {
     let clocks = 0;
     for (const { name, world, harbour } of PORTS) {
