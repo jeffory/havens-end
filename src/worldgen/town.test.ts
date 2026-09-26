@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import type { Port } from '../economy/ports';
+import { findPath } from '../land/paths';
 import { guardPosts } from '../land/townsfolk';
-import { createWalker, groundBelow, stepWalker } from '../land/walker';
-import { baseOf, Block, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
+import { collides, createWalker, groundBelow, stepWalker } from '../land/walker';
+import { baseOf, Block, blocksWalker, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { planArchipelago } from './archipelago';
@@ -323,9 +324,38 @@ describe('towns', () => {
         const post = harbour.decor.find((d) => d.kind === sign);
         expect(post, `${name} ${kind} signpost`).toBeDefined();
         expect(Math.hypot(post!.x - p.x, post!.z - p.z), `${name} ${kind} signpost by the way in`).toBeLessThanOrEqual(3.5);
-        expect(world.getVoxel(Math.floor(post!.x), post!.y, Math.floor(post!.z)), `${name} ${kind} signpost keeps its cell`).toBe(Block.Blocker);
+        // Its post is 2.75 blocks tall: the blocker in its two cells, and over them either
+        // the blocker again or something already in the way (the shed's eave).
+        const [x, z] = [Math.floor(post!.x), Math.floor(post!.z)];
+        for (const dy of [0, 1]) expect(world.getVoxel(x, post!.y + dy, z), `${name} ${kind} signpost keeps its cells`).toBe(Block.Blocker);
+        expect(blocksWalker(world.getVoxel(x, post!.y + 2, z)), `${name} ${kind} signpost keeps the cell over them`).toBe(true);
       }
     }
+  });
+
+  it('keep everyone off the signposts: nobody walks into one or scrambles up on top of it, and no path goes over it', () => {
+    let tried = 0;
+    for (const { name, world, harbour } of PORTS) {
+      for (const post of harbour.decor.filter((d) => d.kind === 'signpostMarket' || d.kind === 'signpostShipyard')) {
+        const [x, z] = [Math.floor(post.x), Math.floor(post.z)];
+        // A cell beside it with its ground at the post's foot, clear to stand in.
+        const beside = (dx: number, dz: number) => !collides(world, x + dx + 0.5, post.y, z + dz + 0.5) && groundBelow(world, x + dx + 0.5, z + dz + 0.5, post.y + 0.5) === post.y;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (!beside(dx, dz)) continue;
+          tried++;
+          const label = `${name} ${post.kind} at ${x},${z}, from ${dx},${dz}`;
+          const w = createWalker(x + dx + 0.5, post.y, z + dz + 0.5);
+          for (let t = 0; t < 1.5; t += 1 / 60) stepWalker(w, -dx, -dz, world, 1 / 60);
+          expect([Math.floor(w.x), Math.floor(w.z)], `${label}: walked in`).not.toEqual([x, z]);
+          expect(w.y, `${label}: climbed`).toBe(post.y);
+          if (!beside(-dx, -dz)) continue;
+          const path = findPath(world, { x: x + dx + 0.5, y: post.y, z: z + dz + 0.5 }, { x: x - dx + 0.5, z: z - dz + 0.5 });
+          expect(path, `${label}: a way round`).not.toBeNull();
+          expect(path!.some((n) => Math.floor(n.x) === x && Math.floor(n.z) === z), `${label}: the way goes over it`).toBe(false);
+        }
+      }
+    }
+    expect(tried).toBeGreaterThan(0);
   });
 
   it('put a clock over the office door, where it has an upper storey to hang on', () => {

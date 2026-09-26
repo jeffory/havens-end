@@ -450,7 +450,9 @@ Each port island gets a harbour:
     - *Signs:* the tavern and the office hang a signboard with their device (a
       tankard, a seal) on a bracket beside the door. The market's open hall and the
       shipyard's shed have no wall there, so they get a signpost (scales, an anchor)
-      whose post stands in two blocker cells.
+      whose post stands in three blocker cells. It's 2.75 blocks tall, and with two
+      the captain scrambled up on top and paths went over it. At the shipyard the
+      top cell is the shed's eave already, which keeps anyone off just as well.
     - *The clock,* two blocks across, over the office door, standing on the porch's
       canopy. It goes up only where the wall is behind the whole of it and nothing is
       in front of its face (the Pirate Lord's Hall's eave is, so it has none). The

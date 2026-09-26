@@ -1,7 +1,7 @@
 import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
 import type { PropKind, PropPlacement } from '../props/types';
-import { baseOf, Block, type BlockId, FACING_DIRS, isSolid, slabOf, stairOf } from '../voxel/blocks';
+import { baseOf, Block, type BlockId, blocksWalker, FACING_DIRS, isSolid, slabOf, stairOf } from '../voxel/blocks';
 import { pointBlocked, topIn } from '../voxel/shapes';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
@@ -930,16 +930,29 @@ function onWall(kind: PropKind, x: number, y: number, z: number, ox: number, oz:
 }
 
 /**
+ * The cells a signpost's post keeps people out of, from its foot up. The post is 2.75
+ * blocks tall; with only two, anyone walking into it scrambled up on top (a ledge of two
+ * is within STEP_UP), and paths went over it.
+ */
+const SIGNPOST_CELLS = 3;
+
+/**
  * A signpost by a way in with no wall beside it (the market's open hall, the shipyard's
  * shed), on the first of `spots` with room for it, looking out along (ox, oz). It keeps
- * people out of its post's cells.
+ * people out of its post's cells: its foot and the cell over it must be clear, and the
+ * top one clear or already something nobody walks through (the shed's eave, over the way
+ * into the shipyard). The blocker goes only where there's air.
  */
 function signpostAt(world: VoxelWorld, kind: PropKind, spots: ReadonlyArray<{ x: number; z: number }>, y: number, ox: number, oz: number, decor: PropPlacement[]): void {
   for (const { x, z } of spots) {
-    if (world.getVoxel(x, y, z) !== Block.Air || world.getVoxel(x, y + 1, z) !== Block.Air || !isSolid(world.getVoxel(x, y - 1, z))) continue;
+    let room = isSolid(world.getVoxel(x, y - 1, z));
+    for (let dy = 0; dy < SIGNPOST_CELLS && room; dy++) {
+      const id = world.getVoxel(x, y + dy, z);
+      room = id === Block.Air || (dy === SIGNPOST_CELLS - 1 && blocksWalker(id));
+    }
+    if (!room) continue;
     decor.push({ kind, x: x + 0.5, y, z: z + 0.5, facing: facingOf(ox, oz), anchor: null });
-    world.setVoxel(x, y, z, Block.Blocker);
-    world.setVoxel(x, y + 1, z, Block.Blocker);
+    for (let dy = 0; dy < SIGNPOST_CELLS; dy++) if (world.getVoxel(x, y + dy, z) === Block.Air) world.setVoxel(x, y + dy, z, Block.Blocker);
     return;
   }
 }
