@@ -957,6 +957,9 @@ export class Land {
       const ground = this.world.getVoxel(cx, y - 1, cz);
       if (y < SEA_LEVEL) return verdict(false, 'Too wet.', y);
       if (PIECES[kind] && (shapeOf(ground) !== null || !blocksWalker(ground))) return verdict(false, 'Stairs and slabs go on solid ground.', y);
+      // A fence or a torch fills its whole cell from the foot: on a stair or a slab it would
+      // float half a block over the step. (A path wants grass, earth or sand, below.)
+      if (kind !== 'path' && shapeOf(ground) !== null) return verdict(false, 'That won’t stand on a slab or a stair.', y);
       if (kind === 'path' ? ![Block.Grass, Block.Dirt, Block.Sand].includes(ground as never) : this.world.getVoxel(cx, y, cz) !== Block.Air) {
         return verdict(false, kind === 'path' ? 'Paths go on grass, earth or sand.' : 'Something’s in the way.', y);
       }

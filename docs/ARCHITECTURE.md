@@ -760,7 +760,8 @@ straight into the storehouses.
 - **Free-form pieces** go down one cell at a time: fences, gravel paths and torches,
   and plank and stone stairs and slabs (a timber or a stone each). Q and R turn a
   stair to climb the way you want. Stairs and slabs go on a whole solid block, so a
-  flight can be built up a slope.
+  flight can be built up a slope. A fence or a torch won't go on a stair or a slab
+  either: it fills its cell from the foot, so it would float half a block over the step.
 - **Materials** come from your pack, then any storehouse nearby, then the ship's hold
   if she's anchored within 60. So a hut can be built from timber bought in port.
 - **Taking things down.** The axe or pickaxe takes up fences, paths, torches, stairs

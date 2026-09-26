@@ -560,4 +560,25 @@ describe('building', () => {
     expect(land.build('plankStairs', 6, 4, 0).ok).toBe(true); // a flight can be built up a whole block
     expect(world.getVoxel(6, SEA_LEVEL + 2, 4)).toBe(Block.PlanksStairS);
   });
+
+  it('won’t stand a fence or a torch on a stair or a slab: it would float half a block over it', () => {
+    const { world, land } = setup();
+    land.goAshore();
+    land.pack.timber = 8;
+    land.build('campfire', 0, -6, 0);
+    world.setVoxel(4, SEA_LEVEL + 1, 4, Block.StoneSlab);
+    world.setVoxel(6, SEA_LEVEL + 1, 4, Block.PlanksStairN);
+    for (const kind of ['fence', 'torch'] as const) {
+      for (const x of [4, 6]) {
+        const refused = land.build(kind, x, 4, 0);
+        expect(refused.ok, `${kind} at ${x}`).toBe(false);
+        expect(refused.message).toBe('That won’t stand on a slab or a stair.');
+      }
+    }
+    expect(world.getVoxel(4, SEA_LEVEL + 2, 4)).toBe(Block.Air);
+    expect(world.getVoxel(6, SEA_LEVEL + 2, 4)).toBe(Block.Air);
+    // On the grass beside them, as ever.
+    expect(land.build('fence', 8, 4, 0).ok).toBe(true);
+    expect(land.build('torch', 10, 4, 0).ok).toBe(true);
+  });
 });
