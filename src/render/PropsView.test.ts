@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Sketch } from '../props/sketch';
 import { PROP_KINDS, type PropKind, type PropModel } from '../props/types';
+import { FLAG_GLOW } from '../voxel/palette';
 import { Lifts } from './lifts';
 import { PropsView } from './PropsView';
 
@@ -25,5 +26,15 @@ describe('props view', () => {
     expect(anchors.getY(0)).toBeLessThan(-1000); // never lifts
     expect([anchors.getX(1), anchors.getY(1), anchors.getZ(1)]).toEqual([12.5, 16.5, 21.5]); // its block's centre
     expect(view.meshes.has('signTavern')).toBe(false);
+  });
+
+  it('marks the lantern glass to glow after dark, and nothing else', () => {
+    // An iron base with a pane of glass on it: five faces of each show.
+    const lantern = new Sketch().paint('iron', 0x2f3237).paint('glass', 0xffd27a, true).put(0, 0, 0, 'iron').put(0, 1, 0, 'glass').model({ x: 0.5, y: 0, z: 0.5 });
+    const view = new PropsView([{ kind: 'lantern', x: 10.5, y: 15, z: 20.5, facing: 0, anchor: null }], { ...catalog, lantern }, new Lifts());
+    const flags = view.meshes.get('lantern')!.geometry.getAttribute('flags');
+    expect(flags).toBeDefined();
+    expect(flags.count).toBe(40);
+    expect(Array.from(flags.array).filter((f) => f === FLAG_GLOW)).toHaveLength(20);
   });
 });

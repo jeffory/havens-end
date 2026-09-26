@@ -42,13 +42,16 @@ export function meshCells(cells: Int32Array, palette: VoxelPalette): BufferGeome
   return toGeometry(merge(parts));
 }
 
+/** One mesh from several chunks' meshes. Their flags (a prop's glowing glass) come too, where the palette has them. */
 function merge(parts: MeshData[]): MeshData {
   const count = (key: 'positions' | 'indices') => parts.reduce((n, p) => n + p[key].length, 0);
+  const flagged = parts.length > 0 && parts.every((p) => p.flags);
   const out: MeshData = {
     positions: new Float32Array(count('positions')),
     normals: new Float32Array(count('positions')),
     colors: new Float32Array(count('positions')),
     indices: new Uint32Array(count('indices')),
+    ...(flagged ? { flags: new Float32Array(count('positions') / 3) } : {}),
   };
   let vertexOffset = 0;
   let indexOffset = 0;
@@ -56,6 +59,7 @@ function merge(parts: MeshData[]): MeshData {
     out.positions.set(part.positions, vertexOffset * 3);
     out.normals.set(part.normals, vertexOffset * 3);
     out.colors.set(part.colors, vertexOffset * 3);
+    if (out.flags && part.flags) out.flags.set(part.flags, vertexOffset);
     for (let i = 0; i < part.indices.length; i++) out.indices[indexOffset + i] = part.indices[i] + vertexOffset;
     vertexOffset += part.positions.length / 3;
     indexOffset += part.indices.length;
