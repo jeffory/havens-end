@@ -2,6 +2,7 @@ import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
 import type { PropKind, PropPlacement } from '../props/types';
 import { baseOf, Block, type BlockId, FACING_DIRS, isSolid, slabOf, stairOf } from '../voxel/blocks';
+import { pointBlocked, topIn } from '../voxel/shapes';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
@@ -943,12 +944,29 @@ function signpostAt(world: VoxelWorld, kind: PropKind, spots: ReadonlyArray<{ x:
   }
 }
 
-/** A clock on the office's front over its door, where there's an upper storey's wall to hang it on. */
+/** How high the clock is, and how wide: two blocks each. */
+const CLOCK_SIZE = 2;
+
+/**
+ * A clock on the office's front over its door, where there's an upper storey's wall to hang it
+ * on. It stands on the porch's canopy where there is one (half a block up), and goes up only
+ * where the wall is behind the whole of it and nothing, a canopy or an eave, is in front of its face.
+ */
 function clockOver(world: VoxelWorld, door: Door, decor: PropPlacement[]): void {
   const y = door.y + 3;
-  const wall = world.getVoxel(door.x, y, door.z);
-  if (!isSolid(wall) || [Block.Thatch, Block.RoofTile, Block.RoofSlate, Block.TarredRoof].includes(wall as never)) return;
-  decor.push(onWall('clock', door.x, y, door.z, door.outX - door.x, door.outZ - door.z));
+  const [ox, oz] = [door.outX - door.x, door.outZ - door.z];
+  const [ax, az] = alongOf(door);
+  const foot = y + (world.getVoxel(door.outX, y, door.outZ) === Block.Air ? 0 : topIn(world.getVoxel(door.outX, y, door.outZ), 0.5, 0.5));
+  const roof: readonly BlockId[] = [Block.Thatch, Block.RoofTile, Block.RoofSlate, Block.TarredRoof];
+  const wallAt = (a: number, h: number) => world.getVoxel(door.x + ax * a, Math.floor(h), door.z + az * a);
+  // Its rows' middles, a quarter of a block apart; and just out from the wall's face, across it.
+  for (let h = foot + 0.125; h < foot + CLOCK_SIZE; h += 0.25) {
+    for (const a of [-1, 0, 1]) if (!isSolid(wallAt(a, h)) || roof.includes(wallAt(a, h))) return;
+    for (const s of [-0.875, 0, 0.875]) {
+      if (pointBlocked(world, door.x + 0.5 + ox * 0.625 + ax * s, h, door.z + 0.5 + oz * 0.625 + az * s)) return;
+    }
+  }
+  decor.push({ ...onWall('clock', door.x, y, door.z, ox, oz), y: foot });
 }
 
 /**

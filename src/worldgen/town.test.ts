@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import { groundBelow } from '../land/walker';
 import { baseOf, Block, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
+import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
@@ -334,6 +335,24 @@ describe('towns', () => {
       }
     }
     expect(clocks).toBeGreaterThanOrEqual(1);
+  });
+
+  it('hang the clock clear of the porch’s canopy and the eaves, flat on the wall', () => {
+    for (const { name, world, harbour } of PORTS) {
+      for (const c of harbour.decor.filter((d) => d.kind === 'clock')) {
+        const [dx, dz] = FACING_DIRS[c.facing];
+        const [ax, az] = [dz, -dx]; // along the wall
+        const { x, z } = c.anchor!;
+        // Two blocks across and two high, a quarter of a block out from the wall: every row of it, at its middle and both ends.
+        for (let y = c.y + 0.125; y < c.y + 2; y += 0.25) {
+          expect(isSolid(world.getVoxel(x, Math.floor(y), z)), `${name} wall behind the clock at ${y}`).toBe(true);
+          for (const s of [-0.875, 0, 0.875]) {
+            const [px, pz] = [x + 0.5 + dx * 0.625 + ax * s, z + 0.5 + dz * 0.625 + az * s];
+            expect(pointBlocked(world, px, y, pz), `${name} clock's face at ${y} (${s} along)`).toBe(false);
+          }
+        }
+      }
+    }
   });
 
   it('fly banners five long and three deep in the owners’ colour, with a device on them', () => {
