@@ -4,6 +4,7 @@ import { buildShipModel, type ShipModel } from '../sailing/shipModel';
 import { SLOOP } from '../sailing/ships';
 import { FLAG_GLOW } from '../voxel/palette';
 import { parseVox, type VoxFile } from '../vox/parseVox';
+import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
 import { hullOnStocks, propCatalog, propFromVox } from './catalog';
 import { clock, lantern, signboard } from './models';
 import { PROP_KINDS, type PropModel } from './types';
@@ -75,6 +76,13 @@ describe('prop models', () => {
     expect(hull.origin.z).toBe(b.minZ);
     expect(hull.origin.y).toBe(b.minY);
     expect(hull.origin.x).toBe((b.minX + b.maxX + 1) / 2);
+  });
+
+  it('lay the stocks for the sloop’s own length', () => {
+    const hull = hullOnStocks(loadSloop());
+    let maxZ = -Infinity;
+    for (let i = 2; i < hull.cells.length; i += 4) maxZ = Math.max(maxZ, hull.cells[i]);
+    expect(maxZ + 1 - hull.origin.z).toBe(HULL_ON_STOCKS_LENGTH);
   });
 
   it('make a prop of a MagicaVoxel file, standing on the middle of its foot', () => {

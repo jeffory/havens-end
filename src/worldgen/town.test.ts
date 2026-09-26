@@ -7,6 +7,7 @@ import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
 import { buildHarbour } from './harbour';
 import { generateIsland } from './island';
+import { HULL_ON_STOCKS_LENGTH } from './town';
 
 /** The real world's five ports, each built alone on its island. */
 const PORTS = planArchipelago(1717)
@@ -138,10 +139,9 @@ describe('towns', () => {
       expect(slipway, name).not.toBeNull();
       const way = slipway!;
       expect(cells(way).some(([x, z]) => [SEA_LEVEL - 1, SEA_LEVEL - 2].some((y) => world.getVoxel(x, y, z) === Block.Planks)), `${name} slipway in the water`).toBe(true);
-      // The hull's timber and planking, above the slipway's own deck (a plank a column).
-      let hull = -cells(way).length;
-      for (const [x, z] of cells(way)) for (let y = SEA_LEVEL - 3; y < SEA_LEVEL + 20; y++) if ([Block.Wood, Block.Planks].includes(world.getVoxel(x, y, z) as never)) hull++;
-      expect(hull, `${name} hull`).toBeGreaterThanOrEqual(12);
+      const hull = harbour.decor.find((d) => d.kind === 'hullOnStocks');
+      expect(hull, `${name} hull`).toBeDefined();
+      expect(outside(way, Math.floor(hull!.x), Math.floor(hull!.z)), `${name} hull over the slipway`).toBeLessThanOrEqual(1);
       const yard = harbour.places.find((p) => p.kind === 'shipyard')!;
       expect(outside(shed, Math.floor(yard.x), Math.floor(yard.z)), `${name} yard door`).toBeLessThanOrEqual(2);
     }
@@ -350,41 +350,18 @@ describe('towns', () => {
     }
   });
 
-  it('build a ship on the stocks: seven wide amidships, her ribs bare forward, and a mast stepped', () => {
+  it('set the sloop on the stocks: level on her keel over them, stern to the land and bow to the sea', () => {
     for (const { name, world, harbour } of PORTS) {
-      const way = harbour.town.slipway!;
-      const alongX = way.w > way.d;
-      const [across, along] = alongX ? [way.d, way.w] : [way.w, way.d];
-      expect(across, `${name} slipway breadth`).toBeGreaterThanOrEqual(7);
-      // Hull across the whole breadth somewhere amidships.
-      const hullAt = (a: number, b: number) => {
-        const [x, z] = alongX ? [way.x0 + b, way.z0 + a] : [way.x0 + a, way.z0 + b];
-        let n = 0;
-        for (let y = SEA_LEVEL; y < SEA_LEVEL + 20; y++) if ([Block.Wood, Block.Planks].includes(world.getVoxel(x, y, z) as never)) n++;
-        return n;
-      };
-      let widest = 0;
-      for (let b = 0; b < along; b++) widest = Math.max(widest, Array.from({ length: across }, (_, a) => a).filter((a) => hullAt(a, b) >= 2).length);
-      expect(widest, `${name} beam`).toBeGreaterThanOrEqual(7);
-      // A mast: a tall run of wood, ten or more.
-      let tallest = 0;
-      for (const [x, z] of cells(way)) {
-        let run = 0;
-        for (let y = SEA_LEVEL; y < SEA_LEVEL + 30; y++) {
-          run = world.getVoxel(x, y, z) === Block.Wood ? run + 1 : 0;
-          tallest = Math.max(tallest, run);
-        }
+      const hull = harbour.decor.find((d) => d.kind === 'hullOnStocks')!;
+      const [dx, dz] = FACING_DIRS[hull.facing];
+      // Bow to the sea: down the slipway ahead of her, the ground falls away.
+      expect(groundHeight(world, Math.floor(hull.x + dx * 10), Math.floor(hull.z + dz * 10)), `${name} bow to the sea`).toBeLessThan(hull.y);
+      // Stocks under her, up to her keel.
+      let stocks = 0;
+      for (let t = 1; t < HULL_ON_STOCKS_LENGTH; t++) {
+        if (world.getVoxel(Math.floor(hull.x + dx * (t - 0.5)), hull.y - 1, Math.floor(hull.z + dz * (t - 0.5))) === Block.Wood) stocks++;
       }
-      expect(tallest, `${name} mast`).toBeGreaterThanOrEqual(10);
-      // Ribs: frames standing bare, open between.
-      let ribs = 0;
-      for (const [x, z] of cells(way)) {
-        for (let y = SEA_LEVEL; y < SEA_LEVEL + 12; y++) {
-          const [px, pz, nx, nz] = alongX ? [x - 1, z, x + 1, z] : [x, z - 1, x, z + 1];
-          if (world.getVoxel(x, y, z) === Block.Wood && world.getVoxel(px, y, pz) === Block.Air && world.getVoxel(nx, y, nz) === Block.Air) ribs++;
-        }
-      }
-      expect(ribs, `${name} ribs`).toBeGreaterThanOrEqual(6);
+      expect(stocks, `${name} stocks`).toBeGreaterThanOrEqual(2);
     }
   });
 

@@ -109,6 +109,8 @@ const CLEARING = 7;
 const TREE_MOST = 4000;
 /** Street lamps stand this far apart along the main street. */
 const LAMP_EVERY = 6;
+/** The ship on the stocks is the sloop's own model (props/catalog.ts): this long, stern to stem. */
+export const HULL_ON_STOCKS_LENGTH = 18;
 
 /**
  * Lays out and builds a town behind the foot of a pier. A ramp climbs from the pier to a
@@ -283,7 +285,7 @@ export function buildTown(
   // The shipyard: slipway, hull, shed and timber.
   let slipway: Footprint | null = null;
   if (slip) {
-    buildSlipway(world, f, slip.lane, slip.heights, ys);
+    buildSlipway(world, f, slip.lane, slip.heights, ys, decor);
     slipway = footprint(f, slip.lane);
   }
   const shedPlot = footprint(f, shed);
@@ -648,8 +650,8 @@ function planSlipway(
   return { lane, heights };
 }
 
-/** The slipway's planks, falling to the water, and a hull on the stocks over them. */
-function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: ReadonlyMap<number, number>, side: number): void {
+/** The slipway's planks, falling to the water, and the stocks under a ship: the sloop's model, a prop (Town.decor). */
+function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: ReadonlyMap<number, number>, side: number, decor: PropPlacement[]): void {
   for (const [u, v] of cells(lane)) {
     const h = heights.get(u)!;
     const { x, z } = at(f, u, v);
@@ -658,50 +660,26 @@ function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: Readonly
     for (let y = Math.min(g, h - 2); y < h - 1; y++) world.setVoxel(x, y, z, Block.Stone);
     world.setVoxel(x, h - 1, z, Block.Planks);
   }
-  // The hull, half built: level on her keel over stocks down to the falling planks.
-  // She's broadest aft of amidships and narrows to a stem at the bow (seaward), her
-  // sheer rising fore and aft. Aft she's planked up to the gunwale and closed by a
-  // transom; over her forward part only her bottom strakes are on, and her frames stand
-  // bare above.
-  // Her mast is stepped, with a yard across it.
+  // She lies level on her keel over stocks down to the falling planks, stern to the land and bow to the sea.
   const centre = side * 11;
   const stern = lane.u1 - 2;
-  const bow = Math.max(lane.u0 + 3, stern - 13);
-  const length = Math.max(1, stern - bow);
   const keel = heights.get(stern)!;
-  const put = (u: number, v: number, y: number, id: BlockId) => place(world, f, u, v, y, id);
-  for (let u = bow; u <= stern; u++) {
-    const t = (u - bow) / length; // 0 at the bow, 1 at the stern
-    const deck = heights.get(u)!;
-    if ((u - bow) % 3 === 1) for (let y = deck; y < keel; y++) put(u, centre, y, Block.Wood); // the stocks
-    put(u, centre, keel, Block.Wood); // the keel
-    const sheer = 4 + (t < 0.15 || t > 0.9 ? 1 : 0);
-    if (u === bow) {
-      for (let y = keel + 1; y <= keel + sheer + 1; y++) put(u, centre, y, Block.Wood); // the stem
-      continue;
-    }
-    const beam = t < 0.15 ? 1 : t < 0.35 ? 2 : t > 0.9 ? 2 : 3;
-    const planked = t >= 0.6 ? sheer : 2;
-    const frame = (u - bow) % 2 === 1;
-    for (let k = 1; k <= sheer; k++) {
-      const w = Math.min(beam, k); // she flares out from the keel
-      if (u === stern) {
-        for (let a = -w; a <= w; a++) put(u, centre + a, keel + k, Block.Planks); // the transom
-        continue;
-      }
-      const id = k <= planked ? Block.Planks : frame ? Block.Wood : Block.Air;
-      if (id === Block.Air) continue;
-      // Her bottom's whole; above it, each strake from where the one below left off.
-      const inner = k === 1 ? 0 : Math.min(Math.min(beam, k - 1) + 1, w);
-      for (let a = inner; a <= w; a++) {
-        put(u, centre - a, keel + k, id);
-        put(u, centre + a, keel + k, id);
-      }
-    }
+  for (let u = stern; u > stern - HULL_ON_STOCKS_LENGTH; u -= 3) {
+    const deck = heights.get(u);
+    if (deck === undefined) continue; // past the slipway's end, over the water
+    for (let y = deck; y < keel; y++) place(world, f, u, centre, y, Block.Wood);
   }
-  const mast = bow + Math.round(length * 0.35);
-  for (let y = keel + 1; y <= keel + 13; y++) put(mast, centre, y, Block.Wood);
-  for (let a = -3; a <= 3; a++) put(mast, centre + a, keel + 11, Block.Wood);
+  // Her origin is the middle of her stern's face: between her stern's cell and the one landward of it.
+  const here = at(f, stern, centre);
+  const back = at(f, stern + 1, centre);
+  decor.push({
+    kind: 'hullOnStocks',
+    x: (here.x + back.x) / 2 + 0.5,
+    y: keel,
+    z: (here.z + back.z) / 2 + 0.5,
+    facing: facingOf(here.x - back.x, here.z - back.z),
+    anchor: null,
+  });
 }
 
 /**
