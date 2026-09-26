@@ -9,7 +9,7 @@ import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type To
 import { hasRelic, LODESTONE_RANGE } from './treasure/relics';
 import type { Treasure } from './treasure/Treasure';
 import { PLANTABLE } from './land/crops';
-import { type Building, STRUCTURES, type Structure } from './land/structures';
+import { type Building, PIECES, STRUCTURES, type Structure } from './land/structures';
 import type { CameraRig } from './render/CameraRig';
 import type { LandView } from './render/LandView';
 import type { FootHud } from './ui/FootHud';
@@ -44,6 +44,8 @@ const TOWN_FADE_IN = 0.25;
 const TOWN_FADE_OUT = 1.2;
 /** How far away the mouse can place a building. */
 const PLACE_REACH = 18;
+/** Which way a stair climbs, by its turn (as FACING_DIRS: north is −z). */
+const COMPASS = ['south', 'east', 'north', 'west'];
 const PLACE_LABELS: Record<PortPlace['kind'], string> = { market: 'Market', tavern: 'Tavern', shipyard: 'Shipyard', office: 'Guildhall' };
 /** The seat of power, as its sign names it: a building, like the others. */
 const OFFICE_BUILDINGS: Record<Port['faction'], string> = { merchant: 'Guildhall', imperial: 'Governor’s House', pirate: 'Pirate Lord’s Hall' };
@@ -301,11 +303,14 @@ export class Shore {
       const spec = STRUCTURES[this.placing.kind];
       const spot = this.placeSpot()!;
       const where = this.land.placement(this.placing.kind, spot.x, spot.z, this.placing.rot);
-      const height = this.placing.kind === 'path' ? 0.15 : spec.freeform ? 1 : 4;
+      const piece = PIECES[this.placing.kind];
+      const height = this.placing.kind === 'path' ? 0.15 : piece && !piece.stair ? 0.5 : spec.freeform ? 1 : 4;
       this.view.showGhost({ ...where.plot, y: this.placing.kind === 'path' ? where.y - 0.1 : where.y, height, ok: where.ok });
       this.view.mark(null);
       const cost = Object.entries(spec.cost).map(([g, n]) => `${n} ${GOOD_INFO[g as Good].label.toLowerCase()}`).join(', ');
-      placing = `${spec.label} (${cost}) · Space / click to build${spec.freeform ? '' : ' · Q R turn'} · Esc done`;
+      const turns = !spec.freeform || piece?.stair === true;
+      const climbs = piece?.stair ? ` · climbs ${COMPASS[this.placing.rot % 4]}` : '';
+      placing = `${spec.label} (${cost})${climbs} · Space / click to build${turns ? ' · Q R turn' : ''} · Esc done`;
       if (!where.ok) {
         hint = where.reason;
         hintOk = false;

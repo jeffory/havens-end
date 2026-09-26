@@ -528,4 +528,36 @@ describe('building', () => {
     walkTo(land, 10.5, 9);
     expect(land.use('axe').message).toMatch(/town/);
   });
+
+  it('lays stairs and slabs, stairs climbing the way they’re turned, and takes them up again', () => {
+    const { world, land } = setup();
+    land.goAshore();
+    land.pack.timber = 8;
+    land.pack.stone = 2;
+    land.build('campfire', 0, -6, 0);
+    expect(land.build('plankStairs', 4, 4, 2).ok).toBe(true); // turned twice: climbs north
+    expect(land.build('stoneSlab', 6, 4, 0).ok).toBe(true);
+    expect(world.getVoxel(4, SEA_LEVEL + 1, 4)).toBe(Block.PlanksStairN);
+    expect(world.getVoxel(6, SEA_LEVEL + 1, 4)).toBe(Block.StoneSlab);
+    expect(land.pack.timber).toBe(2);
+    expect(land.pack.stone).toBe(1);
+    walkTo(land, 6.5, 3);
+    expect(land.use('pickaxe').ok).toBe(true);
+    expect(world.getVoxel(6, SEA_LEVEL + 1, 4)).toBe(Block.Air);
+    expect(land.pack.stone).toBe(2);
+  });
+
+  it('stands stairs and slabs on solid ground, not on another stair or slab', () => {
+    const { world, land } = setup();
+    land.goAshore();
+    land.pack.timber = 8;
+    land.build('campfire', 0, -6, 0);
+    world.setVoxel(4, SEA_LEVEL + 1, 4, Block.StoneSlab);
+    const onSlab = land.build('plankStairs', 4, 4, 0);
+    expect(onSlab.ok).toBe(false);
+    expect(onSlab.message).toBe('Stairs and slabs go on solid ground.');
+    world.setVoxel(6, SEA_LEVEL + 1, 4, Block.Stone);
+    expect(land.build('plankStairs', 6, 4, 0).ok).toBe(true); // a flight can be built up a whole block
+    expect(world.getVoxel(6, SEA_LEVEL + 2, 4)).toBe(Block.PlanksStairS);
+  });
 });

@@ -1,5 +1,5 @@
 import type { Cargo } from '../economy/goods';
-import { Block, type BlockId } from '../voxel/blocks';
+import { Block, type BlockId, slabOf, stairOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildHouse, clearHouse, type Footprint } from '../worldgen/buildings';
 
@@ -15,8 +15,29 @@ export type Structure =
   | 'forge'
   | 'fence'
   | 'path'
-  | 'torch';
-export const STRUCTURE_LIST: readonly Structure[] = ['campfire', 'hut', 'storehouse', 'sawpit', 'mill', 'distillery', 'curingShed', 'smokehouse', 'forge', 'fence', 'path', 'torch'];
+  | 'torch'
+  | 'plankStairs'
+  | 'plankSlab'
+  | 'stoneStairs'
+  | 'stoneSlab';
+export const STRUCTURE_LIST: readonly Structure[] = [
+  'campfire',
+  'hut',
+  'storehouse',
+  'sawpit',
+  'mill',
+  'distillery',
+  'curingShed',
+  'smokehouse',
+  'forge',
+  'fence',
+  'path',
+  'torch',
+  'plankStairs',
+  'plankSlab',
+  'stoneStairs',
+  'stoneSlab',
+];
 
 /** One thing a workshop makes: what goes in, what comes out, and how long a batch takes a worker (sea seconds). */
 export interface Recipe {
@@ -124,6 +145,18 @@ export const STRUCTURES: Record<Structure, StructureSpec> = {
   fence: { label: 'Fence', detail: 'Keeps the boar out of the cane.', cost: { timber: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
   path: { label: 'Path', detail: 'Gravel underfoot.', cost: { stone: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
   torch: { label: 'Torch', detail: 'A post with a flame on top. Night creatures keep away from its light.', cost: { timber: 1 }, w: 1, d: 1, freeform: true, height: 2, pad: 0 },
+  plankStairs: { label: 'Plank stairs', detail: 'Half a block a step. Turn them (Q / R) to climb the way you want.', cost: { timber: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
+  plankSlab: { label: 'Plank slab', detail: 'Half a block high: a step, a landing or a porch floor.', cost: { timber: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
+  stoneStairs: { label: 'Stone stairs', detail: 'Half a block a step, in stone. Turn them (Q / R) to climb the way you want.', cost: { stone: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
+  stoneSlab: { label: 'Stone slab', detail: 'Half a block high, in stone.', cost: { stone: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
+};
+
+/** Stairs and slabs: what each is cut from, and whether it's a stair (which turns, to climb the way it faces). */
+export const PIECES: Partial<Record<Structure, { material: BlockId; stair: boolean }>> = {
+  plankStairs: { material: Block.Planks, stair: true },
+  plankSlab: { material: Block.Planks, stair: false },
+  stoneStairs: { material: Block.Stone, stair: true },
+  stoneSlab: { material: Block.Stone, stair: false },
 };
 
 export const STORE_SIZE = 150;
@@ -264,6 +297,14 @@ export function raise(world: VoxelWorld, b: Building): void {
       put(3, 0, 2, Block.Stone);
       put(4, 0, 2, Block.Barrel);
       break;
+    case 'plankStairs':
+    case 'plankSlab':
+    case 'stoneStairs':
+    case 'stoneSlab': {
+      const piece = PIECES[b.kind]!;
+      world.setVoxel(x0, y, z0, piece.stair ? stairOf(piece.material, b.rot) : slabOf(piece.material));
+      break;
+    }
     case 'fence':
       world.setVoxel(x0, y, z0, Block.Fence);
       break;

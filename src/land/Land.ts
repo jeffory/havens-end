@@ -6,7 +6,7 @@ import type { Dress } from '../duel/dress';
 import { PACK_SIZE, PASSENGER_BERTHS } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, type Good, loadCargo, unload } from '../economy/goods';
 import type { Port, PortPlace } from '../economy/ports';
-import { Block, blocksWalker } from '../voxel/blocks';
+import { Block, blocksWalker, shapeOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight, levelGround, clearSite, overlaps, TREE_BLOCKS, type Footprint } from '../worldgen/buildings';
 import { mulberry32 } from '../worldgen/noise';
@@ -16,7 +16,7 @@ import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling
 import { type Creature, CREATURES, stepCreatures, strike } from './creatures';
 import { type Drop, dropItem, stepDrops } from './drops';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
-import { type Building, doorOf, isWorkshop, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
+import { type Building, doorOf, isWorkshop, PIECES, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
 import { DEPOSITS, Deposits, type DepositsSnapshot } from './deposits';
 import { stepTownsfolk, type Townsman } from './townsfolk';
 import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, type Walker } from './walker';
@@ -956,6 +956,7 @@ export class Land {
       y = groundHeight(this.world, cx, cz);
       const ground = this.world.getVoxel(cx, y - 1, cz);
       if (y < SEA_LEVEL) return verdict(false, 'Too wet.', y);
+      if (PIECES[kind] && (shapeOf(ground) !== null || !blocksWalker(ground))) return verdict(false, 'Stairs and slabs go on solid ground.', y);
       if (kind === 'path' ? ![Block.Grass, Block.Dirt, Block.Sand].includes(ground as never) : this.world.getVoxel(cx, y, cz) !== Block.Air) {
         return verdict(false, kind === 'path' ? 'Paths go on grass, earth or sand.' : 'Something’s in the way.', y);
       }
