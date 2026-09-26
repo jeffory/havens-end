@@ -1,8 +1,8 @@
 # Stairs, slabs and fine-voxel props: design
 
 Date: 2026-09-25. Status: design approved in conversation; spec awaiting review.
-Branch: `block-shapes-and-props`, based on the towns commit `2264c35` (the Phase 10
-branch, whose session is paused). It merges to `main` after, or with, that branch.
+Branch: `block-shapes-and-props`, based on `main` at `0a86ab8` (which has the towns).
+Plan: `docs/superpowers/plans/2026-09-26-block-shapes-and-props.md`.
 
 ## Goal
 
@@ -85,8 +85,9 @@ point (x, z) in the cell `floor(y)`. That's `y0` for air, `y0 + 1` for a full cu
 the point is in.
 
 - **Walker (`land/walker.ts`):** collision tests the walker against the shape's boxes,
-  not whole cells. A rise of up to 0.5 is walked up smoothly (the feet follow `topAt`).
-  A rise above 0.5, up to `STEP_UP` (2), is the existing scramble. Water and wading
+  not whole cells. It climbs half a block at a time, so a stair is two half-steps. Each is
+  a one-tick move, as a whole step is now (nothing smooths the captain's height on
+  screen), only half as high. Ledges up to `STEP_UP` (2) are still scrambled up. Water and wading
   rules are unchanged, measured from the real feet height.
 - **Pathfinding (`land/paths.ts`: settlers, creatures, townsfolk):** a node's standing
   height is its real top (whole or half). The existing rise limits apply to real
@@ -97,12 +98,15 @@ the point is in.
 
 ### Towns use them (`worldgen/town.ts`)
 
-- Along the streets, the square's edges, the ramp up from the pier and the doorsteps,
-  a 1-block rise between neighbouring cells in the direction of travel gets a stair,
-  in the ground's material, in the lower cell, facing up the rise.
-- Where streets cross, at corners, and wherever a stair would block a door or another
-  street, the full-block rise stays.
-- Slabs go where a half-step reads better: a porch floor, the top of the pier ramp.
+- Where a paved cell (the square, a street, the ramp up from the pier) stands a block
+  above exactly one of its paved neighbours, its paving becomes a gravel stair climbing
+  away from that neighbour. The stair replaces the higher cell's paving rather than
+  standing on the lower cell, so a run of rises (the ramp) becomes a flight of
+  half-steps, not 1.5-block steps.
+- Where a cell is above two paved neighbours (a corner or a crossing), the full-block
+  rise stays.
+- Doors stand level with the street by them, so they need no stairs. The half-step up to
+  the tavern's and office's doors is their porch deck of plank slabs (part 2).
 - The town test that every door can be walked to from the pier still passes, now over
   stairs.
 
@@ -143,55 +147,66 @@ A prop kind (`props/`) is:
 - **cells:** x, y, z and a colour index, as ships use;
 - **a palette**, with a glow flag for lantern glass;
 - **scale:** world units per voxel. The default is 0.25, a quarter block;
-- **anchor:** `floor` (standing on the cell below its origin) or `wall` (hung on the
-  face of the cell behind it);
-- optionally, **reserved cells:** whole-block cells, relative to its origin, that it
-  blocks.
+- **an origin:** the middle of its foot for one that stands, or the middle of its back at
+  its foot for one hung on a wall;
+- optionally, **reserve:** keep people out of the cells it fills (only for a prop drawn a
+  block a voxel).
 
 Two sources:
 - **Built in code** (`props/models.ts`), like the town's other builders but at the
   finer scale.
 - **`.vox` files** in `public/models/props/`, from MagicaVoxel or `npm run asset`,
-  loaded with the existing `parseVox`.
+  loaded with the existing `parseVox` (`propFromVox`). None of the first set needs one,
+  apart from the sloop's own file.
 
 Both are meshed with `meshCells` (`render/voxelGeometry.ts`), the path ships use, so
 props get the same AO and jitter as everything else.
 
 **The first set:**
-- **Signboards:** one per place kind (`market`, `tavern`, `office`, `shipyard`), each
-  with its own device, hung from a bracket beside the door.
+- **Signs**, one per place kind, each with its own device. The tavern and the office
+  hang a signboard on a bracket beside the door. The market's open hall and the
+  shipyard's shed have no wall beside their way in, so they get a signpost, whose cells
+  are reserved with the blocker.
 - **A clock** on the front of the Governor's House (the `office`).
 - **Porch posts and rails** for the Tavern and the Governor's House. The porch floor
   is plank slabs (part 1).
-- **Lantern heads:** a caged lantern with glowing glass, on top of lamp posts (the
-  streets and the pier) and beside the doors. It replaces the `Lantern` block there.
-- **The ship on the stocks:** the sloop's own `.vox` model, at a scale of 1, in place
-  of the plank hull the slipway builds now. It reserves the cells under its hull.
+- **Lantern heads:** a caged lantern with glowing glass, drawn an eighth of a block a
+  voxel, on top of lamp posts (the streets and the pier) and beside the doors. It
+  replaces the `Lantern` block there.
+- **The ship on the stocks:** the sloop's own `.vox` model (hull only, no sails), at a
+  scale of 1, in place of the plank hull the slipway builds now. She reserves the cells
+  she fills. The town builder never sees ship models, so it lays the stocks for
+  `HULL_ON_STOCKS_LENGTH` (18, the sloop's length, checked against her file by a test).
+  The game reserves her cells straight after generating the world, before edits are
+  tracked (`props/reserve.ts`).
 
 The critic's other items (columns, each faction laying its town out its own way) can
 use the same machinery later.
 
 ### Placements
 
-`PropPlacement { kind, x, y, z, facing (0–3), building? }`, in world units. The town
-builder returns them with the town (`Town.props`). They come from the seed like the
-rest of the town, so they aren't saved.
+`PropPlacement { kind, x, y, z, facing (0–3), anchor }`, in world units. `anchor` is
+the block a prop hangs on: while that's lifted away, so is the prop. It's null for one
+that never lifts, such as a lantern on a post or the ship. The town builder returns
+placements with the town as `Town.decor`, and they reach the game as `Port.decor`.
+(`TownLayout.props` already names the square's block-built dressing.) They come from
+the seed like the rest of the town, so they aren't saved.
 
 ### Drawing (`render/PropsView.ts`)
 
-- One geometry per kind. One `InstancedMesh` per kind per town, with each instance's
-  matrix from its placement (position, facing, scale). The mesh's bounds are computed
-  from its instances, so a town out of view is culled whole.
+- One geometry per kind, and one `InstancedMesh` per kind for every town at once (about
+  ten draw calls in all; splitting them by town wasn't worth the extra meshes). Each
+  instance's matrix comes from its placement (position, facing, scale).
 - The material is Lambert with vertex colours, like the terrain's. It shares the
   terrain's injected shader code for glow (lit more at night) and for the roof lift.
 - Props cast and receive shadows, and are drawn in both passes of the water.
 
 ### The roof lift and the cutaway
 
-The lift test in the terrain shader moves into a shared GLSL snippet
-(`render/liftGlsl.ts`). The terrain and the props both include it and read the same
-uniform objects that `RoofLifter` fills. So a signboard or porch rail on a lifted
-building lifts with it. The cutaway works the same way.
+The lift test in the terrain shader moves into shared GLSL and uniforms
+(`render/lifts.ts`). The terrain tests each fragment's own voxel, as now. A prop tests
+its anchor block, so a signboard, a door lantern or the clock lifts with the wall it
+hangs on, and street furniture never lifts.
 
 ### Reserved cells
 
@@ -200,13 +215,16 @@ A new block, `Block.Blocker`:
 - solid to the walker, pathfinding and ships (`SOLID`);
 - skipped by the picking raycast.
 
-The town builder writes it into a prop's reserved cells. That keeps the captain out
-of the ship on the stocks, and later out of carts or wells made as props.
+The town builder writes it under the signposts, and the game writes it into the cells
+the ship on the stocks fills. That keeps the captain out of them, and later out of carts
+or wells made as props. `surfaceHeight` skips it, so the sea under the ship's bow is
+still drawn.
 
 ### Night
 
-Lantern props are light sources (`Game.lightSources`), with a halo, like the pier
-lamps. So the nearest get a point light and a streak on the water.
+Every lantern's light, door lanterns included, is in `Port.lamps`, so each is a light
+source with a halo (`Game.lightSources`), like the pier lamps. The nearest get a point
+light and a streak on the water.
 
 ### Part 2 tests
 
@@ -242,14 +260,15 @@ Each step ends with the tests passing and a look at the game.
   median of a GPU timer query and of the render call's CPU time). Look into it if
   either grows by more than 0.5 ms.
 - **AO on shapes** is approximate. See the mesher section.
-- **The Phase 10 branch is active.** This touches `worldgen/town.ts`,
-  `ChunkRenderer` and `RoofLifter`, which that branch just wrote. Start only once it is
-  merged, and rebase before each step if it moves.
+- **Other work on the same files.** This touches `worldgen/town.ts`, `ChunkRenderer`
+  and `RoofLifter`, which the towns work wrote. That is merged into `main` (`0a86ab8`),
+  and this branch is based on it. If other work lands on `main` meanwhile, rebase
+  before each step.
 
 ## Success
 
-- The captain, settlers and creatures walk up town streets and doorsteps on stairs,
-  without scrambling.
+- The captain, settlers and creatures walk up the towns' streets on stairs, and onto
+  the porches, in half-steps rather than scrambles.
 - Players build plank and stone stairs and slabs in their camps, facing the way they
   choose.
 - The towns show signboards, the clock, porches, lantern heads and a ship on the
