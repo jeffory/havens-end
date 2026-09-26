@@ -171,7 +171,7 @@ describe('townsfolk', () => {
       expect(ids.length, where.faction).toBeGreaterThan(10);
       for (let i = 1; i < ids.length; i++) if (ids[i] === ids[i - 1] + 1) expect(alike(seen.get(ids[i])!, seen.get(ids[i - 1])!), `${where.name} #${ids[i]}`).toBe(false);
     }
-  });
+  }, 20_000); // eight towns for 240 s each: slow under a full parallel run
 
   it('stand spread round a spot they share, not stacked on it', () => {
     const { sea, land } = town();
