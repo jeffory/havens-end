@@ -454,6 +454,15 @@ describe('things lying about', () => {
     expect(land.drops.filter((d) => d.good === 'timber').reduce((n, d) => n + d.amount, 0)).toBe(4);
     expect(land.takeEvents().some((e) => e.kind === 'notice' && /full/.test(e.text))).toBe(true);
   });
+
+  it('come to rest on a slab, half a block up', () => {
+    const { world, land } = setup();
+    for (let x = 2; x <= 9; x++) for (let z = 2; z <= 9; z++) world.setVoxel(x, SEA_LEVEL + 1, z, Block.StoneSlab);
+    land.drop('stone', 5.5, SEA_LEVEL + 4, 5.5);
+    for (let i = 0; i < 180; i++) land.step(1 / 60);
+    expect(land.drops[0].still).toBe(true);
+    expect(land.drops[0].y).toBe(SEA_LEVEL + 1.5);
+  });
 });
 
 describe('building', () => {

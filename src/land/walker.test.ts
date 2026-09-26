@@ -75,4 +75,52 @@ describe('stepWalker', () => {
     expect(standable(world, 0, 0)).toBe(SEA_LEVEL);
     expect(standable(world, 40, 0)).toBeNull();
   });
+
+  it('walks up a stair a half-step at a time, with no scramble', () => {
+    const world = beach();
+    // A stair climbing east onto a step a block up.
+    for (let z = -20; z < 20; z++) {
+      world.setVoxel(3, SEA_LEVEL, z, Block.StoneStairE);
+      for (let x = 4; x < 20; x++) world.setVoxel(x, SEA_LEVEL, z, Block.Stone);
+    }
+    const w = createWalker(0.5, SEA_LEVEL, 0.5);
+    let biggest = 0;
+    for (let t = 0; t < 2; t += 1 / 60) {
+      const before = w.y;
+      stepWalker(w, 1, 0, world, 1 / 60);
+      biggest = Math.max(biggest, w.y - before);
+    }
+    expect(w.x).toBeGreaterThan(6);
+    expect(w.y).toBe(SEA_LEVEL + 1);
+    expect(biggest).toBeLessThanOrEqual(0.5);
+  });
+
+  it('climbs a stair walking across it at a slant', () => {
+    const world = beach();
+    for (let z = -20; z < 20; z++) {
+      world.setVoxel(3, SEA_LEVEL, z, Block.StoneStairE);
+      for (let x = 4; x < 20; x++) world.setVoxel(x, SEA_LEVEL, z, Block.Stone);
+    }
+    const w = walk(createWalker(0.5, SEA_LEVEL, -5.5), world, 1, 1, 2);
+    expect(w.x).toBeGreaterThan(5);
+    expect(w.y).toBe(SEA_LEVEL + 1);
+  });
+
+  it('stands on a slab half a block up, and lands on one from above', () => {
+    const world = beach();
+    for (let x = 3; x < 6; x++) for (let z = -20; z < 20; z++) world.setVoxel(x, SEA_LEVEL, z, Block.PlanksSlab);
+    const w = walk(createWalker(0.5, SEA_LEVEL, 0.5), world, 1, 0, 0.9);
+    expect(w.x).toBeGreaterThan(3.5);
+    expect(w.x).toBeLessThan(5.5);
+    expect(w.y).toBe(SEA_LEVEL + 0.5);
+    expect(walk(createWalker(4.5, SEA_LEVEL + 3, 0.5), world, 0, 0, 1).y).toBe(SEA_LEVEL + 0.5);
+    expect(standable(world, 4.5, 0.5)).toBe(SEA_LEVEL + 0.5);
+  });
+
+  it('lands on whichever half of a stair it falls onto', () => {
+    const world = beach();
+    world.setVoxel(3, SEA_LEVEL, 0, Block.StoneStairE);
+    expect(walk(createWalker(3.2, SEA_LEVEL + 3, 0.5), world, 0, 0, 1).y).toBe(SEA_LEVEL + 0.5);
+    expect(walk(createWalker(3.8, SEA_LEVEL + 3, 0.5), world, 0, 0, 1).y).toBe(SEA_LEVEL + 1);
+  });
 });

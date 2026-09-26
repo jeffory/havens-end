@@ -1,6 +1,7 @@
 import { WATER_LEVEL } from '../ocean/waves';
 import { blocksWalker } from '../voxel/blocks';
 import type { VoxelReader } from '../voxel/raycast';
+import { boxBlocked, topIn } from '../voxel/shapes';
 
 /**
  * Someone on foot: the captain ashore. Feet at (x, y, z), a box HALF_WIDTH either
@@ -32,6 +33,12 @@ const TURN_RATE = 14;
 /** The highest ledge the walker scrambles up without stopping. */
 export const STEP_UP = 2;
 const EPSILON = 1e-4;
+
+/** Stairs and slabs are half a block: heights on foot come in steps of this. */
+export const HALF_STEP = 0.5;
+
+/** The next half-block height above `y`: the tops of blocks, stairs and slabs all fall on these. */
+const nextHalf = (y: number) => Math.floor(y * 2 + EPSILON) / 2 + HALF_STEP;
 
 export function createWalker(x: number, y: number, z: number, facing = 0): Walker {
   return { x, y, z, vx: 0, vz: 0, vy: 0, facing, onGround: false, prev: { x, y, z } };
@@ -66,7 +73,7 @@ export function stepWalker(w: Walker, moveX: number, moveZ: number, world: Voxel
   const y = w.y + w.vy * dt;
   if (collides(world, w.x, y, w.z)) {
     if (w.vy < 0) {
-      w.y = Math.floor(y) + 1; // onto the top of what we hit
+      w.y = settle(world, w.x, y, w.z); // onto the top of what we hit: a block, a slab or a stair
       w.onGround = true;
     }
     w.vy = 0;
@@ -74,8 +81,15 @@ export function stepWalker(w: Walker, moveX: number, moveZ: number, world: Voxel
     w.y = y;
     w.onGround = false;
   }
-  // Something appeared around us (a block placed, a wall built): climb out.
-  for (let i = 0; i < 4 && collides(world, w.x, w.y, w.z); i++) w.y = Math.floor(w.y) + 1;
+  // Something appeared around us (a block placed, a wall built): climb out, half a block at a time.
+  for (let i = 0; i < 8 && collides(world, w.x, w.y, w.z); i++) w.y = nextHalf(w.y);
+}
+
+/** Where the walker comes to rest falling into something at `y`: the lowest half-block height above it that's clear. */
+function settle(world: VoxelReader, x: number, y: number, z: number): number {
+  let h = nextHalf(y);
+  for (let i = 0; i < 4 && collides(world, x, h, z); i++) h += HALF_STEP;
+  return h;
 }
 
 function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp: number): void {
@@ -88,10 +102,10 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp:
     w.z = z;
     return;
   }
-  // A step, or a scramble up a ledge of up to `stepUp` voxels, if there's headroom.
+  // A step, or a scramble up a ledge of up to `stepUp`, if there's headroom: tried half a
+  // block at a time, so a stair or a slab is climbed as the half-step it is.
   if (w.onGround) {
-    for (let rise = 1; rise <= stepUp; rise++) {
-      const up = Math.floor(w.y + EPSILON) + rise;
+    for (let up = nextHalf(w.y); up <= w.y + stepUp + EPSILON; up += HALF_STEP) {
       if (collides(world, w.x, up, w.z)) break; // no headroom to climb higher
       if (!collides(world, x, up, z)) {
         w.x = x;
@@ -109,27 +123,19 @@ function stop(w: Walker, dx: number): void {
   else w.vz = 0;
 }
 
-/** Does the walker's box at these feet overlap anything they can't walk through? */
+/** Does the walker's box at these feet overlap anything they can't walk through (a stair or slab by its own boxes)? */
 export function collides(world: VoxelReader, x: number, y: number, z: number): boolean {
-  const x0 = Math.floor(x - HALF_WIDTH + EPSILON);
-  const x1 = Math.floor(x + HALF_WIDTH - EPSILON);
-  const z0 = Math.floor(z - HALF_WIDTH + EPSILON);
-  const z1 = Math.floor(z + HALF_WIDTH - EPSILON);
-  const y0 = Math.floor(y + EPSILON);
-  const y1 = Math.floor(y + HEIGHT - EPSILON);
-  for (let cy = y0; cy <= y1; cy++) {
-    for (let cz = z0; cz <= z1; cz++) {
-      for (let cx = x0; cx <= x1; cx++) if (blocksWalker(world.getVoxel(cx, cy, cz))) return true;
-    }
-  }
-  return false;
+  return boxBlocked(world, x - HALF_WIDTH + EPSILON, y + EPSILON, z - HALF_WIDTH + EPSILON, x + HALF_WIDTH - EPSILON, y + HEIGHT - EPSILON, z + HALF_WIDTH - EPSILON);
 }
 
-/** Top of the ground under a point, looking down from `fromY` (0 if there's none). */
+/** Top of the ground under a point, looking down from `fromY` (0 if there's none): half a block up on a slab, or on a stair's low step. */
 export function groundBelow(world: VoxelReader, x: number, z: number, fromY: number): number {
   const cx = Math.floor(x);
   const cz = Math.floor(z);
-  for (let y = Math.floor(fromY); y >= 0; y--) if (blocksWalker(world.getVoxel(cx, y, cz))) return y + 1;
+  for (let y = Math.floor(fromY); y >= 0; y--) {
+    const id = world.getVoxel(cx, y, cz);
+    if (blocksWalker(id)) return y + topIn(id, x - cx, z - cz);
+  }
   return 0;
 }
 

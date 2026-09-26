@@ -59,4 +59,18 @@ describe('findPath', () => {
     for (let z = -20; z < 20; z++) for (let y = 5; y < SEA_LEVEL; y++) world.setVoxel(5, y, z, Block.Air);
     expect(findPath(world, { x: 0.5, y: SEA_LEVEL, z: 0.5 }, { x: 10, z: 0 })).toBeNull();
   });
+
+  it('takes a flight of stairs up onto a terrace too high to scramble', () => {
+    const world = beach();
+    // A terrace three blocks up from x = 6; along z = 0, a flight of three stairs climbing east.
+    for (let z = -20; z < 20; z++) for (let x = 6; x < 20; x++) for (let y = SEA_LEVEL; y < SEA_LEVEL + 3; y++) world.setVoxel(x, y, z, Block.Stone);
+    for (let step = 0; step < 3; step++) {
+      for (let y = SEA_LEVEL; y < SEA_LEVEL + step; y++) world.setVoxel(3 + step, y, 0, Block.Stone);
+      world.setVoxel(3 + step, SEA_LEVEL + step, 0, Block.StoneStairE);
+    }
+    const path = findPath(world, { x: 0.5, y: SEA_LEVEL, z: 0.5 }, { x: 10, z: 0 })!;
+    expect(path).not.toBeNull();
+    for (const x of [3.5, 4.5, 5.5]) expect(path.some((p) => p.x === x && p.z === 0.5)).toBe(true);
+    expect(path.at(-1)!.y).toBe(SEA_LEVEL + 3);
+  });
 });

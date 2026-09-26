@@ -1,7 +1,7 @@
 import type { Good } from '../economy/goods';
 import { WATER_LEVEL } from '../ocean/waves';
-import { blocksWalker } from '../voxel/blocks';
 import type { VoxelReader } from '../voxel/raycast';
+import { pointBlocked, topIn } from '../voxel/shapes';
 import type { Land } from './Land';
 
 /**
@@ -47,7 +47,11 @@ const FLOAT = WATER_LEVEL - 0.15;
 /** Not more than once in this long: "your pack is full". */
 const FULL_NOTICE_SECONDS = 30;
 
-const solidAt = (world: VoxelReader, x: number, y: number, z: number) => blocksWalker(world.getVoxel(Math.floor(x), Math.floor(y), Math.floor(z)));
+/** Is this point inside something solid? Half a slab is air. */
+const solidAt = (world: VoxelReader, x: number, y: number, z: number) => pointBlocked(world, x, y, z);
+/** The top of what's solid under a point, in its own cell: a whole block's, or a slab's or stair's. */
+const topAt = (world: VoxelReader, x: number, y: number, z: number) =>
+  Math.floor(y) + topIn(world.getVoxel(Math.floor(x), Math.floor(y), Math.floor(z)), x - Math.floor(x), z - Math.floor(z));
 
 /** Something breaks off at (x, y, z) and pops out a little way. */
 export function dropItem(land: Land, good: Good, amount: number, x: number, y: number, z: number, random: () => number): void {
@@ -124,7 +128,7 @@ function fall(land: Land, d: Drop, dt: number): void {
   const world = land.world;
   // Buried (earth put down on top of it, or left inside a wall by the captain walking off): up it comes.
   if (solidAt(world, d.x, d.y + 0.05, d.z)) {
-    d.y = Math.floor(d.y + 0.05) + 1;
+    d.y = topAt(world, d.x, d.y + 0.05, d.z);
     d.vy = 0;
     d.still = false;
   }
@@ -146,7 +150,7 @@ function fall(land: Land, d: Drop, dt: number): void {
   }
   let landed = false;
   if (d.vy <= 0 && solidAt(world, d.x, ny, d.z)) {
-    ny = Math.floor(ny) + 1;
+    ny = topAt(world, d.x, ny, d.z);
     landed = true;
   } else if (ny < FLOAT) {
     ny = FLOAT;
