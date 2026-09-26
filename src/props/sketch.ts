@@ -16,6 +16,7 @@ export class Sketch {
     return this;
   }
 
+  /** One voxel at (x, y, z) in a named colour. */
   put(x: number, y: number, z: number, name: string): this {
     const index = this.names.get(name);
     if (index === undefined) throw new Error(`Sketch: no colour called ${name}`);

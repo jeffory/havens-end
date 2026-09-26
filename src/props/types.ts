@@ -13,8 +13,10 @@ export type PropKind =
   | 'porchRail'
   | 'hullOnStocks';
 
+/** Every prop kind, in one list. */
 export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks'];
 
+/** A point in the world or a model's own voxels. */
 export interface Point {
   x: number;
   y: number;
