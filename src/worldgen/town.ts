@@ -650,7 +650,11 @@ function planSlipway(
   return { lane, heights };
 }
 
-/** The slipway's planks, falling to the water, and the stocks under a ship: the sloop's model, a prop (Town.decor). */
+/**
+ * The slipway's planks, falling to the water, and the stocks under a ship: the sloop's
+ * model, a prop (Town.decor). Where the slipway's shorter than she is, the stocks carry on
+ * out over the water regardless, standing on the seabed.
+ */
 function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: ReadonlyMap<number, number>, side: number, decor: PropPlacement[]): void {
   for (const [u, v] of cells(lane)) {
     const h = heights.get(u)!;

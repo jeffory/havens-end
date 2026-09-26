@@ -365,6 +365,32 @@ describe('towns', () => {
     }
   });
 
+  it('keep the ship on the stocks out of the way of ships at the berth: shoreward of it, and clear of the pier', () => {
+    for (const { name, world, harbour } of PORTS) {
+      const hull = harbour.decor.find((d) => d.kind === 'hullOnStocks')!;
+      const [dx, dz] = FACING_DIRS[hull.facing];
+      // The pier runs out to sea along (sin(heading), cos(heading)); the berth lies out along it.
+      const hx = Math.sin(harbour.heading);
+      const hz = Math.cos(harbour.heading);
+      // Along the pier's heading, from the berth: negative is shoreward of it.
+      const along = (x: number, z: number) => (x - harbour.x) * hx + (z - harbour.z) * hz;
+      // Across the pier's heading, from a point on its centre line.
+      const across = (x: number, z: number) => Math.abs((z - harbour.pier.z) * hx - (x - harbour.pier.x) * hz);
+      const stern = { x: hull.x, z: hull.z };
+      const bow = { x: hull.x + dx * HULL_ON_STOCKS_LENGTH, z: hull.z + dz * HULL_ON_STOCKS_LENGTH };
+      for (const [end, p] of [['stern', stern], ['bow', bow]] as const) {
+        expect(along(p.x, p.z), `${name} ${end} shoreward of the berth`).toBeLessThan(0);
+        expect(across(p.x, p.z), `${name} ${end} clear of the pier`).toBeGreaterThanOrEqual(6);
+      }
+      // None of her stocks, wherever the cradle runs, reaches out as far as the berth.
+      for (let t = 1; t < HULL_ON_STOCKS_LENGTH; t++) {
+        const x = Math.floor(hull.x + dx * (t - 0.5));
+        const z = Math.floor(hull.z + dz * (t - 0.5));
+        if (world.getVoxel(x, hull.y - 1, z) === Block.Wood) expect(along(x, z), `${name} stocks at t=${t} shoreward of the berth`).toBeLessThan(0);
+      }
+    }
+  });
+
   it('furnish the rooms: beds and hearths in the houses, tables and a bar in the tavern, books in the office', () => {
     for (const { name, world, harbour } of PORTS) {
       const placeAt = (f: Footprint) => harbour.places.find((p) => p.kind !== 'shipyard' && outside(f, Math.floor(p.x), Math.floor(p.z)) <= 1)?.kind;
