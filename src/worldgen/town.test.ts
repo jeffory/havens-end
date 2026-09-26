@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
+import { groundBelow } from '../land/walker';
 import { baseOf, Block, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { planArchipelago } from './archipelago';
@@ -38,9 +39,9 @@ function cells(f: Footprint): Array<[number, number]> {
 }
 
 const LEAVES = new Set<number>([Block.Leaves, Block.PalmLeaves]);
-/** The ground itself: through a lamp post, a flag or a tree to what it stands on. */
+/** The ground itself: through a lamp post, a flag, a tree or a porch's deck and canopy to what it stands on. */
 function terrain(world: VoxelWorld, x: number, z: number): number {
-  const furniture = [Block.Lantern, Block.Wood, Block.Leaves, Block.PalmLeaves, Block.FlagBlack, Block.FlagCrimson, Block.FlagBlue, Block.FlagWhite, Block.FlagGold];
+  const furniture = [Block.Lantern, Block.Wood, Block.Leaves, Block.PalmLeaves, Block.FlagBlack, Block.FlagCrimson, Block.FlagBlue, Block.FlagWhite, Block.FlagGold, Block.PlanksSlab];
   let h = world.surfaceHeight(x, z);
   while (h > 0 && (furniture.includes(world.getVoxel(x, h - 1, z) as never) || world.getVoxel(x, h - 1, z) === 0)) h--;
   return h;
@@ -270,8 +271,8 @@ describe('towns', () => {
         const [dx, dz] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([a, b]) => inside(plot, ox + a, oz + b))!;
         const [x, z] = [ox + dx, oz + dz];
         const label = `${name} ${kind} door`;
-        expect(world.getVoxel(x, p.y + 2, z), `${label} lintel`).toBe(Block.Wood);
-        for (const s of [-1, 1]) for (const y of [p.y, p.y + 1]) expect(world.getVoxel(x + dz * s, y, z + dx * s), `${label} jamb`).toBe(Block.Wood);
+        expect(world.getVoxel(x, Math.floor(p.y) + 2, z), `${label} lintel`).toBe(Block.Wood);
+        for (const s of [-1, 1]) for (const y of [Math.floor(p.y), Math.floor(p.y) + 1]) expect(world.getVoxel(x + dz * s, y, z + dx * s), `${label} jamb`).toBe(Block.Wood);
         expect(world.getVoxel(ox, Math.floor(p.y) - 1, oz), `${label} step`).toBe(Block.Stone);
         const lantern = harbour.decor.find((d) => d.kind === 'wallLantern' && Math.hypot(d.x - p.x, d.z - p.z) <= 1.6 && d.y === Math.floor(p.y) + 2);
         expect(lantern, `${label} lantern`).toBeDefined();
@@ -417,6 +418,30 @@ describe('towns', () => {
       else if (faction === 'merchant') expect(nearSquare(world, square, [Block.Sack]), `${name} bales`).toBeGreaterThanOrEqual(6);
       else expect(nearSquare(world, square, [Block.Iron]), `${name} cannon`).toBeGreaterThanOrEqual(4);
       if (faction === 'pirate') expect(nearSquare(world, square, [Block.Rope]), `${name} gallows`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('build porches before the tavern and the office: a deck of plank slabs, posts and rails', () => {
+    for (const { name, world, harbour } of PORTS) {
+      for (const kind of ['tavern', 'office'] as const) {
+        const p = harbour.places.find((q) => q.kind === kind)!;
+        const [x, z] = [Math.floor(p.x), Math.floor(p.z)];
+        const label = `${name} ${kind} porch`;
+        expect(p.y % 1, `${label}: the place stands on the deck`).toBe(0.5);
+        expect(world.getVoxel(x, Math.floor(p.y), z), label).toBe(Block.PlanksSlab);
+        const near = (kind: string) => harbour.decor.filter((d) => d.kind === kind && Math.hypot(d.x - p.x, d.z - p.z) < 3).length;
+        expect(near('porchPost'), `${label} posts`).toBe(2);
+        expect(near('porchRail'), `${label} rails`).toBe(2);
+      }
+    }
+  });
+
+  it('stand townsfolk on the tavern’s and office’s porches at the deck’s height, not in it', () => {
+    for (const { name, world, harbour } of PORTS) {
+      const porches = harbour.places.filter((q) => q.kind === 'tavern' || q.kind === 'office');
+      const onPorch = (harbour.spots ?? []).filter((q) => (q.kind === 'door' || q.kind === 'tavern') && porches.some((p) => Math.hypot(q.x - p.x, q.z - p.z) < 2.5));
+      expect(onPorch.length, `${name} spots by the porches`).toBeGreaterThan(0);
+      for (const s of onPorch) expect(groundBelow(world, s.x, s.z, s.y + 0.5), `${name} ${s.kind} spot at ${s.x},${s.z}`).toBe(s.y);
     }
   });
 });

@@ -71,6 +71,8 @@ export interface Door {
   outX: number;
   outZ: number;
   y: number;
+  /** The floor just outside, where it isn't the door's own height: half a block up on a porch. */
+  outY?: number;
 }
 
 /**

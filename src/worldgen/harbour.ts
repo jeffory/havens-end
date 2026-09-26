@@ -78,7 +78,7 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
   for (const kind of ROLES) {
     const door = town.doors[kind];
     const sign = town.signs[kind];
-    places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
+    places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.outY ?? door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
   }
   return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor };
 }

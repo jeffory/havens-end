@@ -1,7 +1,7 @@
 import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
 import type { PropKind, PropPlacement } from '../props/types';
-import { baseOf, Block, type BlockId, FACING_DIRS, isSolid, stairOf } from '../voxel/blocks';
+import { baseOf, Block, type BlockId, FACING_DIRS, isSolid, slabOf, stairOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
@@ -133,6 +133,8 @@ export function buildTown(
   const f = frame(footX, footZ, dx, dz);
   const decor: PropPlacement[] = [];
   const lamps: Town['lamps'] = [];
+  /** Porch decks' cells ("x,z"): half a block up from the ground under them. */
+  const decked = new Set<string>();
   const natural = (u: number, v: number) => {
     const { x, z } = at(f, u, v);
     return groundHeight(world, x, z);
@@ -322,6 +324,8 @@ export function buildTown(
       // bracket (the market's open hall gets a signpost, once the square is dressed).
       if (lot.role !== 'market') {
         lamps.push(markDoor(world, door, decor));
+        for (const c of buildPorch(world, door, decor)) decked.add(c);
+        if (decked.has(`${door.outX},${door.outZ}`)) door.outY = door.y + 0.5;
         const [ax, az] = alongOf(door);
         decor.push(onWall(lot.role === 'tavern' ? 'signTavern' : 'signOffice', door.x - ax, door.y + 2, door.z - az, door.outX - door.x, door.outZ - door.z));
         if (lot.role === 'office') clockOver(world, door, decor);
@@ -436,7 +440,11 @@ export function buildTown(
   spotAt(q + 3, ys * 8, low, 'yard');
   spotAt(q + 3, ys * 11, low, 'yard');
   for (let u = start + 2; u <= end; u += 7) spotAt(u, 0, mainH.get(u)!, 'street');
-  const outside = (d: Door, steps: number, kind: SpotKind) => townSpots.push({ x: d.x + (d.outX - d.x) * steps + 0.5, y: d.y, z: d.z + (d.outZ - d.z) * steps + 0.5, kind });
+  const outside = (d: Door, steps: number, kind: SpotKind) => {
+    const x = d.x + (d.outX - d.x) * steps;
+    const z = d.z + (d.outZ - d.z) * steps;
+    townSpots.push({ x: x + 0.5, y: decked.has(`${x},${z}`) ? d.y + 0.5 : d.y, z: z + 0.5, kind });
+  };
   if (doors.market) for (const steps of [-1, -2, 1]) outside(doors.market, steps, 'stall');
   if (doors.tavern) for (const steps of [1, 2]) outside(doors.tavern, steps, 'tavern');
   for (const d of everyDoor) if (d !== doors.market) outside(d, 1, 'door');
@@ -957,6 +965,41 @@ function clockOver(world: VoxelWorld, door: Door, decor: PropPlacement[]): void 
   const wall = world.getVoxel(door.x, y, door.z);
   if (!isSolid(wall) || [Block.Thatch, Block.RoofTile, Block.RoofSlate, Block.TarredRoof].includes(wall as never)) return;
   decor.push(onWall('clock', door.x, y, door.z, door.outX - door.x, door.outZ - door.z));
+}
+
+/**
+ * A porch before a door (the tavern's and the office's): a deck of plank slabs three wide
+ * and two deep (one, where the street comes closer), a plank-slab canopy over it a storey
+ * up, posts at the deck's front corners, and a rail either side of the way in. It's built
+ * only on dry pad in front of the door, never on the street's paving. Returns the deck's cells ("x,z").
+ */
+function buildPorch(world: VoxelWorld, door: Door, decor: PropPlacement[]): Set<string> {
+  const [ax, az] = alongOf(door);
+  const [ox, oz] = [door.outX - door.x, door.outZ - door.z];
+  const cell = (a: number, k: number) => ({ x: door.x + ox * k + ax * a, z: door.z + oz * k + az * a });
+  const clear = (k: number) =>
+    [-1, 0, 1].every((a) => {
+      const { x, z } = cell(a, k);
+      const under = world.getVoxel(x, door.y - 1, z);
+      return world.getVoxel(x, door.y, z) === Block.Air && isSolid(under) && baseOf(under) !== Block.Gravel;
+    });
+  const deck = new Set<string>();
+  if (!clear(1)) return deck;
+  const deep = clear(2) ? 2 : 1;
+  for (let k = 1; k <= deep; k++) {
+    for (const a of [-1, 0, 1]) {
+      const { x, z } = cell(a, k);
+      world.setVoxel(x, door.y, z, slabOf(Block.Planks));
+      if (world.getVoxel(x, door.y + 3, z) === Block.Air) world.setVoxel(x, door.y + 3, z, slabOf(Block.Planks));
+      deck.add(`${x},${z}`);
+    }
+  }
+  // A point `t` out from the wall's face and `s` along it from the door's middle.
+  const at = (t: number, s: number) => ({ x: door.x + 0.5 + ox * (0.5 + t) + ax * s, z: door.z + 0.5 + oz * (0.5 + t) + az * s });
+  const facing = facingOf(ox, oz);
+  for (const s of [-1.25, 1.25]) decor.push({ kind: 'porchPost', ...at(deep - 0.25, s), y: door.y + 0.5, facing, anchor: null });
+  for (const s of [-1, 1]) decor.push({ kind: 'porchRail', ...at(deep - 0.125, s), y: door.y + 0.5, facing, anchor: null });
+  return deck;
 }
 
 /**
