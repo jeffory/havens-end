@@ -973,7 +973,9 @@ function clockOver(world: VoxelWorld, door: Door, decor: PropPlacement[]): void 
  * A porch before a door (the tavern's and the office's): a deck of plank slabs three wide
  * and two deep (one, where the street comes closer), a plank-slab canopy over it a storey
  * up, posts at the deck's front corners, and a rail either side of the way in. It's built
- * only on dry pad in front of the door, never on the street's paving. Returns the deck's cells ("x,z").
+ * only on dry pad in front of the door, never on the street's paving. Where it's built, the
+ * doorway behind it is opened a storey high (the lintel taken out, the jambs carried up to
+ * its height). Returns the deck's cells ("x,z").
  */
 function buildPorch(world: VoxelWorld, door: Door, decor: PropPlacement[]): Set<string> {
   const [ax, az] = alongOf(door);
@@ -996,6 +998,11 @@ function buildPorch(world: VoxelWorld, door: Door, decor: PropPlacement[]): Set<
       deck.add(`${x},${z}`);
     }
   }
+  // Whoever stands on the deck is half a block up, and would stop at a lintel two up from the
+  // door's foot: over a porch the doorway's open a storey high, with no lintel, and the jambs
+  // are carried up beside it (they hold the lantern and the signboard).
+  world.setVoxel(door.x, door.y + 2, door.z, Block.Air);
+  for (const a of [-1, 1]) world.setVoxel(door.x + ax * a, door.y + 2, door.z + az * a, Block.Wood);
   // A point `t` out from the wall's face and `s` along it from the door's middle.
   const at = (t: number, s: number) => ({ x: door.x + 0.5 + ox * (0.5 + t) + ax * s, z: door.z + 0.5 + oz * (0.5 + t) + az * s });
   const facing = facingOf(ox, oz);
@@ -1005,8 +1012,9 @@ function buildPorch(world: VoxelWorld, door: Door, decor: PropPlacement[]): Set<
 }
 
 /**
- * A door you can go in, marked out: its frame in timber (the jambs and the lintel), a
- * stone step before it, and a lantern hung on the wall beside it. Returns the lantern's light.
+ * A door you can go in, marked out: its frame in timber (the jambs and the lintel; a porch
+ * built after opens it up, see `buildPorch`), a stone step before it, and a lantern hung on
+ * the wall beside it. Returns the lantern's light.
  */
 function markDoor(world: VoxelWorld, door: Door, decor: PropPlacement[]): { x: number; y: number; z: number } {
   const [ax, az] = alongOf(door);

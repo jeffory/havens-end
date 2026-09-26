@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
-import { groundBelow } from '../land/walker';
+import type { Port } from '../economy/ports';
+import { guardPosts } from '../land/townsfolk';
+import { createWalker, groundBelow, stepWalker } from '../land/walker';
 import { baseOf, Block, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
@@ -272,8 +274,12 @@ describe('towns', () => {
         const [dx, dz] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([a, b]) => inside(plot, ox + a, oz + b))!;
         const [x, z] = [ox + dx, oz + dz];
         const label = `${name} ${kind} door`;
-        expect(world.getVoxel(x, Math.floor(p.y) + 2, z), `${label} lintel`).toBe(Block.Wood);
-        for (const s of [-1, 1]) for (const y of [Math.floor(p.y), Math.floor(p.y) + 1]) expect(world.getVoxel(x + dz * s, y, z + dx * s), `${label} jamb`).toBe(Block.Wood);
+        const floor = Math.floor(p.y);
+        // Over a porch's deck (half a block up) the doorway's open a storey high, its jambs
+        // carried up beside it: under a lintel, you'd have to duck.
+        const porch = p.y % 1 === 0.5;
+        expect(world.getVoxel(x, floor + 2, z), `${label} lintel`).toBe(porch ? Block.Air : Block.Wood);
+        for (const s of [-1, 1]) for (const y of porch ? [floor, floor + 1, floor + 2] : [floor, floor + 1]) expect(world.getVoxel(x + dz * s, y, z + dx * s), `${label} jamb`).toBe(Block.Wood);
         expect(world.getVoxel(ox, Math.floor(p.y) - 1, oz), `${label} step`).toBe(Block.Stone);
         const lantern = harbour.decor.find((d) => d.kind === 'wallLantern' && Math.hypot(d.x - p.x, d.z - p.z) <= 1.6 && d.y === Math.floor(p.y) + 2);
         expect(lantern, `${label} lantern`).toBeDefined();
@@ -455,6 +461,31 @@ describe('towns', () => {
         expect(near('porchPost'), `${label} posts`).toBe(2);
         expect(near('porchRail'), `${label} rails`).toBe(2);
       }
+    }
+  });
+
+  it('let the captain in at the tavern’s and office’s doors, walking from the porch', () => {
+    for (const { name, world, harbour } of PORTS) {
+      for (const kind of ['tavern', 'office'] as const) {
+        const p = harbour.places.find((q) => q.kind === kind)!;
+        const [ox, oz] = [Math.floor(p.x), Math.floor(p.z)];
+        const plot = harbour.town.houses.find((h) => outside(h, ox, oz) === 1)!;
+        const [dx, dz] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([a, b]) => inside(plot, ox + a, oz + b))!;
+        const w = createWalker(p.x, p.y, p.z);
+        for (let t = 0; t < 3; t += 1 / 60) stepWalker(w, dx, dz, world, 1 / 60);
+        // The doorway is the first cell in: past the wall is a cell further.
+        const [x, z] = [Math.floor(w.x), Math.floor(w.z)];
+        expect(inside(plot, x, z) && (x - ox) * dx + (z - oz) * dz >= 2, `${name} ${kind}: in as far as ${x},${z}`).toBe(true);
+      }
+    }
+  });
+
+  it('leave the Crown’s guards room either side of the Governor’s door', () => {
+    const crown = PORTS.filter((p) => p.faction === 'imperial');
+    expect(crown.length).toBeGreaterThan(0);
+    for (const { name, faction, world, harbour } of crown) {
+      const port: Port = { id: 0, name, faction, islandX: 0, islandZ: 0, ...harbour };
+      expect(guardPosts(port, world), `${name} guards`).toHaveLength(2);
     }
   });
 

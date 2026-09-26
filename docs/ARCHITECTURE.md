@@ -431,8 +431,12 @@ Each port island gets a harbour:
   - **Porches.** The tavern and the office have one where there's dry pad before the
     door: a deck of plank slabs three wide and two deep (one where the street comes
     closer), a plank-slab canopy a storey up, posts at the deck's front corners and a
-    rail either side of the way in. The deck is the half-step up to the door, so the
-    place (`Door.outY`) and the townsfolk's spots on it are at deck height.
+    rail either side of the way in. The deck is a half-step up from the pad, and the
+    place (`Door.outY`) and the townsfolk's spots on it are at deck height. From the
+    deck, a lintel two up from the door's foot would stop anyone walking in (and the
+    Crown's guards, posted from the doorway, would find no door). So over a porch the
+    doorway is open a storey high: no lintel, and the jambs carried up to where it was,
+    holding the lantern and the signboard. A door with no porch keeps its lintel.
   - **Props** (`props/`, drawn by `render/PropsView.ts`) are decoration finer than a
     block. The town builder returns them with the town (`Town.decor`), and they reach
     the game as `Port.decor`. Like the rest of the town they come from the seed and
