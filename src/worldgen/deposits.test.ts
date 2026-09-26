@@ -79,7 +79,7 @@ describe('placing outcrops', () => {
     expect(near.has('stone') && near.has('iron') && near.has('copper')).toBe(true);
     const out = kinds(far);
     expect(out.has('silver') && out.has('gold')).toBe(true);
-  });
+  }, 20_000); // generates twelve islands twice with ore placement: slow under a full parallel run
 
   it('stands out of the ground, never sunk in a hollow', () => {
     // Ground in 2 × 2 squares, every other one a block lower: plenty of hollows to sink into.

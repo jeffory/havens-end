@@ -110,7 +110,7 @@ describe('broadsides', () => {
     expect(round.hull).toBeGreaterThan(Math.max(round.sails, round.crew));
     expect(chain.sails).toBeGreaterThan(Math.max(chain.hull, chain.crew));
     expect(grape.crew).toBeGreaterThan(Math.max(grape.hull, grape.sails));
-  });
+  }, 20_000); // fires three ammo types with volleys: slow under a full parallel run
 });
 
 describe('damage', () => {
