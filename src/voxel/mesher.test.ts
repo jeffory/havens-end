@@ -108,3 +108,58 @@ describe('mesher options for models', () => {
     expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(11);
   });
 });
+
+describe('mesher: stairs, slabs and the blocker', () => {
+  it('draws a slab as a half-height box', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.StoneSlab);
+    const mesh = meshChunk(world, 0, 0, 0)!;
+    expect(faceCount(mesh)).toBe(6);
+    const ys = [...mesh.positions].filter((_, i) => i % 3 === 1);
+    expect(Math.max(...ys)).toBe(5.5);
+    expect(Math.min(...ys)).toBe(5);
+  });
+
+  it('draws a stair as its two boxes, the top over the half it climbs to', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.StoneStairE);
+    const mesh = meshChunk(world, 0, 0, 0)!;
+    expect(faceCount(mesh)).toBe(12);
+    const topXs: number[] = [];
+    for (let v = 0; v < mesh.positions.length / 3; v++) if (mesh.positions[v * 3 + 1] === 6) topXs.push(mesh.positions[v * 3]);
+    expect(Math.min(...topXs)).toBe(5.5);
+    expect(Math.max(...topXs)).toBe(6);
+  });
+
+  it('hides a slab’s faces against whole cubes, but keeps the cubes’ faces against the slab', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 4, 5, Block.Stone); // under the slab
+    world.setVoxel(5, 5, 5, Block.StoneSlab);
+    world.setVoxel(6, 5, 5, Block.Stone); // beside it
+    // Both stones keep all six faces (the slab hides none); the slab loses its bottom and its +x side.
+    expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(16);
+  });
+
+  it('culls a slab’s face against a cube in the next chunk, and keeps the cube’s', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(31, 5, 5, Block.StoneSlab);
+    world.setVoxel(32, 5, 5, Block.Stone);
+    expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(5);
+    expect(faceCount(meshChunk(world, 1, 0, 0))).toBe(6);
+  });
+
+  it('never draws the blocker, and hides nothing behind it', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Stone);
+    world.setVoxel(6, 5, 5, Block.Blocker);
+    expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(6);
+  });
+
+  it('meshes a model’s colour indices as cubes, whatever terrain block shares the number', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.StoneStairE);
+    const rgba = new Uint8Array(256 * 4).fill(255);
+    const mesh = meshPaddedVolume(buildPaddedVolume(world, 0, 0, 0, undefined, false), 0, 0, 0, paletteFromRgba(rgba))!;
+    expect(mesh.indices.length / 6).toBe(6);
+  });
+});
