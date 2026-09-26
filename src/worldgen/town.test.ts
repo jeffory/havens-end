@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
-import { baseOf, Block, FACING_DIRS, stairFacing, stairOf } from '../voxel/blocks';
+import { baseOf, Block, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
@@ -272,10 +272,9 @@ describe('towns', () => {
         const label = `${name} ${kind} door`;
         expect(world.getVoxel(x, p.y + 2, z), `${label} lintel`).toBe(Block.Wood);
         for (const s of [-1, 1]) for (const y of [p.y, p.y + 1]) expect(world.getVoxel(x + dz * s, y, z + dx * s), `${label} jamb`).toBe(Block.Wood);
-        expect(world.getVoxel(ox, p.y - 1, oz), `${label} step`).toBe(Block.Stone);
-        let lanterns = 0;
-        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (world.getVoxel(ox + a, p.y + 2, oz + b) === Block.Lantern) lanterns++;
-        expect(lanterns, `${label} lantern`).toBeGreaterThanOrEqual(1);
+        expect(world.getVoxel(ox, Math.floor(p.y) - 1, oz), `${label} step`).toBe(Block.Stone);
+        const lantern = harbour.decor.find((d) => d.kind === 'wallLantern' && Math.hypot(d.x - p.x, d.z - p.z) <= 1.6 && d.y === Math.floor(p.y) + 2);
+        expect(lantern, `${label} lantern`).toBeDefined();
       }
       for (const p of harbour.places) {
         const s = p.sign!;
@@ -284,6 +283,56 @@ describe('towns', () => {
         expect(s.y - p.y, `${name} ${p.kind} sign over the door`).toBeLessThanOrEqual(4);
       }
     }
+  });
+
+  it('top the lamp posts with lanterns, each with its light', () => {
+    for (const { name, world, harbour } of PORTS) {
+      const posts = harbour.decor.filter((d) => d.kind === 'lantern');
+      expect(posts.length, `${name} lanterns`).toBeGreaterThanOrEqual(4);
+      for (const d of posts) {
+        const [x, z] = [Math.floor(d.x), Math.floor(d.z)];
+        expect(world.getVoxel(x, d.y - 1, z), `${name} post under the lantern at ${x},${z}`).toBe(Block.Wood);
+        expect(world.getVoxel(x, d.y, z), `${name} nothing where the lantern stands at ${x},${z}`).toBe(Block.Air);
+        expect(harbour.lamps.some((l) => Math.hypot(l.x - d.x, l.z - d.z) < 0.01), `${name} its light at ${x},${z}`).toBe(true);
+      }
+    }
+  });
+
+  it('hang a signboard by the tavern’s and office’s doors, and stand signposts by the market and the shipyard', () => {
+    for (const { name, world, harbour } of PORTS) {
+      for (const [kind, sign] of [['tavern', 'signTavern'], ['office', 'signOffice']] as const) {
+        const p = harbour.places.find((q) => q.kind === kind)!;
+        const board = harbour.decor.find((d) => d.kind === sign);
+        expect(board, `${name} ${kind} sign`).toBeDefined();
+        expect(Math.hypot(board!.x - p.x, board!.z - p.z), `${name} ${kind} sign by the door`).toBeLessThanOrEqual(1.6);
+        const { x, y, z } = board!.anchor!;
+        expect(isSolid(world.getVoxel(x, y, z)), `${name} ${kind} sign on a wall`).toBe(true);
+      }
+      const yard = harbour.places.find((q) => q.kind === 'shipyard')!;
+      for (const [kind, sign] of [['market', 'signpostMarket'], ['shipyard', 'signpostShipyard']] as const) {
+        const p = harbour.places.find((q) => q.kind === kind)!;
+        if (kind === 'market' && p.x === yard.x && p.z === yard.z) continue; // no market hall of its own
+        const post = harbour.decor.find((d) => d.kind === sign);
+        expect(post, `${name} ${kind} signpost`).toBeDefined();
+        expect(Math.hypot(post!.x - p.x, post!.z - p.z), `${name} ${kind} signpost by the way in`).toBeLessThanOrEqual(3.5);
+        expect(world.getVoxel(Math.floor(post!.x), post!.y, Math.floor(post!.z)), `${name} ${kind} signpost keeps its cell`).toBe(Block.Blocker);
+      }
+    }
+  });
+
+  it('put a clock over the office door, where it has an upper storey to hang on', () => {
+    let clocks = 0;
+    for (const { name, world, harbour } of PORTS) {
+      const office = harbour.places.find((q) => q.kind === 'office')!;
+      for (const c of harbour.decor.filter((d) => d.kind === 'clock')) {
+        clocks++;
+        const { x, y, z } = c.anchor!;
+        expect(isSolid(world.getVoxel(x, y, z)), `${name} clock on a wall`).toBe(true);
+        expect(Math.hypot(c.x - office.x, c.z - office.z), `${name} clock over the door`).toBeLessThanOrEqual(1);
+        expect(y - Math.floor(office.y), `${name} clock a storey up`).toBe(3);
+      }
+    }
+    expect(clocks).toBeGreaterThanOrEqual(1);
   });
 
   it('fly banners five long and three deep in the owners’ colour, with a device on them', () => {

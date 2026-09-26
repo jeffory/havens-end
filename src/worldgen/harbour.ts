@@ -63,9 +63,10 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
   const end = site.deep + PIER_REACH;
   const town = buildTown(world, foot.x, foot.z, dx, dz, (t) => at(t), [site.landing - 3, end], home ? HOME : STYLES[faction]);
   buildPier(world, island, dx, dz, site.landing, end);
+  const decor = [...town.decor];
   // Lamps at the pier head, to find the berth by after dark, and down its sides to the beach.
-  const lamps = [-1, 1].map((w) => lampPost(world, at(end - 0.5, w)));
-  for (let t = end - 6.5, w = 1; t > site.landing + 1; t -= 6, w = -w) lamps.push(lampPost(world, at(t, w)));
+  const lamps = [-1, 1].map((w) => lampPost(world, at(end - 0.5, w), decor));
+  for (let t = end - 6.5, w = 1; t > site.landing + 1; t -= 6, w = -w) lamps.push(lampPost(world, at(t, w), decor));
   lamps.push(...town.lamps);
   if (town.beacon) lamps.push(town.beacon);
 
@@ -79,16 +80,16 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
     const sign = town.signs[kind];
     places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
   }
-  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor: town.decor };
+  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor };
 }
 
-/** A post on the pier deck with a lantern on top; returns where the light is. */
-function lampPost(world: VoxelWorld, at: { x: number; z: number }): { x: number; y: number; z: number } {
+/** A post on the pier deck with a lantern standing on top; returns where the light is. */
+function lampPost(world: VoxelWorld, at: { x: number; z: number }, decor: PropPlacement[]): { x: number; y: number; z: number } {
   const x = Math.floor(at.x);
   const z = Math.floor(at.z);
   world.setVoxel(x, PIER_Y + 1, z, Block.Wood);
   world.setVoxel(x, PIER_Y + 2, z, Block.Wood);
-  world.setVoxel(x, PIER_Y + 3, z, Block.Lantern);
+  decor.push({ kind: 'lantern', x: x + 0.5, y: PIER_Y + 3, z: z + 0.5, facing: 0, anchor: null });
   return { x: x + 0.5, y: PIER_Y + 3.5, z: z + 0.5 };
 }
 

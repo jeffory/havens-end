@@ -1,7 +1,7 @@
 import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
-import type { PropPlacement } from '../props/types';
-import { baseOf, Block, type BlockId, FACING_DIRS, stairOf } from '../voxel/blocks';
+import type { PropKind, PropPlacement } from '../props/types';
+import { baseOf, Block, type BlockId, FACING_DIRS, isSolid, stairOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
@@ -132,6 +132,7 @@ export function buildTown(
 ): Town {
   const f = frame(footX, footZ, dx, dz);
   const decor: PropPlacement[] = [];
+  const lamps: Town['lamps'] = [];
   const natural = (u: number, v: number) => {
     const { x, z } = at(f, u, v);
     return groundHeight(world, x, z);
@@ -317,9 +318,16 @@ export function buildTown(
     houses.push(fp);
     everyDoor.push(door);
     if (lot.role !== 'house') {
-      // A door you can go in: framed in timber, a stone step, a lantern, its sign over it.
-      if (lot.role !== 'market') markDoor(world, door);
-      else world.setVoxel(door.outX, door.y - 1, door.outZ, Block.Stone);
+      // A door you can go in: framed in timber, a stone step, a lantern, and its signboard on a
+      // bracket (the market's open hall gets a signpost, once the square is dressed).
+      if (lot.role !== 'market') {
+        lamps.push(markDoor(world, door, decor));
+        const [ax, az] = alongOf(door);
+        decor.push(onWall(lot.role === 'tavern' ? 'signTavern' : 'signOffice', door.x - ax, door.y + 2, door.z - az, door.outX - door.x, door.outZ - door.z));
+        if (lot.role === 'office') clockOver(world, door, decor);
+      } else {
+        world.setVoxel(door.outX, door.y - 1, door.outZ, Block.Stone);
+      }
       doors[lot.role] = door;
       signs[lot.role] = signBy(door);
     }
@@ -378,9 +386,16 @@ export function buildTown(
   }
   const onProp = (u: number, v: number) => props.some((r) => u >= r.u0 && u <= r.u1 && v >= r.v0 && v <= r.v1);
 
+  // Signposts by the ways in with no wall beside them: the market's open hall, and the shipyard's shed.
+  if (doors.market) {
+    const d = doors.market;
+    const [ax, az] = alongOf(d);
+    signpostAt(world, 'signpostMarket', [2, -2, 3, -3].map((a) => ({ x: d.outX + ax * a, z: d.outZ + az * a })), d.y, d.outX - d.x, d.outZ - d.z, decor);
+  }
+  signpostAt(world, 'signpostShipyard', [1, 5, 0, 6].map((du) => at(f, q + du, ys * 8)), low, -f.sx * ys, -f.sz * ys, decor);
+
   // Lamps: at the corners of the square and down the main street on alternate sides,
   // off the streets and out of anyone's doorway.
-  const lamps: Town['lamps'] = [];
   const onRoad = (u: number, v: number) => [square, ...roads].some((r) => u >= r.u0 && u <= r.u1 && v >= r.v0 && v <= r.v1);
   const inDoorway = (x: number, z: number) =>
     everyDoor.some((d) => Math.abs(d.outX - x) + Math.abs(d.outZ - z) <= 1) || Math.abs(yard.x - 0.5 - x) + Math.abs(yard.z - 0.5 - z) <= 1;
@@ -404,7 +419,7 @@ export function buildTown(
     const { x, z } = at(f, u, v);
     const height = levelled.get(`${u},${v}`);
     if (height === undefined || onRoad(u, v) || byBuilding(u, v) || inDoorway(x, z) || world.getVoxel(x, height, z) !== Block.Air) continue;
-    lamps.push(lampPost(world, x, height, z));
+    lamps.push(lampPost(world, x, height, z, decor));
   }
 
   // Where townsfolk go: about the square, down the market's aisle, at the shipyard, by
@@ -905,21 +920,57 @@ function buildBales(world: VoxelWorld, f: Frame, r: Rect, base: number, side: nu
   }
 }
 
-/**
- * A door you can go in, marked out: its frame in timber (the jambs and the lintel), a
- * stone step before it, and a lantern on the wall beside it.
- */
-function markDoor(world: VoxelWorld, door: Door): void {
-  const [ax, az] = door.outX !== door.x ? [0, 1] : [1, 0]; // along the wall
-  for (const s of [-1, 1]) for (let y = door.y; y < door.y + 2; y++) world.setVoxel(door.x + ax * s, y, door.z + az * s, Block.Wood);
-  world.setVoxel(door.x, door.y + 2, door.z, Block.Wood);
-  world.setVoxel(door.outX, door.y - 1, door.outZ, Block.Stone);
-  world.setVoxel(door.outX + ax, door.y + 2, door.outZ + az, Block.Lantern);
-}
-
 /** Where a place's sign hangs: over its door, just out from the wall. */
 function signBy(door: Door): { x: number; y: number; z: number } {
   return { x: door.x + 0.5 + (door.outX - door.x) * 0.6, y: door.y + 2.9, z: door.z + 0.5 + (door.outZ - door.z) * 0.6 };
+}
+
+/** Along a door's wall: the grid step from the door to its jambs. */
+const alongOf = (door: Door): readonly [number, number] => (door.outX !== door.x ? [0, 1] : [1, 0]);
+
+/** The quarter turn (as FACING_DIRS) that looks along (dx, dz). */
+const facingOf = (dx: number, dz: number): number => FACING_DIRS.findIndex(([fx, fz]) => fx === dx && fz === dz);
+
+/** A prop hung on the face of wall block (x, y, z) looking out along (ox, oz): its origin at the middle of that face, at the block's foot. */
+function onWall(kind: PropKind, x: number, y: number, z: number, ox: number, oz: number): PropPlacement {
+  return { kind, x: x + 0.5 + ox * 0.5, y, z: z + 0.5 + oz * 0.5, facing: facingOf(ox, oz), anchor: { x, y, z } };
+}
+
+/**
+ * A signpost by a way in with no wall beside it (the market's open hall, the shipyard's
+ * shed), on the first of `spots` with room for it, looking out along (ox, oz). It keeps
+ * people out of its post's cells.
+ */
+function signpostAt(world: VoxelWorld, kind: PropKind, spots: ReadonlyArray<{ x: number; z: number }>, y: number, ox: number, oz: number, decor: PropPlacement[]): void {
+  for (const { x, z } of spots) {
+    if (world.getVoxel(x, y, z) !== Block.Air || world.getVoxel(x, y + 1, z) !== Block.Air || !isSolid(world.getVoxel(x, y - 1, z))) continue;
+    decor.push({ kind, x: x + 0.5, y, z: z + 0.5, facing: facingOf(ox, oz), anchor: null });
+    world.setVoxel(x, y, z, Block.Blocker);
+    world.setVoxel(x, y + 1, z, Block.Blocker);
+    return;
+  }
+}
+
+/** A clock on the office's front over its door, where there's an upper storey's wall to hang it on. */
+function clockOver(world: VoxelWorld, door: Door, decor: PropPlacement[]): void {
+  const y = door.y + 3;
+  const wall = world.getVoxel(door.x, y, door.z);
+  if (!isSolid(wall) || [Block.Thatch, Block.RoofTile, Block.RoofSlate, Block.TarredRoof].includes(wall as never)) return;
+  decor.push(onWall('clock', door.x, y, door.z, door.outX - door.x, door.outZ - door.z));
+}
+
+/**
+ * A door you can go in, marked out: its frame in timber (the jambs and the lintel), a
+ * stone step before it, and a lantern hung on the wall beside it. Returns the lantern's light.
+ */
+function markDoor(world: VoxelWorld, door: Door, decor: PropPlacement[]): { x: number; y: number; z: number } {
+  const [ax, az] = alongOf(door);
+  const [ox, oz] = [door.outX - door.x, door.outZ - door.z];
+  for (const s of [-1, 1]) for (let y = door.y; y < door.y + 2; y++) world.setVoxel(door.x + ax * s, y, door.z + az * s, Block.Wood);
+  world.setVoxel(door.x, door.y + 2, door.z, Block.Wood);
+  world.setVoxel(door.outX, door.y - 1, door.outZ, Block.Stone);
+  decor.push(onWall('wallLantern', door.x + ax, door.y + 2, door.z + az, ox, oz));
+  return { x: door.x + ax + 0.5 + ox * 0.9, y: door.y + 2.5, z: door.z + az + 0.5 + oz * 0.9 };
 }
 
 /**
@@ -975,10 +1026,10 @@ function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: 'tavern' | 
   }
 }
 
-/** A street lamp: a post two high with a lantern on top. Returns where the light is. */
-function lampPost(world: VoxelWorld, x: number, h: number, z: number): { x: number; y: number; z: number } {
+/** A street lamp: a post two high with a lantern standing on top. Returns where the light is. */
+function lampPost(world: VoxelWorld, x: number, h: number, z: number, decor: PropPlacement[]): { x: number; y: number; z: number } {
   world.setVoxel(x, h, z, Block.Wood);
   world.setVoxel(x, h + 1, z, Block.Wood);
-  world.setVoxel(x, h + 2, z, Block.Lantern);
+  decor.push({ kind: 'lantern', x: x + 0.5, y: h + 2, z: z + 0.5, facing: 0, anchor: null });
   return { x: x + 0.5, y: h + 2.5, z: z + 0.5 };
 }
