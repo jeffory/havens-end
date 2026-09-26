@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
-import { Block } from '../voxel/blocks';
+import { baseOf, Block, FACING_DIRS, stairFacing, stairOf } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
@@ -67,13 +67,37 @@ describe('towns', () => {
       for (const street of [square, ...streets]) {
         for (const [x, z] of cells(street).filter(([x, z]) => open(x, z))) {
           const h = groundHeight(world, x, z);
-          expect(world.getVoxel(x, h - 1, z), `${name} paving at ${x},${z}`).toBe(Block.Gravel);
+          expect(baseOf(world.getVoxel(x, h - 1, z)), `${name} paving at ${x},${z}`).toBe(Block.Gravel);
           for (const [nx, nz] of [[x + 1, z], [x, z + 1]]) {
             if (inside(street, nx, nz) && open(nx, nz)) expect(Math.abs(h - groundHeight(world, nx, nz)), `${name} step at ${x},${z}`).toBeLessThanOrEqual(1);
           }
         }
       }
     }
+  });
+
+  it('climb the streets by stairs, wherever the paving rises a block from one neighbour', () => {
+    let stairs = 0;
+    for (const { name, world, harbour } of PORTS) {
+      const { square, streets, well, props } = harbour.town;
+      const paved = (x: number, z: number) => [square, ...streets].some((s) => inside(s, x, z)) && ![well, ...props].some((p) => inside(p, x, z));
+      for (const street of [square, ...streets]) {
+        for (const [x, z] of cells(street).filter(([x, z]) => paved(x, z))) {
+          const h = groundHeight(world, x, z);
+          // The ways this cell climbs from: paved neighbours a block below it.
+          const from = FACING_DIRS.filter(([dx, dz]) => paved(x - dx, z - dz) && groundHeight(world, x - dx, z - dz) === h - 1);
+          const id = world.getVoxel(x, h - 1, z);
+          const label = `${name} at ${x},${z}`;
+          if (from.length !== 1) {
+            expect(stairFacing(id), label).toBe(-1);
+            continue;
+          }
+          expect(id, label).toBe(stairOf(Block.Gravel, FACING_DIRS.indexOf(from[0])));
+          stairs++;
+        }
+      }
+    }
+    expect(stairs).toBeGreaterThan(0);
   });
 
   it('stand every house on level ground, not perched on a slope', () => {

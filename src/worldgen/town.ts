@@ -1,6 +1,6 @@
 import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
-import { Block, type BlockId } from '../voxel/blocks';
+import { baseOf, Block, type BlockId, FACING_DIRS, stairOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
@@ -267,6 +267,11 @@ export function buildTown(
   }
   blendEdges(world, f, levelled);
   retainingWalls(world, f, levelled);
+
+  // Where a street climbs a block from one cell to the next, it climbs by a stair.
+  const paved = new Set<string>();
+  for (const r of [square, ...roads]) for (const [u, v] of cells(r)) paved.add(`${u},${v}`);
+  laySteps(world, f, paved, levelled);
 
   // The shipyard: slipway, hull, shed and timber.
   let slipway: Footprint | null = null;
@@ -549,6 +554,35 @@ function retainingWalls(world: VoxelWorld, f: Frame, levelled: ReadonlyMap<strin
     if (h - lowest < 2) continue;
     const { x, z } = at(f, u, v);
     for (let y = lowest - 1; y < h - 1; y++) world.setVoxel(x, y, z, Block.Stone);
+  }
+}
+
+/** The four ways across the grid, in town coordinates. */
+const ACROSS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
+/**
+ * Paves the streets' climbs with stairs: where a paved cell stands a block above exactly
+ * one of its paved neighbours (never at a corner or a crossing, where it's above two),
+ * its paving becomes a stair climbing away from that neighbour. A run of rises (the ramp
+ * up from the pier) becomes a flight of half-steps.
+ */
+function laySteps(world: VoxelWorld, f: Frame, paved: ReadonlySet<string>, levelled: ReadonlyMap<string, number>): void {
+  for (const k of paved) {
+    const h = levelled.get(k);
+    if (h === undefined) continue;
+    const [u, v] = k.split(',').map(Number);
+    const below = ACROSS.filter(([du, dv]) => paved.has(`${u + du},${v + dv}`) && levelled.get(`${u + du},${v + dv}`) === h - 1);
+    if (below.length !== 1) continue;
+    const [du, dv] = below[0];
+    const here = at(f, u, v);
+    const up = at(f, u - du, v - dv);
+    const facing = FACING_DIRS.findIndex(([dx, dz]) => dx === up.x - here.x && dz === up.z - here.z);
+    if (baseOf(world.getVoxel(here.x, h - 1, here.z)) === Block.Gravel) world.setVoxel(here.x, h - 1, here.z, stairOf(Block.Gravel, facing));
   }
 }
 
