@@ -8,13 +8,16 @@ const FRAME = 0x4a3320;
 const WHITE = 0xf2eee2;
 const GOLD = 0xe0b83a;
 
-/** A lantern cage: iron base, glowing glass with iron corner bars, an iron roof. Four voxels across, from (x0, y0, z0). */
+/**
+ * A lantern: an iron base, glowing glass four high all round, an iron roof and a cap. Four
+ * voxels across, from (x0, y0, z0). The glass has no bars across it: after dark, a corner bar
+ * split it into two lit panes under a black roof, and the lantern read as a face with glowing eyes.
+ */
 function cage(s: Sketch, x0: number, y0: number, z0: number): void {
   s.box(x0, y0, z0, x0 + 3, y0, z0 + 3, 'iron');
-  s.box(x0, y0 + 1, z0, x0 + 3, y0 + 3, z0 + 3, 'glass');
-  for (const x of [x0, x0 + 3]) for (const z of [z0, z0 + 3]) s.box(x, y0 + 1, z, x, y0 + 3, z, 'iron');
-  s.box(x0, y0 + 4, z0, x0 + 3, y0 + 4, z0 + 3, 'iron');
-  s.box(x0 + 1, y0 + 5, z0 + 1, x0 + 2, y0 + 5, z0 + 2, 'iron');
+  s.box(x0, y0 + 1, z0, x0 + 3, y0 + 4, z0 + 3, 'glass');
+  s.box(x0, y0 + 5, z0, x0 + 3, y0 + 5, z0 + 3, 'iron');
+  s.box(x0 + 1, y0 + 6, z0 + 1, x0 + 2, y0 + 6, z0 + 2, 'iron');
 }
 
 /** A lantern on top of a post: half a block across, an eighth of a block a voxel. */
@@ -27,8 +30,7 @@ export function lantern(): PropModel {
 /** A lantern hung from an iron bracket on a wall, beside a door. */
 export function wallLantern(): PropModel {
   const s = new Sketch().paint('iron', IRON).paint('glass', GLASS, true);
-  s.box(-1, 7, 0, 0, 7, 5, 'iron'); // the bracket, out from the wall
-  s.box(-1, 6, 3, 0, 6, 4, 'iron'); // the hanger
+  s.box(-1, 7, 0, 0, 7, 5, 'iron'); // the bracket, out from the wall; the lantern's cap hangs from it
   cage(s, -2, 0, 2);
   return s.model({ x: 0, y: 0, z: 0 }, 0.125);
 }

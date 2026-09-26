@@ -6,7 +6,7 @@ import { FLAG_GLOW } from '../voxel/palette';
 import { parseVox, type VoxFile } from '../vox/parseVox';
 import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
 import { hullOnStocks, propCatalog, propFromVox } from './catalog';
-import { clock, lantern, signboard } from './models';
+import { clock, lantern, signboard, wallLantern } from './models';
 import { PROP_KINDS, type PropModel } from './types';
 
 function loadSloop(): ShipModel {
@@ -53,6 +53,17 @@ describe('prop models', () => {
     for (let i = 3; i < cells.length; i += 4) if (palette.flags![cells[i]] & FLAG_GLOW) glowing.add(cells[i]);
     expect(glowing.size).toBe(1);
     expect([...clock().palette.flags!].some((f) => (f & FLAG_GLOW) !== 0)).toBe(false);
+  });
+
+  it('glaze the lanterns all round, with no bars across the glass: after dark, bars made two panes read as eyes', () => {
+    for (const m of [lantern(), wallLantern()]) {
+      const glass = (i: number) => (m.palette.flags![m.cells[i + 3]] & FLAG_GLOW) !== 0;
+      const rows = new Set<number>();
+      for (let i = 0; i < m.cells.length; i += 4) if (glass(i)) rows.add(m.cells[i + 1]);
+      expect(rows.size).toBe(4);
+      // Round the glass rows, nothing but glass: the wall lantern's bracket is above them.
+      for (let i = 0; i < m.cells.length; i += 4) if (rows.has(m.cells[i + 1])) expect(glass(i)).toBe(true);
+    }
   });
 
   it('stand a lantern on the middle of its foot', () => {
