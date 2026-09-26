@@ -162,4 +162,30 @@ describe('mesher: stairs, slabs and the blocker', () => {
     const mesh = meshPaddedVolume(buildPaddedVolume(world, 0, 0, 0, undefined, false), 0, 0, 0, paletteFromRgba(rgba))!;
     expect(mesh.indices.length / 6).toBe(6);
   });
+
+  it('keeps the old diagonal split for a whole cube when its corners tie on raw occlusion counts', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Stone);
+    // At y = 6, around the top face: S and W each block a corner outright (occlusion count 0);
+    // the other two corners (reached via the clear N and E sides) both come out at a raw count of
+    // 2, a tie, even though those two corners' occlusion counts differ (1 and 2) and so map to
+    // different AO_CURVE brightnesses (0.68 vs 0.85) that would break the tie the other way.
+    world.setVoxel(5, 6, 6, Block.Stone); // S
+    world.setVoxel(4, 6, 5, Block.Stone); // W
+    world.setVoxel(4, 6, 4, Block.Stone); // NW
+    world.setVoxel(6, 6, 4, Block.Stone); // NE
+    world.setVoxel(6, 6, 6, Block.Stone); // SE
+    const { positions, normals, indices } = meshChunk(world, 0, 0, 0)!;
+    let seen = 0;
+    for (let q = 0; q < indices.length; q += 6) {
+      const six = indices.slice(q, q + 6);
+      const base = Math.min(...six);
+      if (normals[base * 3 + 1] !== 1 || positions[base * 3 + 1] !== 6) continue;
+      seen++;
+      // The old code's split repeats the corner-0 vertex once, not twice: the tie goes the way
+      // the raw occlusion counts (not the AO_CURVE-mapped brightness) would have broken it.
+      expect([...six].filter((idx) => idx === base).length).toBe(1);
+    }
+    expect(seen).toBe(1);
+  });
 });

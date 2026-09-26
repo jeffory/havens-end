@@ -160,7 +160,8 @@ export function meshPaddedVolume(
   const normals: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
-  /** The cube face's brightness at its four corners, and each drawn corner's. */
+  /** The cube face's occlusion count and brightness at its four corners, and each drawn corner's brightness. */
+  const ao = [0, 0, 0, 0];
   const shading = [0, 0, 0, 0];
   const lit = [0, 0, 0, 0];
   const at = [0, 0, 0];
@@ -197,7 +198,8 @@ export function meshPaddedVolume(
             const s1 = +blocks(vol[i + corner.side1]);
             const s2 = +blocks(vol[i + corner.side2]);
             const d = +blocks(vol[i + corner.diagonal]);
-            shading[c] = AO_CURVE[s1 && s2 ? 0 : 3 - (s1 + s2 + d)];
+            ao[c] = s1 && s2 ? 0 : 3 - (s1 + s2 + d);
+            shading[c] = AO_CURVE[ao[c]];
           }
           // A cube is one box, a stair or slab two or one. A box's face on the cell's side is
           // covered as a cube's would be; one inside the cell (a stair's riser) always shows.
@@ -216,9 +218,13 @@ export function meshPaddedVolume(
               colors.push(r * lit[c], g * lit[c], b * lit[c]);
               if (flags) marks.push(flags[id]);
             }
-            // Split the quad along the diagonal with the brighter ends, so occlusion
-            // shades one corner instead of smearing across the whole face.
-            if (lit[0] + lit[2] > lit[1] + lit[3]) {
+            // Split the quad along the diagonal with the brighter ends, so occlusion shades one
+            // corner instead of smearing across the whole face. A cube ties this on the raw
+            // occlusion counts (AO_CURVE isn't affine, so the mapped brightness can tie the other
+            // way); a stair's or slab's corners don't sit on the cube's, so blended brightness is
+            // all there is to go on.
+            const split = box === WHOLE[0] ? ao[0] + ao[2] > ao[1] + ao[3] : lit[0] + lit[2] > lit[1] + lit[3];
+            if (split) {
               indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
             } else {
               indices.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
