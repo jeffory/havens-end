@@ -1,4 +1,5 @@
 import type { Faction } from '../combat/vessel';
+import type { PropPlacement } from '../props/types';
 
 /** Who runs a port: the Crown (imperial), the merchants' guild (a free port) or the Brethren (a pirate haven). */
 export type PortFaction = Exclude<Faction, 'player'>;
@@ -25,6 +26,8 @@ export interface Port {
   lamps: Array<{ x: number; y: number; z: number }>;
   /** Where townsfolk go about the town (none for a port with no town of its own). */
   spots?: TownSpot[];
+  /** The town's props (lanterns, signs, the ship on the stocks): from the seed, never saved. */
+  decor?: PropPlacement[];
 }
 
 /** What a spot in town is: where townsfolk come and go, and where they linger. */

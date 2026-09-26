@@ -15,6 +15,8 @@ import { Economy, type Notice } from './economy/economy';
 import { cargoCount } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
 import { standingNews } from './economy/reputation';
+import { propCatalog } from './props/catalog';
+import { reserveProps } from './props/reserve';
 import { type Action, Controls } from './core/Controls';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
@@ -42,6 +44,7 @@ import { type Building, isWorkshop } from './land/structures';
 import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
 import { NightLife } from './render/NightLife';
+import { PropsView } from './render/PropsView';
 import { Soundtrack } from './audio/Soundtrack';
 import { SHANTIES } from './audio/tracks';
 import { DropsView } from './render/DropsView';
@@ -159,6 +162,7 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly sun: Sun;
   private readonly terrain: ChunkRenderer;
+  private readonly props: PropsView;
   private readonly ocean: OceanRenderer;
   private readonly seabed: SeabedMap;
   /** Sea seconds until the next autosave. */
@@ -249,6 +253,10 @@ export class Game {
     // Outcrops keep off town land (and a little beyond, so none sits at a town's edge).
     const inTown = (x: number, z: number) => this.ports.some((p) => Math.hypot(p.x - x, p.z - z) < TOWN_RADIUS + 8);
     const deposits = placeDeposits(this.world, this.islands, WORLD_SEED, regionTier, inTown);
+    // The towns' props, and the ship on the stocks keeping people out of the cells she fills.
+    const decor = this.ports.flatMap((p) => p.decor ?? []);
+    const catalog = propCatalog(models.get(SLOOP)!);
+    reserveProps(this.world, decor, catalog);
     this.world.trackEdits(); // from here on, changes are what a save stores
 
     const classes = new Map<ShipType, ShipClass>();
@@ -270,6 +278,7 @@ export class Game {
     this.rig = new CameraRig(container.clientWidth / container.clientHeight);
     this.sun = new Sun(this.scene);
     this.terrain = new ChunkRenderer(this.world);
+    this.props = new PropsView(decor, catalog, this.terrain.lifts);
     this.lifter = new RoofLifter(this.world);
     this.ocean = new OceanRenderer(seabed, this.wakes);
     this.streaks = new WindStreaks(this.weather);
@@ -297,6 +306,7 @@ export class Game {
     });
     this.scene.add(
       this.terrain.group,
+      this.props.group,
       this.ocean.group,
       this.fleet.group,
       this.shots.mesh,
@@ -614,6 +624,7 @@ export class Game {
     this.fog.near = rig.distance * 1.4 * (1 - 0.5 * dark);
     this.fog.far = rig.distance * 3.5 * (1 - 0.45 * dark);
     this.terrain.setGlow(0.2 + 2.2 * dark);
+    this.props.setGlow(0.2 + 2.2 * dark);
     this.terrain.setZone(walker ? this.shore.townLand() : null);
     this.nightLights.update(this.lightSources(), focus, dark, time);
     this.people.update(this.land, paused ? 1 : alpha, paused ? 0 : frameSeconds, time, focus);

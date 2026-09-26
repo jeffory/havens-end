@@ -1,5 +1,6 @@
 import { SEA_LEVEL } from '../config';
 import type { SpotKind, TownSpot } from '../economy/ports';
+import type { PropPlacement } from '../props/types';
 import { baseOf, Block, type BlockId, FACING_DIRS, stairOf } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
@@ -62,6 +63,8 @@ export interface Town {
   /** Street lamps, and the tower's beacon. */
   lamps: Array<{ x: number; y: number; z: number }>;
   beacon: { x: number; y: number; z: number } | null;
+  /** Props set about the town: lanterns, signs, porches, the ship on the stocks. */
+  decor: PropPlacement[];
 }
 
 /**
@@ -128,6 +131,7 @@ export function buildTown(
   style: TownStyle,
 ): Town {
   const f = frame(footX, footZ, dx, dz);
+  const decor: PropPlacement[] = [];
   const natural = (u: number, v: number) => {
     const { x, z } = at(f, u, v);
     return groundHeight(world, x, z);
@@ -433,6 +437,7 @@ export function buildTown(
     yardSide: -ys,
     lamps,
     beacon,
+    decor,
   };
 }
 

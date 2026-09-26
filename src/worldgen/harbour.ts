@@ -1,5 +1,6 @@
 import { SEA_LEVEL } from '../config';
 import type { PortFaction, PortPlace, PlaceKind, TownSpot } from '../economy/ports';
+import type { PropPlacement } from '../props/types';
 import { Block } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight } from './buildings';
@@ -20,6 +21,8 @@ export interface Harbour {
   town: TownLayout;
   /** Where townsfolk go about the town. */
   spots: TownSpot[];
+  /** The town's props (see Town.decor), and the pier's. */
+  decor: PropPlacement[];
 }
 
 /** Columns this low leave room under any keel (surface ≤ 8 means 3.6+ units of water). */
@@ -76,7 +79,7 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
     const sign = town.signs[kind];
     places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
   }
-  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots };
+  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor: town.decor };
 }
 
 /** A post on the pier deck with a lantern on top; returns where the light is. */
