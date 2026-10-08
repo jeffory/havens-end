@@ -727,14 +727,19 @@ export class Land {
 
   private hit(c: Creature, tool: Tool): Outcome {
     const w = this.walker!;
-    const caught = strike(c, tool, w.x, w.z);
+    return this.landed(c, strike(c, tool, w.x, w.z), 'Caught');
+  }
+
+  /** A blow or a shot landed on a creature: it bolts, or it's down and what it gives falls where it lay. */
+  private landed(c: Creature, caught: Cargo | null, verb: string): Outcome {
     const label = CREATURES[c.kind].label;
     if (!caught) return done(`The ${label} bolts!`);
     this.creatures.splice(this.creatures.indexOf(c), 1);
     const { x, y, z } = c.walker;
-    for (let i = 0; i < caught.amount; i++) this.drop(caught.good, x, y + 0.3, z);
-    this.events.push({ kind: 'work', action: 'catch', x, y, z, good: caught.good, amount: caught.amount });
-    return done(`Caught a ${label}!`);
+    const goods = Object.entries(caught) as Array<[Good, number]>;
+    for (const [good, n] of goods) for (let i = 0; i < n; i++) this.drop(good, x, y + 0.3, z);
+    this.events.push({ kind: 'work', action: 'catch', x, y, z, good: goods[0]?.[0], amount: cargoCount(caught) });
+    return done(`${verb} a ${label}!`);
   }
 
   /** Picks a ripe crop: what it yields falls at your feet, and the camp's farmers will sow it again. */

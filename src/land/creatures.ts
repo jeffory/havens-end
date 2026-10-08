@@ -1,5 +1,6 @@
 import { darkness } from '../core/clock';
-import type { Good } from '../economy/goods';
+import { SEA_LEVEL } from '../config';
+import type { Cargo } from '../economy/goods';
 import { Block } from '../voxel/blocks';
 import type { VoxelReader } from '../voxel/raycast';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
@@ -8,12 +9,37 @@ import { type Crop, stageOf } from './crops';
 import type { Land, Tool } from './Land';
 import { createWalker, standable, stepWalker, type Walker } from './walker';
 
-export type CreatureKind = 'crab' | 'boar';
+export type CreatureKind = 'crab' | 'boar' | 'goat';
 
-/** Night creatures: crabs up from the beach, boar out of the woods. Both are after your crops. */
-export const CREATURES: Record<CreatureKind, { label: string; speed: number; hp: number; smell: number; most: number; loot: Good; amount: number; ground: number[] }> = {
-  crab: { label: 'land crab', speed: 1.5, hp: 1, smell: 12, most: 4, loot: 'fish', amount: 1, ground: [Block.Sand] },
-  boar: { label: 'wild boar', speed: 3.4, hp: 3, smell: 18, most: 2, loot: 'meat', amount: 3, ground: [Block.Grass, Block.Dirt] },
+interface CreatureSpec {
+  label: string;
+  speed: number;
+  hp: number;
+  /** How far off it smells a ripe crop (0: it doesn't raid fields). */
+  smell: number;
+  /** At most this many about at once. */
+  most: number;
+  /** What it gives when it's brought down. */
+  loot: Cargo;
+  ground: number[];
+  /** When it's about: the night's raiders, or the day's game. */
+  when: 'night' | 'day';
+  /** It comes out in herds of this many, least and most. */
+  herd?: readonly [number, number];
+  /** It bolts when the captain comes this close. */
+  shy?: number;
+  /** It keeps to ground at least this high above the sea. */
+  upland?: number;
+}
+
+/**
+ * Night creatures (crabs up from the beach, boar out of the woods, both after your crops)
+ * and the day's game (wild goats on the uplands, shy of people).
+ */
+export const CREATURES: Record<CreatureKind, CreatureSpec> = {
+  crab: { label: 'land crab', speed: 1.5, hp: 1, smell: 12, most: 4, loot: { fish: 1 }, ground: [Block.Sand], when: 'night' },
+  boar: { label: 'wild boar', speed: 3.4, hp: 3, smell: 18, most: 2, loot: { meat: 3 }, ground: [Block.Grass, Block.Dirt], when: 'night' },
+  goat: { label: 'wild goat', speed: 4.2, hp: 2, smell: 0, most: 4, loot: { meat: 2, hides: 1 }, ground: [Block.Grass], when: 'day', herd: [2, 4], shy: 8, upland: 4 },
 };
 
 export interface Creature {
@@ -61,8 +87,9 @@ export function fenced(world: VoxelWorld): VoxelReader {
 }
 
 /**
- * One step of the night's wildlife around the captain: new creatures come out of the
- * dark, go for crops that aren't fenced in or lit, and slink off at dawn.
+ * One step of the wildlife around the captain. By night crabs and boar come out of the
+ * dark for crops that aren't fenced in or lit, and slink off at dawn. By day wild goats
+ * graze the uplands in herds, and are gone by nightfall.
  */
 export function stepCreatures(land: Land, dt: number, random: () => number): void {
   const w = land.walker;
@@ -71,18 +98,24 @@ export function stepCreatures(land: Land, dt: number, random: () => number): voi
   for (let i = list.length - 1; i >= 0; i--) {
     const c = list[i];
     const far = !w || Math.hypot(c.walker.x - w.x, c.walker.z - w.z) > GONE_BEYOND;
-    if (far || (!night && c.fleeing <= 0)) list.splice(i, 1);
+    const itsTime = (CREATURES[c.kind].when === 'night') === night;
+    if (far || (!itsTime && c.fleeing <= 0)) list.splice(i, 1);
   }
-  if (!w || !night) return;
+  if (!w) return;
 
   land.spawnIn -= dt;
   if (land.spawnIn <= 0) {
     land.spawnIn = SPAWN_EVERY;
-    spawn(land, w, random);
+    if (night) spawn(land, w, random);
+    else spawnHerd(land, w, random);
   }
   const reader = fenced(land.world);
   const lights = land.lights();
   for (const c of list) stepCreature(land, c, dt, reader, lights, random);
+}
+
+function newCreature(land: Land, kind: CreatureKind, x: number, y: number, z: number, random: () => number): Creature {
+  return { id: land.nextCreature++, kind, walker: createWalker(x, y, z, random() * Math.PI * 2), hp: CREATURES[kind].hp, target: null, eating: 0, fleeing: 0, flee: { x: 0, z: 0 }, think: 0 };
 }
 
 function spawn(land: Land, w: Walker, random: () => number): void {
@@ -98,23 +131,47 @@ function spawn(land: Land, w: Walker, random: () => number): void {
     const y = standable(land.world, x, z, groundHeight(land.world, Math.floor(x), Math.floor(z)) + 1);
     if (y === null || !spec.ground.includes(land.world.getVoxel(Math.floor(x), y - 1, Math.floor(z)))) continue;
     if (land.lights().some((l) => Math.hypot(l.x - x, l.z - z) < LIGHT_RADIUS * 1.5)) continue;
-    return void land.creatures.push({
-      id: land.nextCreature++,
-      kind,
-      walker: createWalker(x, y, z, random() * Math.PI * 2),
-      hp: spec.hp,
-      target: null,
-      eating: 0,
-      fleeing: 0,
-      flee: { x: 0, z: 0 },
-      think: 0,
-    });
+    return void land.creatures.push(newCreature(land, kind, x, y, z, random));
   }
+}
+
+/** A herd of goats comes over the brow of a hill, somewhere out of sight of the captain. */
+function spawnHerd(land: Land, w: Walker, random: () => number): void {
+  const spec = CREATURES.goat;
+  const [least, most] = spec.herd!;
+  const have = land.creatures.filter((c) => c.kind === 'goat').length;
+  if (spec.most - have < least) return;
+  const lights = land.lights();
+  for (let i = 0; i < SPAWN_TRIES; i++) {
+    const angle = random() * Math.PI * 2;
+    const distance = SPAWN_NEAR + random() * (SPAWN_FAR - SPAWN_NEAR);
+    const cx = Math.floor(w.x + Math.sin(angle) * distance) + 0.5;
+    const cz = Math.floor(w.z + Math.cos(angle) * distance) + 0.5;
+    if (grazing(land, cx, cz, lights) === null) continue;
+    const size = Math.min(least + Math.floor(random() * (most - least + 1)), spec.most - have);
+    for (let n = 0; n < size; n++) {
+      const x = Math.floor(cx + (random() - 0.5) * 4) + 0.5;
+      const z = Math.floor(cz + (random() - 0.5) * 4) + 0.5;
+      const y = grazing(land, x, z, lights);
+      if (y !== null) land.creatures.push(newCreature(land, 'goat', x, y, z, random));
+    }
+    return;
+  }
+}
+
+/** Where a goat can graze: upland grass, off town and camp land, out of firelight. Its footing's height, or null. */
+function grazing(land: Land, x: number, z: number, lights: ReadonlyArray<{ x: number; z: number }>): number | null {
+  if (land.inTown(x, z) || land.claimed(x, z)) return null;
+  if (lights.some((l) => Math.hypot(l.x - x, l.z - z) < LIGHT_RADIUS * 3)) return null;
+  const y = standable(land.world, x, z, groundHeight(land.world, Math.floor(x), Math.floor(z)) + 1);
+  if (y === null || y - 1 < SEA_LEVEL + CREATURES.goat.upland!) return null;
+  return land.world.getVoxel(Math.floor(x), y - 1, Math.floor(z)) === Block.Grass ? y : null;
 }
 
 function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, lights: ReadonlyArray<{ x: number; z: number }>, random: () => number): void {
   const spec = CREATURES[c.kind];
   const w = c.walker;
+  const pace = spec.when === 'day' ? spec.speed * 0.25 : spec.speed;
   c.think -= dt;
   if (c.fleeing > 0) {
     c.fleeing -= dt;
@@ -126,10 +183,16 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
   }
   if (c.think <= 0) {
     c.think = THINK_SECONDS;
+    const captain = land.walker;
+    if (spec.shy && captain && Math.hypot(captain.x - w.x, captain.z - w.z) < spec.shy) {
+      // One sees you, and the herd goes with it.
+      for (const o of land.creatures) if (o.kind === c.kind && Math.hypot(o.walker.x - w.x, o.walker.z - w.z) < 8) scare(o, captain.x, captain.z, 5);
+      return;
+    }
     const light = lights.find((l) => Math.hypot(l.x - w.x, l.z - w.z) < LIGHT_RADIUS);
     if (light) return scare(c, light.x, light.z, 2.5);
     const crop = nearestCrop(land, c, spec.smell, lights);
-    c.target = crop ? { x: crop.x + 0.5, z: crop.z + 0.5 } : c.target && random() < 0.8 ? c.target : wanderFrom(w, random);
+    c.target = crop ? { x: crop.x + 0.5, z: crop.z + 0.5 } : c.target && random() < 0.8 ? c.target : wander(land, w, spec.upland, lights, random);
   }
   const t = c.target;
   if (!t) return stepWalker(w, 0, 0, reader, dt, spec.speed, CLIMB);
@@ -152,7 +215,7 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     c.target = null;
     return stepWalker(w, 0, 0, reader, dt, spec.speed, CLIMB);
   }
-  stepWalker(w, dx / d, dz / d, reader, dt, spec.speed, CLIMB);
+  stepWalker(w, dx / d, dz / d, reader, dt, pace, CLIMB);
 }
 
 /** The nearest crop worth eating that isn't lit up by a torch. */
@@ -175,6 +238,15 @@ function wanderFrom(w: Walker, random: () => number): { x: number; z: number } {
   return { x: w.x + Math.sin(angle) * 6, z: w.z + Math.cos(angle) * 6 };
 }
 
+/** Somewhere to wander to: anywhere, or — for upland game — somewhere that keeps it grazing on its own ground. */
+function wander(land: Land, w: Walker, upland: number | undefined, lights: ReadonlyArray<{ x: number; z: number }>, random: () => number): { x: number; z: number } {
+  for (let i = 0; i < SPAWN_TRIES; i++) {
+    const p = wanderFrom(w, random);
+    if (upland === undefined || grazing(land, p.x, p.z, lights) !== null) return p;
+  }
+  return { x: w.x, z: w.z };
+}
+
 export function scare(c: Creature, fromX: number, fromZ: number, seconds: number): void {
   c.fleeing = seconds;
   c.flee = { x: fromX, z: fromZ };
@@ -183,13 +255,16 @@ export function scare(c: Creature, fromX: number, fromZ: number, seconds: number
 }
 
 /**
- * The captain takes a swing at a creature: it bolts, and enough blows bring it down
- * (for its meat, or crab for the pot). Returns what was caught, if anything.
+ * Something hurts a creature (a blow, a shot): it bolts, and enough brings it down.
+ * Returns what it gives, if it's down.
  */
-export function strike(c: Creature, tool: Tool, fromX: number, fromZ: number): { good: Good; amount: number } | null {
-  c.hp -= TOOL_DAMAGE[tool];
+export function harm(c: Creature, damage: number, fromX: number, fromZ: number): Cargo | null {
+  c.hp -= damage;
   scare(c, fromX, fromZ, 4);
-  if (c.hp > 0) return null;
-  const spec = CREATURES[c.kind];
-  return { good: spec.loot, amount: spec.amount };
+  return c.hp > 0 ? null : { ...CREATURES[c.kind].loot };
+}
+
+/** The captain takes a swing at a creature with a tool. */
+export function strike(c: Creature, tool: Tool, fromX: number, fromZ: number): Cargo | null {
+  return harm(c, TOOL_DAMAGE[tool], fromX, fromZ);
 }

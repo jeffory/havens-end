@@ -35,7 +35,7 @@ export class PeopleView {
   private readonly figures = new Map<number, Figure>();
   private readonly beasts = new Map<number, Mesh>();
   private readonly creatureMaterial = new MeshLambertMaterial({ vertexColors: true });
-  private readonly shapes: Record<CreatureKind, BufferGeometry> = { crab: creatureShape('crab'), boar: creatureShape('boar') };
+  private readonly shapes: Record<CreatureKind, BufferGeometry> = { crab: creatureShape('crab'), boar: creatureShape('boar'), goat: creatureShape('goat') };
 
   constructor() {
     this.group.name = 'people';
@@ -149,7 +149,7 @@ export class PeopleView {
   }
 }
 
-/** A crab or a boar in voxels, centred on its feet and facing +z. */
+/** A crab, a boar or a goat in voxels, centred on its feet and facing +z. */
 function creatureShape(kind: CreatureKind): BufferGeometry {
   const palette = new Uint8Array(256 * 4);
   const cells: number[] = [];
@@ -167,7 +167,7 @@ function creatureShape(kind: CreatureKind): BufferGeometry {
     box(4, 5, 1, 3, 3, 4, 2);
     box(-1, -1, 3, 4, 2, 2, 3); // eyes on stalks
     box(1, 1, 3, 4, 2, 2, 3);
-  } else {
+  } else if (kind === 'boar') {
     palette.set([74, 58, 46, 255], 4);
     palette.set([50, 38, 30, 255], 8);
     palette.set([236, 226, 200, 255], 12);
@@ -179,6 +179,21 @@ function creatureShape(kind: CreatureKind): BufferGeometry {
     box(-2, -2, 4, 5, 8, 8, 3); // tusks
     box(2, 2, 4, 5, 8, 8, 3);
     for (const x of [-2, 2]) for (const z of [-3, 3]) box(x, x, 0, 2, z, z, 2); // legs
+  } else {
+    // A goat: pale coat, dark horns, a beard.
+    palette.set([214, 204, 186, 255], 4);
+    palette.set([150, 138, 120, 255], 8);
+    palette.set([70, 60, 50, 255], 12);
+    palette.set([30, 30, 30, 255], 16);
+    box(-2, 2, 4, 7, -4, 3, 1); // body
+    box(-1, 1, 6, 9, 4, 6, 1); // neck and head
+    box(-1, -1, 10, 11, 4, 4, 3); // horns
+    box(1, 1, 10, 11, 4, 4, 3);
+    box(0, 0, 5, 5, 6, 6, 2); // beard
+    box(-1, -1, 8, 8, 6, 6, 4); // eyes
+    box(1, 1, 8, 8, 6, 6, 4);
+    for (const x of [-2, 2]) for (const z of [-3, 2]) box(x, x, 0, 3, z, z, 2); // legs
+    box(0, 0, 7, 8, -5, -5, 1); // tail
   }
   const geometry = meshCells(Int32Array.from(cells), paletteFromRgba(palette));
   geometry.translate(-0.5, 0, -0.5);
