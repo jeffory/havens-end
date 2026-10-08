@@ -150,6 +150,27 @@ describe('wild goats', () => {
     expect(land.creatures.filter((c) => c.kind !== 'goat')).toHaveLength(0);
   });
 
+  it('never step down off their upland, even for grass just across a gully', () => {
+    const { land, world } = upland();
+    // A gully two wide and four deep runs across the plateau, too deep to climb out of.
+    for (const x of [10, 11]) {
+      for (let z = -34; z <= 34; z++) {
+        for (let y = SEA_LEVEL + 3; y <= SEA_LEVEL + 6; y++) world.setVoxel(x, y, z, Block.Air);
+        world.setVoxel(x, SEA_LEVEL + 2, z, Block.Grass);
+      }
+    }
+    Object.assign(land.walker!, { x: -25.5, z: 0.5 }); // well off, so the goat isn't shy of the captain
+    loose(land, 'goat', 6.5, 0.5);
+    const goat = land.creatures[0];
+    goat.walker.y = SEA_LEVEL + 7;
+    // Upland grass over the gully, as high as where it stands: it sets off for it.
+    Object.assign(goat, { target: { x: 14.5, z: 0.5 }, think: 1e9 });
+    for (let t = 0; t < 10; t += 1 / 20) {
+      land.step(1 / 20);
+      expect(goat.walker.y).toBeGreaterThanOrEqual(SEA_LEVEL + 5);
+    }
+  });
+
   it('keep away from camps and firelight', () => {
     const { land, sea } = upland();
     sea.player.cargo.timber = 50;

@@ -190,6 +190,7 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     const d = Math.hypot(dx, dz) || 1;
     const [fx, fz] = uplandFlee(land, w, dx / d, dz / d, spec.upland);
     stepWalker(w, fx, fz, reader, dt, spec.speed * 1.4, CLIMB);
+    keepUp(land, w, spec.upland);
     return;
   }
   if (c.think <= 0) {
@@ -227,6 +228,18 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     return stepWalker(w, 0, 0, reader, dt, spec.speed, CLIMB);
   }
   stepWalker(w, dx / d, dz / d, reader, dt, pace, CLIMB);
+  if (keepUp(land, w, spec.upland)) c.target = null; // held at the drop: it grazes somewhere else
+}
+
+/**
+ * Upland game never steps off its upland: a step from upland ground to a spot below it is
+ * undone, so it stands at the drop instead (a look ahead alone misses a gully in between,
+ * or a brow that runs aslant). True if the step was undone.
+ */
+function keepUp(land: Land, w: Walker, upland: number | undefined): boolean {
+  if (upland === undefined || uplandFooting(land, w.x, w.z, upland) !== null || uplandFooting(land, w.prev.x, w.prev.z, upland) === null) return false;
+  Object.assign(w, { x: w.prev.x, y: w.prev.y, z: w.prev.z, vx: 0, vy: 0, vz: 0 });
+  return true;
 }
 
 /** The nearest crop worth eating that isn't lit up by a torch. */
