@@ -34,7 +34,7 @@ const CLASSES = new Map(
 const FAR_PORT: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 3000, z: 0, heading: 0, islandX: 3000, islandZ: 0, pier: { x: 3000, y: 13, z: 0 }, places: [], lamps: [] };
 
 /** A flat grassy island from x, z = -40 to 40 (ground top at SEA_LEVEL + 1), a tree on it, and the ship lying off its east shore. */
-function setup() {
+function setup(port: Port = FAR_PORT) {
   const world = new VoxelWorld();
   for (let x = -40; x < 40; x++) {
     for (let z = -40; z < 40; z++) {
@@ -47,7 +47,7 @@ function setup() {
   for (let y = SEA_LEVEL + 1; y < SEA_LEVEL + 5; y++) world.setVoxel(10, y, 10, Block.Wood);
   for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) world.setVoxel(10 + dx, SEA_LEVEL + 5, 10 + dz, Block.Leaves);
 
-  const sea = new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, [FAR_PORT], 1, false);
+  const sea = new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, [port], 1, false);
   Object.assign(sea.player.ship, { x: 50, z: 0, heading: 0, surge: 0 });
   const land = new Land(world, sea);
   return { world, sea, land };
@@ -618,6 +618,33 @@ describe('guns', () => {
     expect(land.walker).not.toBeNull();
     expect(land.pack.cartridges).toBeUndefined();
     expect(sea.player.cargo.cartridges).toBe(30);
+  });
+
+  it('in port, takes a pouch out of town to hunt, and stows it back in the hold on coming into town', () => {
+    // A port 60 west of the island's middle: its town takes in the island west of x = 20.
+    const port: Port = { ...FAR_PORT, x: -60, islandX: -60, pier: { x: -38.5, y: SEA_LEVEL + 1, z: 0.5 } };
+    const { land, sea } = setup(port);
+    sea.captain.guns.push('pistol');
+    sea.player.cargo.cartridges = 30;
+    sea.docked = port;
+    land.landAtPort();
+    walkTo(land, 10.5, 0.5);
+    land.step(1 / 20);
+    expect(land.inTown(10.5, 0.5)).toBe(true);
+    expect(land.pack.cartridges).toBeUndefined();
+    expect(sea.player.cargo.cartridges).toBe(30);
+    // Out of town, the pouch comes from the hold…
+    walkTo(land, 30.5, 0.5);
+    land.step(1 / 20);
+    expect(land.inTown(30.5, 0.5)).toBe(false);
+    expect(land.pack.cartridges).toBe(POUCH);
+    expect(sea.player.cargo.cartridges).toBe(30 - POUCH);
+    expect(land.fire('pistol').ok).toBe(true);
+    // …and back in town, what's left of it goes back, for the market to see.
+    walkTo(land, 10.5, 0.5);
+    land.step(1 / 20);
+    expect(land.pack.cartridges).toBeUndefined();
+    expect(sea.player.cargo.cartridges).toBe(29);
   });
 
   it('puts the pouch’s cartridges back in the hold when the captain goes aboard', () => {

@@ -26,7 +26,7 @@ const FAR_PORT: Port = { id: 0, name: 'Haven', faction: 'merchant', x: 3000, z: 
 const GROUND = SEA_LEVEL + 1;
 
 /** A camp at the middle of a flat grassy islet 80 across, three bandits strong, its fire and chest in place. */
-export function banditIslet(size = 3) {
+export function banditIslet(size = 3, seed = 5) {
   const world = new VoxelWorld();
   for (let x = -40; x < 40; x++) for (let z = -40; z < 40; z++) for (let y = 0; y <= SEA_LEVEL; y++) world.setVoxel(x, y, z, y === SEA_LEVEL ? Block.Grass : Block.Dirt);
   const camp: BanditCamp = { id: 7, x: 0, y: GROUND, z: 0, islandX: 0, islandZ: 0, islandRadius: 36, tier: 1, size, chest: { x: 2, y: GROUND, z: 2 } };
@@ -34,7 +34,7 @@ export function banditIslet(size = 3) {
   world.setVoxel(2, GROUND, 2, Block.Chest);
   const sea = new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, [FAR_PORT], 1, false);
   Object.assign(sea.player.ship, { x: 50, z: 0, heading: 0, surge: 0 });
-  const land = new Land(world, sea, 5);
+  const land = new Land(world, sea, seed);
   land.bandits = new Bandits([camp]);
   return { world, sea, land, camp };
 }
@@ -147,8 +147,8 @@ describe('bandits’ camps', () => {
 });
 
 /** The captain ashore on the bandits' islet at (x, z), at noon, a rifle and cartridges to hand. */
-function ashore(x: number, z: number, size = 3) {
-  const setup = banditIslet(size);
+function ashore(x: number, z: number, size = 3, seed = 5) {
+  const setup = banditIslet(size, seed);
   const { land, sea } = setup;
   sea.clock.phase = phaseOf(12);
   sea.captain.guns.push('pistol', 'rifle');
@@ -311,7 +311,27 @@ describe('bandits', () => {
     }
     expect(land.bandits.live).not.toContain(b);
     expect(land.bandits.state(camp.id).left).toBe(2);
-    expect(last.x).toBeGreaterThan(27.5);
+    // They ran on over the dry sand (feet at sea level), and were gone as the shallows came up.
+    expect(last.x).toBeGreaterThan(30.5);
+    expect(last.x).toBeLessThan(34);
+    expect(last.y).toBeCloseTo(SEA_LEVEL, 5);
+  });
+
+  it('a shot that fells the last of them, at ease, brings no warning: only word the camp is cleared', () => {
+    // Out of their sight by day, a rifle shot at the camp's one bandit: on the first seed it hits, it fells them.
+    for (let seed = 1; seed <= 20; seed++) {
+      const { land } = ashore(0.5, 22.5, 1, seed);
+      run(land, 0.5);
+      const b = land.bandits.live[0];
+      expect(b.mode).toBe('ease');
+      land.takeEvents();
+      land.fire('rifle', { x: b.walker.x, y: b.walker.y + 1.2, z: b.walker.z });
+      if (land.bandits.live.length > 0) continue;
+      const notices = land.takeEvents().flatMap((e) => (e.kind === 'notice' ? [e.text] : []));
+      expect(notices).toEqual([expect.stringMatching(/^The bandits’ camp is cleared/)]);
+      return;
+    }
+    expect.unreachable('the rifle never felled the bandit');
   });
 
   it('a fallen bandit leaves cartridges and a few gold, and the last one gone clears the camp', () => {
@@ -447,5 +467,24 @@ describe('bandits never set foot on the captain’s claimed ground', () => {
     run(land, 15);
     expect(land.bandits.live).toEqual([b]);
     expect(land.claimed(b.walker.x, b.walker.z), `at ${b.walker.x.toFixed(1)}, ${b.walker.z.toFixed(1)}`).toBe(false);
+  });
+
+  it('and pinned at a claim’s edge, they give up getting off it, but aren’t deaf and blind there', () => {
+    const { land, world } = ashore(0.5, 30.5, 1);
+    wall(world);
+    // A rock face just east of the bandit, and a fire due west whose claim's edge they stand at:
+    // the way off it is straight into the rock.
+    for (let z = -12; z < 10; z++) for (let y = GROUND; y < GROUND + 10; y++) world.setVoxel(1, y, z, Block.Stone);
+    run(land, 0.5);
+    const b = land.bandits.live[0];
+    Object.assign(b.walker, { x: 0.5, y: GROUND, z: -3.5 });
+    land.buildings.push({ id: 90, kind: 'campfire', x0: -33, z0: -5, w: 3, d: 3, y: GROUND, rot: 0 });
+    run(land, 3);
+    expect(b.pinned).toBeGreaterThan(1.5);
+    expect(b.mode).toBe('ease');
+    // The captain comes into sight, and they take up the fight where they stand.
+    Object.assign(land.walker!, { x: -8.5, z: -3.5 });
+    run(land, 0.5);
+    expect(b.mode).toBe('fight');
   });
 });

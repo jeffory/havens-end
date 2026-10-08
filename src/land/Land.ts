@@ -197,6 +197,8 @@ export class Land {
   /** The bandits' camps (the game hands over the ones it placed). */
   bandits = new Bandits();
   nextId = 1;
+  /** In port: was the captain in town at the last step? (The pouch goes with them out of it.) */
+  private inTownLast = true;
   private events: LandEvent[] = [];
   private readonly random: () => number;
   private growIn = 0;
@@ -303,6 +305,7 @@ export class Land {
     }
     this.work(dt);
     for (const gun of GUN_LIST) if (this.loading[gun]) this.loading[gun] = Math.max(0, this.loading[gun]! - dt);
+    this.pouchInPort();
     if (this.walker && this.health < HEALTH_MAX) {
       this.quiet += dt;
       if (this.quiet >= HEAL_AFTER && (this.healIn -= dt) <= 0) {
@@ -566,8 +569,9 @@ export class Land {
   landAtPort(): void {
     const port = this.sea.docked;
     if (!port) return;
-    // No pouch in port: the cartridges stay in the hold, where the market sees them.
+    // No pouch in town: the cartridges stay in the hold, where the market sees them (see pouchInPort).
     this.walker = createWalker(port.pier.x, port.pier.y, port.pier.z, port.heading + Math.PI);
+    this.inTownLast = true;
     this.events.push({ kind: 'ashore', ...port.pier });
   }
 
@@ -633,6 +637,22 @@ export class Land {
     if (want > 0) Land.transfer(this.sea.player.cargo, this.pack, 'cartridges', want, this.packRoom());
   }
 
+  /**
+   * In port, the pouch is filled as the captain walks out of town (to hunt the island), and
+   * its cartridges go back in the hold as they walk in again: the market, reached only in
+   * town, sees and sells them all.
+   */
+  private pouchInPort(): void {
+    const w = this.walker;
+    if (!w || !this.sea.docked) return;
+    const inTown = this.inTown(w.x, w.z);
+    if (inTown === this.inTownLast) return;
+    this.inTownLast = inTown;
+    if (!inTown) return this.fillPouch();
+    const hold = this.sea.player.cargo;
+    Land.transfer(this.pack, hold, 'cartridges', this.pack.cartridges ?? 0, this.sea.player.cls.type.hold - cargoCount(hold));
+  }
+
   // ---- Guns ----
 
   /** How much of a gun's loading is still to go: 1 just fired, 0 ready. */
@@ -666,8 +686,10 @@ export class Land {
     const distance = Math.hypot(at.x - from.x, at.z - from.z);
     const shot = resolveShot(this.world, from, at, spec.range, target, target ? hitChance(gun, distance) : 0, this.random());
     this.events.push({ kind: 'shot', gun, from, to: shot.end, hit: shot.hit ? shot.hit.kind : null });
+    const result = shot.hit ? this.wound(shot.hit, spec.damage) : done('');
+    // Heard, by whoever's left: a shot that fells the last of them warns no one.
     if (this.bandits.hears(from.x, from.z)) this.alertBandits();
-    return shot.hit ? this.wound(shot.hit, spec.damage) : done('');
+    return result;
   }
 
   /** What a shot could hit round the captain: the beasts, and the bandits. */
@@ -691,7 +713,6 @@ export class Land {
   /** A shot lands on a bandit: the camp takes up the fight; badly hurt they run; down, they leave cartridges and a few gold. */
   private shootBandit(b: Bandit, damage: number): Outcome {
     b.hp -= damage;
-    this.alertBandits();
     if (b.hp <= 0) {
       const camp = this.bandits.camps.find((c) => c.id === b.camp)!;
       const { x, y, z } = b.walker;
@@ -699,8 +720,10 @@ export class Land {
       const gold = 3 + Math.floor(this.random() * 6) + camp.tier * 3;
       this.sea.captain.gold += gold;
       this.drop('cartridges', x, y + 0.4, z, 2 + Math.floor(this.random() * 2));
+      this.alertBandits(); // the rest of them, if any are left
       return done(`The bandit falls: ${gold} gold in their purse.`);
     }
+    this.alertBandits();
     if (b.hp <= FLEE_AT) {
       Object.assign(b, { mode: 'flee', path: null });
       return done('The bandit breaks and runs!');

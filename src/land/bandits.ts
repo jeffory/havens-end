@@ -423,9 +423,9 @@ function flee(r: Round, b: Bandit): void {
   if (d > FLEE_GONE || (d > FLEE_HIDDEN && !clearLine(land.world, eyeOf(b), captain))) land.banditGone(b, 'fled');
 }
 
-/** The sea at (x, z), for someone on foot at height `y`: ground at or below sea level there, or none at all. */
+/** The sea at (x, z), for someone on foot at height `y`: ground below sea level there (dry beach stands at it), or none at all. */
 function wet(world: VoxelReader, x: number, z: number, y: number): boolean {
-  return groundBelow(world, x, z, y + STEP_UP) <= SEA_LEVEL;
+  return groundBelow(world, x, z, y + STEP_UP) < SEA_LEVEL;
 }
 
 /** Turns tried, smallest first, to run clear of the captain's claimed ground. */
