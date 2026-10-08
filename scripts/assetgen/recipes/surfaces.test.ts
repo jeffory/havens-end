@@ -41,7 +41,7 @@ describe('pattern recipe', () => {
     });
     const sand = blockColour('sand');
     mean.forEach((m, ch) => expect(Math.abs(m - sand[ch])).toBeLessThan(15));
-  });
+  }, 20_000); // 1024 px images: slow under a full parallel run
 
   it('knows the game block colours by name', () => {
     expect(blockColour('Sand')).toEqual([0xe9, 0xd6, 0xa0]);
@@ -65,7 +65,7 @@ describe('material recipe', () => {
     expect(Object.keys(c.files).sort()).toEqual(['color.png', 'height.png', 'normal.png']);
     expect(calls.some((call) => call.types.includes('SetLatentNoiseMask'))).toBe(true);
     expect(calls.some((call) => call.types.includes('Deep Bump (mtb)'))).toBe(true);
-  });
+  }, 20_000); // 1024 px images: slow under a full parallel run
 });
 
 describe('material recipe when the seam repair fails', () => {
@@ -83,7 +83,7 @@ describe('material recipe when the seam repair fails', () => {
 
     expect(c.files['color.png']).toBeDefined();
     expect(c.notes).toContain('seam repair failed');
-  });
+  }, 20_000); // 1024 px images: slow under a full parallel run
 });
 
 describe('material recipe when the maps step fails', () => {
@@ -101,7 +101,7 @@ describe('material recipe when the maps step fails', () => {
 
     expect(Object.keys(c.files)).toEqual(['color.png']);
     expect(c.notes.join(' ')).toMatch(/no maps: .*Deep Bump/);
-  });
+  }, 20_000); // 1024 px images: slow under a full parallel run
 });
 
 describe('vox recipe', () => {

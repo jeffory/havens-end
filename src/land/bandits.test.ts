@@ -4,6 +4,7 @@ import { shipClass } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
 import { phaseOf } from '../core/clock';
 import type { Port } from '../economy/ports';
+import { WATER_LEVEL } from '../ocean/waves';
 import { footprintSamples } from '../sailing/hull';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP } from '../sailing/ships';
 import { Weather } from '../sailing/weather';
@@ -11,7 +12,8 @@ import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import type { BanditCamp } from '../worldgen/bandits';
 import { Bandits, CAMP_BACK_DAYS, HOLD_RADIUS } from './bandits';
-import { HEALTH_MAX, Land } from './Land';
+import { HEALTH_MAX, Land, type LandEvent } from './Land';
+import { WALK_SPEED } from './walker';
 
 const CLASSES = new Map(
   [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG].map((type) => {
@@ -51,6 +53,21 @@ describe('bandits’ camps', () => {
     expect(land.placement('campfire', 20, 0, 0)).toMatchObject({ ok: false, reason: 'Bandits hold this ground: clear their camp first.' });
     for (let i = 0; i < 3; i++) land.bandits.lose(camp, land.day());
     expect(land.placement('campfire', 20, 0, 0).ok).toBe(true);
+  });
+
+  it('a campfire built as near them as is allowed doesn’t leave their camp gone when the game is loaded', () => {
+    const { world, land, sea, camp } = banditIslet();
+    // The islet runs on west, out past 60 from the bandits' fire.
+    for (let x = -70; x < -40; x++) for (let z = -5; z < 5; z++) for (let y = 0; y <= SEA_LEVEL; y++) world.setVoxel(x, y, z, y === SEA_LEVEL ? Block.Grass : Block.Dirt);
+    sea.player.cargo.timber = 50;
+    land.goAshore();
+    let cx = -55;
+    while (cx > -65 && !land.placement('campfire', cx, 0, 0).ok) cx--;
+    expect(land.placement('campfire', cx + 1, 0, 0).reason).toBe('Bandits hold this ground: clear their camp first.');
+    expect(land.build('campfire', cx, 0, 0).ok).toBe(true);
+    land.restore(JSON.parse(JSON.stringify(land.snapshot())));
+    expect(land.bandits.state(camp.id).gone).toBe(false);
+    expect(land.bandits.manned(camp)).toBe(true);
   });
 
   it('are manned again five days after they’re cleared', () => {
@@ -170,6 +187,25 @@ describe('bandits', () => {
     expect(land.bandits.live.every((b) => b.mode === 'fight')).toBe(true);
   });
 
+  it('give the captain a warning before their first volley, once a fight', () => {
+    const { land } = ashore(0.5, 30.5);
+    run(land, 1);
+    land.takeEvents();
+    Object.assign(land.walker!, { x: 0.5, z: 12.5 });
+    run(land, 1.9);
+    expect(land.bandits.fighting()).toBe(true);
+    const warned = (events: LandEvent[]) => events.filter((e) => e.kind === 'notice' && e.text === 'Bandits! They’ve seen you.');
+    let events = land.takeEvents();
+    expect(events.filter((e) => e.kind === 'shot' && e.gun === 'musket')).toHaveLength(0);
+    expect(warned(events)).toEqual([{ kind: 'notice', text: 'Bandits! They’ve seen you.', tone: 'bad' }]);
+    // The fight goes on: no second warning, whether they're shot at, hear a shot, or fire.
+    land.fire('pistol', { x: land.bandits.live[0].walker.x, y: GROUND + 1.2, z: land.bandits.live[0].walker.z });
+    run(land, 10);
+    events = land.takeEvents();
+    expect(events.some((e) => e.kind === 'shot' && e.gun === 'musket')).toBe(true);
+    expect(warned(events)).toHaveLength(0);
+  });
+
   it('at night see only half as far', () => {
     const { land, sea } = ashore(0.5, 13.5);
     sea.clock.phase = phaseOf(23);
@@ -205,9 +241,9 @@ describe('bandits', () => {
     land.takeEvents();
     run(land, 20);
     const fired = shots(land);
-    // Three muskets, six seconds to load: no more than four shots each in 20 s.
+    // Three muskets, the first two seconds after the alert and seven to load after: no more than three shots each in 20 s.
     expect(fired.length).toBeGreaterThan(0);
-    expect(fired.length).toBeLessThanOrEqual(12);
+    expect(fired.length).toBeLessThanOrEqual(9);
     const w = land.walker!;
     const off = land.bandits.live.map((b) => Math.hypot(b.walker.x - w.x, b.walker.z - w.z));
     expect(off.filter((d) => d >= 6 && d <= 18).length).toBeGreaterThanOrEqual(2);
@@ -239,6 +275,45 @@ describe('bandits', () => {
     expect(land.bandits.state(camp.id).left).toBeLessThan(3);
   });
 
+  it('a wounded bandit limps: slower than the captain walks, so they can be run down', () => {
+    const { land } = ashore(0.5, 12.5);
+    run(land, 0.5);
+    const b = land.bandits.live[0];
+    Object.assign(b, { hp: 1, mode: 'flee', path: null });
+    const from = { x: b.walker.x, z: b.walker.z };
+    run(land, 2);
+    expect(land.bandits.live).toContain(b);
+    const pace = Math.hypot(b.walker.x - from.x, b.walker.z - from.z) / 2;
+    expect(pace).toBeGreaterThan(WALK_SPEED / 2);
+    expect(pace).toBeLessThan(WALK_SPEED);
+  });
+
+  it('a runaway stops at the water: they never wade in, and are gone at the shore', () => {
+    const { land, world, camp } = ashore(22.5, 0.5);
+    // East of x = 30 the islet shelves into the sea: dry sand, then shallows to wade in, then deep water.
+    for (let x = 30; x < 40; x++) {
+      for (let z = -40; z < 40; z++) {
+        world.setVoxel(x, SEA_LEVEL, z, Block.Air);
+        if (x >= 34) world.setVoxel(x, SEA_LEVEL - 1, z, Block.Air);
+        world.setVoxel(x, x < 34 ? SEA_LEVEL - 1 : SEA_LEVEL - 2, z, Block.Sand);
+      }
+    }
+    run(land, 0.5);
+    const b = land.bandits.live[0];
+    Object.assign(b.walker, { x: 26.5, y: GROUND, z: 0.5 });
+    Object.assign(b, { hp: 1, mode: 'flee', path: null });
+    let last = { x: b.walker.x, y: b.walker.y };
+    for (let t = 0; t < 10 && land.bandits.live.includes(b); t += 1 / 20) {
+      land.step(1 / 20);
+      land.health = HEALTH_MAX;
+      if (land.bandits.live.includes(b)) last = { x: b.walker.x, y: b.walker.y };
+      expect(b.walker.y, `in the water at x ${b.walker.x.toFixed(2)}`).toBeGreaterThan(WATER_LEVEL);
+    }
+    expect(land.bandits.live).not.toContain(b);
+    expect(land.bandits.state(camp.id).left).toBe(2);
+    expect(last.x).toBeGreaterThan(27.5);
+  });
+
   it('a fallen bandit leaves cartridges and a few gold, and the last one gone clears the camp', () => {
     const { land, sea, camp } = ashore(0.5, 12.5, 2);
     run(land, 0.5);
@@ -246,7 +321,7 @@ describe('bandits', () => {
     for (const b of [...land.bandits.live]) land.banditGone(b, 'fell');
     expect(land.bandits.manned(camp)).toBe(false);
     expect(land.bandits.state(camp.id).cleared).not.toBeNull();
-    expect(land.takeEvents().some((e) => e.kind === 'notice')).toBe(true);
+    expect(land.takeEvents().some((e) => e.kind === 'notice' && /camp is cleared/.test(e.text))).toBe(true);
     // (banditGone doesn't pay: the shot that fells them does. See Land.wound.)
     expect(sea.captain.gold).toBe(gold);
   });
@@ -355,5 +430,22 @@ describe('bandits never set foot on the captain’s claimed ground', () => {
     run(land, 15);
     expect(land.bandits.live).toHaveLength(3);
     for (const b of land.bandits.live) expect(land.claimed(b.walker.x, b.walker.z)).toBe(false);
+  });
+
+  it('and walk off both where two camps’ claims overlap round them, away from the nearer fire', () => {
+    const { land, world } = ashore(0.5, 30.5, 1);
+    wall(world);
+    // A rock face just east of the bandit's fire, and the bandit beside it.
+    for (let z = -12; z < 10; z++) for (let y = GROUND; y < GROUND + 10; y++) world.setVoxel(2, y, z, Block.Stone);
+    run(land, 0.5);
+    const b = land.bandits.live[0];
+    Object.assign(b.walker, { x: 0.5, y: GROUND, z: 3.5 });
+    // Two fires: one 32 off to the west (its claim's berth takes the bandit in), one 27 off to the south (its claim does).
+    land.buildings.push({ id: 90, kind: 'campfire', x0: -33, z0: -1, w: 3, d: 3, y: GROUND, rot: 0 });
+    land.buildings.push({ id: 91, kind: 'campfire', x0: -1, z0: 29, w: 3, d: 3, y: GROUND, rot: 0 });
+    expect(land.claimed(b.walker.x, b.walker.z)).toBe(true);
+    run(land, 15);
+    expect(land.bandits.live).toEqual([b]);
+    expect(land.claimed(b.walker.x, b.walker.z), `at ${b.walker.x.toFixed(1)}, ${b.walker.z.toFixed(1)}`).toBe(false);
   });
 });

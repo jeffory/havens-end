@@ -4,8 +4,8 @@ import { type Building, isWorkshop, type Recipe, STORE_SIZE, STRUCTURES } from '
 /** A campfire claims the land this far around it. */
 export const CLAIM_RADIUS = 32;
 
-/** Where a campfire's claim is centred. */
-export const fireCentre = (fire: Building): { x: number; z: number } => ({ x: fire.x0 + 1.5, z: fire.z0 + 1.5 });
+/** Where a campfire's claim is centred (a plot for one, before it's built, too). */
+export const fireCentre = (fire: Pick<Building, 'x0' | 'z0'>): { x: number; z: number } => ({ x: fire.x0 + 1.5, z: fire.z0 + 1.5 });
 
 const centre = (b: Building) => ({ x: b.x0 + b.w / 2, z: b.z0 + b.d / 2 });
 

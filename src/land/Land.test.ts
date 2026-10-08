@@ -609,6 +609,25 @@ describe('guns', () => {
     expect(sea.player.cargo.cartridges).toBe(30 - POUCH);
   });
 
+  it('takes no pouch ashore in port: the hold’s cartridges stay there for the market', () => {
+    const { land, sea } = setup();
+    sea.captain.guns.push('pistol');
+    sea.player.cargo.cartridges = 30;
+    sea.docked = FAR_PORT;
+    land.landAtPort();
+    expect(land.walker).not.toBeNull();
+    expect(land.pack.cartridges).toBeUndefined();
+    expect(sea.player.cargo.cartridges).toBe(30);
+  });
+
+  it('puts the pouch’s cartridges back in the hold when the captain goes aboard', () => {
+    const { land, sea } = armed();
+    land.fire('pistol');
+    expect(land.goAboard().ok).toBe(true);
+    expect(land.pack.cartridges).toBeUndefined();
+    expect(sea.player.cargo.cartridges).toBe(29);
+  });
+
   it('takes no cartridges ashore without a gun', () => {
     const { land, sea } = setup();
     sea.player.cargo.cartridges = 30;

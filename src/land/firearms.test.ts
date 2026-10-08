@@ -16,6 +16,14 @@ describe('firearms', () => {
     expect(hitChance('musket', 16)).toBeLessThan(hitChance('musket', 8));
   });
 
+  it('the bandits’ muskets are poor shots, and slow to load', () => {
+    expect(hitChance('musket', 8)).toBeCloseTo(0.4, 5);
+    expect(hitChance('musket', 12)).toBeCloseTo(0.35, 5);
+    expect(hitChance('musket', 16)).toBeCloseTo(0.3, 5);
+    expect(hitChance('musket', 25)).toBe(0);
+    expect(MUSKET.reload).toBe(7);
+  });
+
   it('can’t hit beyond a gun’s range', () => {
     expect(hitChance('pistol', GUNS.pistol.range + 1)).toBe(0);
     expect(hitChance('rifle', GUNS.rifle.range + 1)).toBe(0);

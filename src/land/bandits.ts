@@ -1,3 +1,4 @@
+import { SEA_LEVEL } from '../config';
 import { isNight } from '../core/clock';
 import { type Dress, townDress } from '../duel/dress';
 import type { Cargo } from '../economy/goods';
@@ -9,7 +10,7 @@ import { CLAIM_RADIUS, fireCentre } from './camps';
 import { clearLine, hitChance, MUSKET, type Point3, resolveShot } from './firearms';
 import type { Land } from './Land';
 import { findPath, type PathPoint } from './paths';
-import { createWalker, standable, stepWalker, WALK_SPEED, type Walker } from './walker';
+import { createWalker, groundBelow, STEP_UP, standable, stepWalker, WALK_SPEED, type Walker } from './walker';
 
 /** No campfire within this of a manned camp; a claim within this keeps a cleared camp empty for good. */
 export const HOLD_RADIUS = 60;
@@ -45,6 +46,8 @@ const PATH_NODES = 1500;
 /** At ease they amble; in a fight they move smartly. */
 const EASE_PACE = 0.35;
 const FIGHT_PACE = 0.8;
+/** Wounded and running, they limp: slower than the captain walks, so they can be run down. */
+const LIMP_PACE = 0.8;
 const ARRIVED = 0.4;
 /** Too near, too far or out of sight in a fight, a bandit picks somewhere better within this. */
 const REPLAN = 0.5;
@@ -54,7 +57,7 @@ const STUCK_SECONDS = 1.5;
 const MISS_WIDE = 0.8;
 /** Bandits plan their way at least this far clear of the captain's claimed ground… */
 const CLAIM_BERTH = 1.5;
-/** …and running, look this far ahead for it. */
+/** …and running, look this far ahead for it, and for the water. */
 const LOOK_AHEAD = 1.5;
 
 /** How a camp stands. */
@@ -157,14 +160,19 @@ export class Bandits {
     }
   }
 
-  /** Every bandit at ease takes up the fight, their muskets coming to bear one after another. */
-  alertAll(): void {
-    for (const b of this.live) if (b.mode === 'ease') Object.assign(b, { mode: 'fight', path: null, think: 0, unseen: 0, loading: 0.8 + (b.id % 3) * 0.9 });
+  /**
+   * Every bandit at ease takes up the fight, their muskets coming to bear one after another,
+   * the first of them two seconds on. True when that starts a fight (none of them was in one).
+   */
+  alertAll(): boolean {
+    const starts = !this.fighting() && this.live.some((b) => b.mode === 'ease');
+    for (const b of this.live) if (b.mode === 'ease') Object.assign(b, { mode: 'fight', path: null, think: 0, unseen: 0, loading: 2 + (b.id % 3) * 0.9 });
+    return starts;
   }
 
-  /** A shot fired at (x, z): the camp hears it if a bandit is within earshot. */
-  heard(x: number, z: number): void {
-    if (this.live.some((b) => Math.hypot(b.walker.x - x, b.walker.z - z) < HEARING)) this.alertAll();
+  /** Would a shot fired at (x, z) be heard? Only if a bandit is within earshot. */
+  hears(x: number, z: number): boolean {
+    return this.live.some((b) => Math.hypot(b.walker.x - x, b.walker.z - z) < HEARING);
   }
 
   /** Is a fight on? */
@@ -206,6 +214,8 @@ export interface Bandit {
   unseen: number;
   /** Seconds they've been held up on the way to the next point of their path. */
   stuck: number;
+  /** Seconds they've been held up getting off the captain's claimed ground; past `STUCK_SECONDS` they stop trying. */
+  pinned: number;
 }
 
 /**
@@ -235,15 +245,27 @@ export function stepBandits(land: Land, dt: number, random: () => number): void 
     b.aiming = Math.max(0, b.aiming - dt);
     const w = b.walker;
     // A camp of the captain's made round them: off its ground first (and, unless they're
-    // running, out of the berth they plan their ways clear of it by).
+    // running, out of the berth they plan their ways clear of it by), away from the nearest
+    // fire. Held up at it, they give up and go about their business where they stand.
     const fire = b.mode === 'flee' ? r.claims.at(w.x, w.z) : r.claims.at(Math.floor(w.x) + 0.5, Math.floor(w.z) + 0.5, CLAIM_BERTH);
-    if (fire) {
-      b.path = null;
-      stepWalker(w, w.x - fire.x, w.z - fire.z, land.world, dt);
-    } else if (b.mode === 'ease') ease(r, b);
+    if (!fire) b.pinned = 0;
+    else if (b.pinned <= STUCK_SECONDS) {
+      getOff(r, b, fire);
+      continue;
+    }
+    if (b.mode === 'ease') ease(r, b);
     else if (b.mode === 'fight') fight(r, b);
     else flee(r, b);
   }
+}
+
+/** A step away from a fire whose claim (or its berth) they stand on: `pinned` counts the time it gets them nowhere. */
+function getOff(r: Round, b: Bandit, fire: { x: number; z: number }): void {
+  const w = b.walker;
+  b.path = null;
+  const before = { x: w.x, z: w.z };
+  stride(r, b, w.x - fire.x, w.z - fire.z);
+  b.pinned = Math.hypot(w.x - before.x, w.z - before.z) < WALK_SPEED * r.dt * 0.2 ? b.pinned + r.dt : 0;
 }
 
 /** What a bandit's step goes on. */
@@ -259,9 +281,9 @@ interface Round {
 }
 
 /**
- * The ground the captain's camps claim, which no bandit sets foot on. `at`: the fire whose
- * claim (or `berth` round it) takes in (x, z), if one does. `ways`: the world as a bandit
- * plans a way across it, with claimed ground and a berth round it walled off.
+ * The ground the captain's camps claim, which no bandit sets foot on. `at`: the nearest fire
+ * whose claim (or `berth` round it) takes in (x, z), if one does. `ways`: the world as a
+ * bandit plans a way across it, with claimed ground and a berth round it walled off.
  */
 interface Claims {
   at(x: number, z: number, berth?: number): { x: number; z: number } | undefined;
@@ -271,7 +293,15 @@ interface Claims {
 
 function claimsOf(land: Land): Claims {
   const fires = land.buildings.filter((b) => b.kind === 'campfire').map(fireCentre);
-  const at = (x: number, z: number, berth = 0) => fires.find((f) => Math.hypot(f.x - x, f.z - z) <= CLAIM_RADIUS + berth);
+  const at = (x: number, z: number, berth = 0) => {
+    let nearest: { x: number; z: number } | undefined;
+    let best = CLAIM_RADIUS + berth;
+    for (const f of fires) {
+      const d = Math.hypot(f.x - x, f.z - z);
+      if (d <= best) [nearest, best] = [f, d];
+    }
+    return nearest;
+  };
   const holds = (x: number, z: number, berth = 0) => at(x, z, berth) !== undefined;
   const world = land.world;
   const ways = fires.length === 0 ? world : { getVoxel: (x: number, y: number, z: number) => (holds(x + 0.5, z + 0.5, CLAIM_BERTH) ? Block.Stone : world.getVoxel(x, y, z)) };
@@ -302,6 +332,7 @@ function muster(land: Land, camp: BanditCamp, random: () => number): Bandit[] {
       think: random() * 2,
       unseen: 0,
       stuck: 0,
+      pinned: 0,
     });
   }
   return out;
@@ -318,7 +349,7 @@ function ease(r: Round, b: Bandit): void {
   const { land, camp, captain, night, random } = r;
   const w = b.walker;
   const sight = night ? SIGHT / 2 : SIGHT;
-  if (Math.hypot(captain.x - w.x, captain.z - w.z) < sight && clearLine(land.world, eyeOf(b), captain)) return land.bandits.alertAll();
+  if (Math.hypot(captain.x - w.x, captain.z - w.z) < sight && clearLine(land.world, eyeOf(b), captain)) return land.alertBandits();
   b.think -= r.dt;
   if (b.think <= 0 && !b.path) {
     b.think = 3 + random() * 5;
@@ -386,8 +417,15 @@ function flee(r: Round, b: Bandit): void {
   const dz = w.z - captain.z;
   const d = Math.hypot(dx, dz) || 1;
   const [fx, fz] = veer(r.claims, w, dx / d, dz / d);
-  stride(r, b, fx, fz, WALK_SPEED * 1.1);
+  // At the shore they're gone, off along it or into the sea, rather than wading in.
+  if ((fx !== 0 || fz !== 0) && wet(land.world, w.x + fx * LOOK_AHEAD, w.z + fz * LOOK_AHEAD, w.y)) return land.banditGone(b, 'fled');
+  stride(r, b, fx * LIMP_PACE, fz * LIMP_PACE);
   if (d > FLEE_GONE || (d > FLEE_HIDDEN && !clearLine(land.world, eyeOf(b), captain))) land.banditGone(b, 'fled');
+}
+
+/** The sea at (x, z), for someone on foot at height `y`: ground at or below sea level there, or none at all. */
+function wet(world: VoxelReader, x: number, z: number, y: number): boolean {
+  return groundBelow(world, x, z, y + STEP_UP) <= SEA_LEVEL;
 }
 
 /** Turns tried, smallest first, to run clear of the captain's claimed ground. */
@@ -427,11 +465,14 @@ function walk(r: Round, b: Bandit, pace: number): void {
   if (!kept || b.stuck > STUCK_SECONDS) Object.assign(b, { path: null, stuck: 0 });
 }
 
-/** A step on foot that never takes a bandit onto the captain's claimed ground: false if it would have, and they stopped at its edge. */
-function stride(r: Round, b: Bandit, moveX: number, moveZ: number, speed = WALK_SPEED): boolean {
+/**
+ * A step on foot that never takes a bandit onto the captain's claimed ground from off it:
+ * false if it would have, and they stopped at its edge. (On it already, they're getting off.)
+ */
+function stride(r: Round, b: Bandit, moveX: number, moveZ: number): boolean {
   const w = b.walker;
-  stepWalker(w, moveX, moveZ, r.land.world, r.dt, speed);
-  if (!r.claims.holds(w.x, w.z)) return true;
+  stepWalker(w, moveX, moveZ, r.land.world, r.dt);
+  if (!r.claims.holds(w.x, w.z) || r.claims.holds(w.prev.x, w.prev.z)) return true;
   Object.assign(w, { x: w.prev.x, y: w.prev.y, z: w.prev.z, vx: 0, vz: 0, vy: 0 });
   return false;
 }

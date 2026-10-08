@@ -343,7 +343,8 @@ export class Shore {
     } else {
       this.view.showGhost(null);
       const held = this.held;
-      if (isGun(held)) {
+      // Digging (with whatever's in hand), the marker shows the dig.
+      if (isGun(held) && !this.digging) {
         const t = this.land.gunTarget(held, this.aimAt());
         this.view.mark(t ? { x: Math.floor(t.x), y: Math.floor(t.y), z: Math.floor(t.z), ok: true } : null);
       } else {

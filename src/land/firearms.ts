@@ -29,8 +29,8 @@ export const GUNS: Record<Gun, GunSpec> = {
   rifle: { label: 'Rifle', detail: 'Slow to load and clumsy close in, but deadly far out: one shot brings a bandit down.', price: 350, range: 30, damage: 4, reload: 5 },
 };
 
-/** The bandits' muskets: fair at 8 blocks, poor at 24. */
-export const MUSKET = { range: 24, damage: 2, reload: 6 } as const;
+/** The bandits' muskets: poor shots even at 8 blocks, and slow to load. */
+export const MUSKET = { range: 24, damage: 2, reload: 7 } as const;
 
 export const isGun = (held: string): held is Gun => (GUN_LIST as readonly string[]).includes(held);
 
@@ -47,7 +47,7 @@ export function hitChance(gun: Gun | 'musket', distance: number): number {
       return d < 5 ? 0.45 + 0.08 * d : 0.85 - 0.15 * ((d - 5) / (range - 5));
     }
     case 'musket':
-      return d > MUSKET.range ? 0 : 0.75 - 0.45 * (d / MUSKET.range);
+      return d > MUSKET.range ? 0 : 0.5 - 0.3 * (d / MUSKET.range);
   }
 }
 

@@ -566,8 +566,8 @@ export class Land {
   landAtPort(): void {
     const port = this.sea.docked;
     if (!port) return;
+    // No pouch in port: the cartridges stay in the hold, where the market sees them.
     this.walker = createWalker(port.pier.x, port.pier.y, port.pier.z, port.heading + Math.PI);
-    this.fillPouch();
     this.events.push({ kind: 'ashore', ...port.pier });
   }
 
@@ -626,7 +626,7 @@ export class Land {
     this.events.push({ kind: 'downed', toll, pack: goods.length > 0 });
   }
 
-  /** With a gun, the captain takes a pouch of cartridges ashore from the hold. */
+  /** With a gun, the captain rows ashore with a pouch of cartridges from the hold (going aboard stows it again). */
   private fillPouch(): void {
     if (this.sea.captain.guns.length === 0) return;
     const want = POUCH - (this.pack.cartridges ?? 0);
@@ -666,7 +666,7 @@ export class Land {
     const distance = Math.hypot(at.x - from.x, at.z - from.z);
     const shot = resolveShot(this.world, from, at, spec.range, target, target ? hitChance(gun, distance) : 0, this.random());
     this.events.push({ kind: 'shot', gun, from, to: shot.end, hit: shot.hit ? shot.hit.kind : null });
-    this.bandits.heard(from.x, from.z);
+    if (this.bandits.hears(from.x, from.z)) this.alertBandits();
     return shot.hit ? this.wound(shot.hit, spec.damage) : done('');
   }
 
@@ -691,7 +691,7 @@ export class Land {
   /** A shot lands on a bandit: the camp takes up the fight; badly hurt they run; down, they leave cartridges and a few gold. */
   private shootBandit(b: Bandit, damage: number): Outcome {
     b.hp -= damage;
-    this.bandits.alertAll();
+    this.alertBandits();
     if (b.hp <= 0) {
       const camp = this.bandits.camps.find((c) => c.id === b.camp)!;
       const { x, y, z } = b.walker;
@@ -706,6 +706,11 @@ export class Land {
       return done('The bandit breaks and runs!');
     }
     return done('A hit!');
+  }
+
+  /** The captain is seen, heard or shot at: the camp takes up the fight, and if that starts one, the captain is warned. */
+  alertBandits(): void {
+    if (this.bandits.alertAll()) this.events.push({ kind: 'notice', text: 'Bandits! They’ve seen you.', tone: 'bad' });
   }
 
   /** A bandit is gone from their camp, fallen or fled: the last of them clears it. */
@@ -1142,7 +1147,9 @@ export class Land {
     const verdict = (ok: boolean, reason: string, y = groundHeight(this.world, cx, cz)): Placement => ({ plot, y, ok, reason });
     if (!this.walker) return verdict(false, 'Go ashore to build.');
     if (this.inTown(cx, cz)) return verdict(false, 'Not in town (its land is marked on the ground): build on your own.');
-    if (kind === 'campfire' && this.bandits.holds(cx, cz)) return verdict(false, 'Bandits hold this ground: clear their camp first.');
+    // Measured from where the fire's claim would be centred, as a loaded game measures it.
+    const fire = fireCentre(plot);
+    if (kind === 'campfire' && this.bandits.holds(fire.x, fire.z)) return verdict(false, 'Bandits hold this ground: clear their camp first.');
     if (kind !== 'campfire' && !this.claimed(cx, cz)) return verdict(false, 'Build a campfire first: it claims the land around it.');
     if (this.buildings.some((b) => overlaps(b, plot, spec.freeform ? 0 : 1))) return verdict(false, 'Too close to another building.');
     if (this.deposits.inPlot(plot, spec.freeform ? 0 : 1)) return verdict(false, 'An outcrop is in the way: mine it first.');
