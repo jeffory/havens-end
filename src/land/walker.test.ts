@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
-import { createWalker, stepWalker, standable, type Walker } from './walker';
+import { blockerGround, createWalker, stepWalker, standable, type Walker } from './walker';
 
 /** A flat beach at y = 12 (top at SEA_LEVEL) from x = -20 to 20, sea beyond. */
 function beach(): VoxelWorld {
@@ -74,6 +74,30 @@ describe('stepWalker', () => {
     const world = beach();
     expect(standable(world, 0, 0)).toBe(SEA_LEVEL);
     expect(standable(world, 40, 0)).toBeNull();
+    // Not on a prop's blocker, even where it's the highest thing in the column.
+    world.setVoxel(5, SEA_LEVEL, 0, Block.Blocker);
+    expect(standable(world, 5, 0)).toBeNull();
+  });
+
+  it('refuses to scramble up onto a prop’s blocker: stopped dead, like a wall', () => {
+    const world = beach();
+    // A ledge two high (within STEP_UP), but it's a prop's blocker: nobody's keel vaults onto one.
+    for (let z = -5; z <= 5; z++) for (const y of [SEA_LEVEL, SEA_LEVEL + 1]) world.setVoxel(3, y, z, Block.Blocker);
+    const w = walk(createWalker(0, SEA_LEVEL, 0), world, 1, 0, 2);
+    expect(w.x).toBeLessThan(3 - 0.29); // never crosses in: the walker's own half-width off its face
+    expect(w.y).toBe(SEA_LEVEL);
+    expect(w.onGround).toBe(true);
+  });
+
+  it('refuses to come to rest on a prop’s blocker falling off a ledge: the whole step’s undone', () => {
+    const world = beach();
+    for (let x = -20; x < 0; x++) for (let z = -20; z < 20; z++) for (let y = SEA_LEVEL; y < SEA_LEVEL + 3; y++) world.setVoxel(x, y, z, Block.Stone);
+    // A prop's blocker right where stepping off the ledge would otherwise land.
+    for (let x = 0; x < 5; x++) for (let z = -2; z <= 2; z++) world.setVoxel(x, SEA_LEVEL, z, Block.Blocker);
+    const w = walk(createWalker(-2, SEA_LEVEL + 3, 0), world, 1, 0, 3);
+    // Never settles on the blocker's top: the step that would have is refused every time it's tried.
+    expect(blockerGround(world, w.x, w.y, w.z) && w.onGround).toBe(false);
+    expect(w.y).toBeGreaterThan(SEA_LEVEL + 1);
   });
 
   it('walks up a stair a half-step at a time, with no scramble', () => {

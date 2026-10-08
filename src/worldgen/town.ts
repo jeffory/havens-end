@@ -422,9 +422,6 @@ export function buildTown(
     everyDoor.some((d) => Math.abs(d.outX - x) + Math.abs(d.outZ - z) <= 1) || Math.abs(yard.x - 0.5 - x) + Math.abs(yard.z - 0.5 - z) <= 1;
   // A lamp keeps back from the buildings: none stands against a wall.
   const byBuilding = (u: number, v: number) => chosen.some((l) => touches({ u0: u, u1: u, v0: v, v1: v }, l, 1));
-  // Nor does it stand next to a stall, the cart or anything else dressing the square: a lamp
-  // post is itself a step up, that'd let someone climb from it onto a prop beside it.
-  const byProp = (u: number, v: number) => props.some((r) => touches({ u0: u, u1: u, v0: v, v1: v }, r, 1));
   // Lamps at the top corners of the square; the Brethren fly the black flag either side
   // of the top of the ramp from the pier, to greet whoever comes ashore.
   const spots: Array<[number, number]> = [
@@ -442,7 +439,7 @@ export function buildTown(
   for (const [u, v] of spots) {
     const { x, z } = at(f, u, v);
     const height = levelled.get(`${u},${v}`);
-    if (height === undefined || onRoad(u, v) || byBuilding(u, v) || byProp(u, v) || inDoorway(x, z) || world.getVoxel(x, height, z) !== Block.Air) continue;
+    if (height === undefined || onRoad(u, v) || byBuilding(u, v) || inDoorway(x, z) || world.getVoxel(x, height, z) !== Block.Air) continue;
     lamps.push(lampPost(world, x, height, z, decor));
   }
 

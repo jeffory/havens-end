@@ -1,6 +1,6 @@
 import { WATER_LEVEL } from '../ocean/waves';
 import type { VoxelReader } from '../voxel/raycast';
-import { collides, groundBelow, HALF_STEP, STEP_UP, WADE_DEPTH } from './walker';
+import { blockerGround, collides, groundBelow, HALF_STEP, STEP_UP, WADE_DEPTH } from './walker';
 
 /** A point on a path: the middle of a cell, at the height of the ground there. */
 export interface PathPoint {
@@ -27,17 +27,21 @@ const NEIGHBOURS: ReadonlyArray<readonly [number, number, number]> = [
 /**
  * Where a walker standing at feet height `y` in one column ends up in the next one, by
  * the walker's own rules: walk across at this height and drop to the ground (not too
- * far, nor into deep water), or else scramble up the lowest ledge with room, half a
- * block at a time, up to STEP_UP, if there's headroom to climb. Null if they can't get there.
+ * far, nor into deep water, nor onto a prop's blocker — nobody stands on one), or else
+ * scramble up the lowest ledge with room, half a block at a time, up to STEP_UP, if
+ * there's headroom to climb. Null if they can't get there.
  */
 export function stepTo(world: VoxelReader, x: number, y: number, z: number, nx: number, nz: number): number | null {
   if (!collides(world, nx + 0.5, y, nz + 0.5)) {
     const ground = groundBelow(world, nx + 0.5, nz + 0.5, y + 0.5);
-    return ground < WATER_LEVEL - WADE_DEPTH || y - ground > MAX_DROP ? null : ground;
+    return ground < WATER_LEVEL - WADE_DEPTH || y - ground > MAX_DROP || blockerGround(world, nx + 0.5, ground, nz + 0.5) ? null : ground;
   }
   for (let up = y + HALF_STEP; up <= y + STEP_UP; up += HALF_STEP) {
     if (collides(world, x + 0.5, up, z + 0.5)) return null;
-    if (!collides(world, nx + 0.5, up, nz + 0.5)) return groundBelow(world, nx + 0.5, nz + 0.5, up + 0.5);
+    if (!collides(world, nx + 0.5, up, nz + 0.5)) {
+      const ground = groundBelow(world, nx + 0.5, nz + 0.5, up + 0.5);
+      return blockerGround(world, nx + 0.5, ground, nz + 0.5) ? null : ground;
+    }
   }
   return null;
 }

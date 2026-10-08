@@ -1,5 +1,5 @@
 import { WATER_LEVEL } from '../ocean/waves';
-import { blocksWalker } from '../voxel/blocks';
+import { Block, blocksWalker } from '../voxel/blocks';
 import type { VoxelReader } from '../voxel/raycast';
 import { boxBlocked, topIn } from '../voxel/shapes';
 
@@ -52,6 +52,10 @@ export function createWalker(x: number, y: number, z: number, facing = 0): Walke
  * and a lower climb.
  */
 export function stepWalker(w: Walker, moveX: number, moveZ: number, world: VoxelReader, dt: number, speed = WALK_SPEED, stepUp = STEP_UP): void {
+  // Nobody stands on a prop's blocker: if that's where this step would leave someone
+  // resting, the whole step's refused, as if it had met a wall, whatever ledge, corner
+  // climb or fall got them there.
+  const before = { x: w.x, y: w.y, z: w.z, vx: w.vx, vz: w.vz, vy: w.vy, onGround: w.onGround };
   w.prev.x = w.x;
   w.prev.y = w.y;
   w.prev.z = w.z;
@@ -83,6 +87,16 @@ export function stepWalker(w: Walker, moveX: number, moveZ: number, world: Voxel
   }
   // Something appeared around us (a block placed, a wall built): climb out, half a block at a time.
   for (let i = 0; i < 8 && collides(world, w.x, w.y, w.z); i++) w.y = nextHalf(w.y);
+
+  if (w.onGround && blockerGround(world, w.x, w.y, w.z)) {
+    w.x = before.x;
+    w.y = before.y;
+    w.z = before.z;
+    w.vx = before.vx;
+    w.vz = before.vz;
+    w.vy = before.vy;
+    w.onGround = before.onGround;
+  }
 }
 
 /** Where the walker comes to rest falling into something at `y`: the lowest half-block height above it that's clear. */
@@ -139,14 +153,30 @@ export function groundBelow(world: VoxelReader, x: number, z: number, fromY: num
   return 0;
 }
 
+/**
+ * Is the ground right under feet at (x, y, z) a prop's blocker? Nobody stands on one: a
+ * stall's post or a cart's bed is no floor, whatever ledge, corner or roof's edge got
+ * someone up beside it. Checked across the walker's own width, not just its centre, so
+ * resting half on a blocker's edge (a corner, a lamp post right beside one) counts too.
+ */
+export function blockerGround(world: VoxelReader, x: number, y: number, z: number): boolean {
+  const cy = Math.floor(y - EPSILON);
+  for (let cz = Math.floor(z - HALF_WIDTH + EPSILON); cz <= Math.floor(z + HALF_WIDTH - EPSILON); cz++) {
+    for (let cx = Math.floor(x - HALF_WIDTH + EPSILON); cx <= Math.floor(x + HALF_WIDTH - EPSILON); cx++) {
+      if (world.getVoxel(cx, cy, cz) === Block.Blocker) return true;
+    }
+  }
+  return false;
+}
+
 /** Would stepping here put the walker in water over their depth? */
 function tooDeep(world: VoxelReader, x: number, y: number, z: number): boolean {
   return groundBelow(world, x, z, y + 0.5) < WATER_LEVEL - WADE_DEPTH;
 }
 
-/** Somewhere a walker could stand in this column: on dry land or in wading-depth water. */
+/** Somewhere a walker could stand in this column: on dry land or in wading-depth water, never on a prop's blocker. */
 export function standable(world: VoxelReader, x: number, z: number, fromY = 64): number | null {
   const y = groundBelow(world, x, z, fromY);
-  if (y < WATER_LEVEL - WADE_DEPTH || collides(world, x, y, z)) return null;
+  if (y < WATER_LEVEL - WADE_DEPTH || collides(world, x, y, z) || blockerGround(world, x, y, z)) return null;
   return y;
 }

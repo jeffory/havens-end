@@ -39,6 +39,13 @@ describe('findPath', () => {
     expect(pathLength({ x: 0.5, z: 0.5 }, path)).toBeLessThan(11);
   });
 
+  it('won’t scramble up onto a prop’s blocker, even one low enough to climb', () => {
+    const world = beach();
+    // Exactly the low wall the walker would otherwise scramble over, but it's a prop's blocker.
+    for (let z = -20; z < 20; z++) for (let y = SEA_LEVEL; y < SEA_LEVEL + 2; y++) world.setVoxel(5, y, z, Block.Blocker);
+    expect(findPath(world, { x: 0.5, y: SEA_LEVEL, z: 0.5 }, { x: 10, z: 0 })).toBeNull();
+  });
+
   it('gives up when there is no way through', () => {
     const world = beach();
     wall(world, 5, -20, 19, 3);
