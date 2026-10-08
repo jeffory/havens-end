@@ -111,6 +111,7 @@ export class FootHud {
     this.compass.hidden = true;
     this.lodestone.className = 'foot-lodestone';
     this.health.className = 'foot-health';
+    this.health.hidden = true;
     this.root.append(this.health, this.lodestone, this.prompt, this.hint, this.pack, this.slots);
     parent.append(this.legend.el, this.compass, this.root);
   }

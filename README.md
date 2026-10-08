@@ -115,9 +115,11 @@ shot spends a cartridge (every market sells them, and a forge makes them), and y
 row ashore with a pouch of them from the hold. By day, wild goats graze the uplands
 and bolt if you come close: shoot one for meat and a hide. About a third of the wild
 islets hold a bandits' camp. They'll see or hear you and shoot back, poorly but
-often, so watch your health; wound one and it runs. Clear the camp and its chest is
-yours, but they're back in five days unless you claim the ground. Brought down, you
-come to aboard, a tenth of your gold lighter, with your pack lying where you fell.
+often, so watch your health; wound one and it runs. Their chest is there for the
+taking, even while they still hold the camp, if you can get to it and away again.
+Clear the camp and they're back in five days, unless you claim the ground. Brought
+down, you come to aboard, a tenth of your gold lighter, with your pack lying where
+you fell.
 
 **Treasure.** Fixers sell treasure maps after dark, captured ships sometimes carry
 them, and sailors talk of treasure over a round. Read them on the chart (M, then Q/E).
