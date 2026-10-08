@@ -321,7 +321,7 @@ describe('bandits never set foot on the captain’s claimed ground', () => {
     expect(land.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
     expect(seen.east).toBeGreaterThan(20);
     expect(seen.trespassed).toBe(false);
-  }, 20_000);
+  });
 
   it('fighting the captain who stands on it', () => {
     const { land } = claimed(37.5, 0.5, 4);
@@ -334,7 +334,7 @@ describe('bandits never set foot on the captain’s claimed ground', () => {
     expect(seen.trespassed).toBe(false);
     // From the edge of the claim they're still in range, and fire.
     expect(shots(land).length).toBeGreaterThan(0);
-  }, 20_000);
+  });
 
   it('running from the captain toward it', () => {
     const { land } = claimed(4.5, 0.5);
@@ -344,7 +344,7 @@ describe('bandits never set foot on the captain’s claimed ground', () => {
     const seen = watch(land, 20);
     expect(seen.east).toBeGreaterThan(24);
     expect(seen.trespassed).toBe(false);
-  }, 20_000);
+  });
 
   it('and walk off it if a camp is made round them', () => {
     const { land, world } = ashore(0.5, 30.5);
