@@ -39,6 +39,7 @@ import { angleOffWind, pointOfSailName } from './sailing/pointOfSail';
 import { buildShipModel, type ShipModel } from './sailing/shipModel';
 import { SHIP_TYPES, SLOOP, type ShipType } from './sailing/ships';
 import { Weather, type Wind } from './sailing/weather';
+import { Bandits } from './land/bandits';
 import { Deposits } from './land/deposits';
 import { Land, TOWN_RADIUS } from './land/Land';
 import { type Building, isWorkshop } from './land/structures';
@@ -262,7 +263,6 @@ export class Game {
     // Bandit camps on about a third of the wild islets, clear of the outcrops.
     const nearOutcrop = (x: number, z: number) => deposits.some((d) => Math.abs(d.x + 1 - x) <= 3 && Math.abs(d.z + 1 - z) <= 3);
     const camps = placeBanditCamps(this.world, this.islands, WORLD_SEED, regionTier, (x, z) => inTown(x, z) || nearOutcrop(x, z));
-    void camps; // Task 10 hands these to Land, which keeps the bandits' state
     // The towns' props, and the ship on the stocks keeping people out of the cells she fills.
     const decor = this.ports.flatMap((p) => p.decor ?? []);
     const catalog = propCatalog(models.get(SLOOP)!);
@@ -275,6 +275,7 @@ export class Game {
     this.economy = new Economy(this.sea, this.ports, WORLD_SEED);
     this.land = new Land(this.world, this.sea, WORLD_SEED);
     this.land.deposits = new Deposits(deposits);
+    this.land.bandits = new Bandits(camps);
     this.treasure = new Treasure(this.world, this.sea, this.land, this.islands, this.economy.fixers, WORLD_SEED);
     this.economy.rumourSources.push((port) => this.treasure.rumour(port));
     this.story = new Story(this.world, this.sea, this.ports);

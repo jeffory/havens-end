@@ -194,6 +194,9 @@ export class Shore {
       case 'harvest':
         this.report(this.land.harvest(what.crop));
         break;
+      case 'chest':
+        this.report(this.land.openChest(what.camp));
+        break;
     }
   }
 
@@ -451,5 +454,7 @@ function promptFor(what: Interaction | null, phase: number, port: Port | null): 
       return `${key}: the storehouse`;
     case 'harvest':
       return `${key}: harvest`;
+    case 'chest':
+      return `${key}: open the chest`;
   }
 }

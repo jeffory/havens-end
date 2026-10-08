@@ -11,6 +11,7 @@ import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight, levelGround, clearSite, overlaps, TREE_BLOCKS, type Footprint } from '../worldgen/buildings';
 import { mulberry32 } from '../worldgen/noise';
 import { WATER_LEVEL } from '../ocean/waves';
+import { Bandits, type BanditsSnapshot } from './bandits';
 import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
 import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
 import { type Creature, CREATURES, harm, stepCreatures, strike } from './creatures';
@@ -120,7 +121,8 @@ export type Interaction =
   | { kind: 'camp'; fire: Building; building: Building }
   | { kind: 'rest'; building: Building }
   | { kind: 'store'; building: Building }
-  | { kind: 'harvest'; crop: Crop };
+  | { kind: 'harvest'; crop: Crop }
+  | { kind: 'chest'; camp: number };
 
 export interface LandSnapshot {
   walker: { x: number; y: number; z: number; facing: number } | null;
@@ -133,6 +135,8 @@ export interface LandSnapshot {
   drops?: Array<{ good: Good; amount: number; x: number; y: number; z: number; age: number; life?: number }>;
   /** Worked-out outcrops (version 5). */
   deposits?: DepositsSnapshot;
+  /** Bandits' camps (version 6). */
+  bandits?: BanditsSnapshot;
 }
 
 /** A tree a woodcutter could fell: the bottom of its trunk. */
@@ -190,6 +194,8 @@ export class Land {
   buried: { search(x: number, y: number, z: number): string | null } | null = null;
   /** The islands' outcrops of stone and ore (the game hands over the ones it placed). */
   deposits = new Deposits();
+  /** The bandits' camps (the game hands over the ones it placed). */
+  bandits = new Bandits();
   nextId = 1;
   private events: LandEvent[] = [];
   private readonly random: () => number;
@@ -234,6 +240,7 @@ export class Land {
       saplings: structuredClone(this.saplings),
       drops: this.drops.map(({ good, amount, x, y, z, age, life }) => ({ good, amount, x, y, z, age, life })),
       deposits: this.deposits.snapshot(),
+      bandits: this.bandits.snapshot(),
     };
   }
 
@@ -252,6 +259,8 @@ export class Land {
     this.surveys.clear();
     if (s.deposits) this.deposits.restore(s.deposits);
     this.deposits.reconcile(this.world, this.day(), (x, z) => this.claimed(x, z));
+    if (s.bandits) this.bandits.restore(s.bandits);
+    this.bandits.reconcile(this.world, (x, z, r) => this.claimNear(x, z, r));
   }
 
   takeEvents(): LandEvent[] {
@@ -1035,6 +1044,8 @@ export class Land {
       const fire = b.kind === 'campfire' ? b : this.fireAt(b.x0 + b.w / 2, b.z0 + b.d / 2);
       if (fire) return { kind: 'camp', fire, building: b };
     }
+    const chest = this.bandits.chestAt(w.x, w.z);
+    if (chest) return { kind: 'chest', camp: chest.id };
     const front = this.front();
     const crop = front && this.cropAt(front.x, front.z);
     if (crop && stageOf(crop, this.sea.time) === 2) return { kind: 'harvest', crop };
@@ -1043,6 +1054,21 @@ export class Land {
 
   claimed(x: number, z: number): boolean {
     return this.fireAt(x, z) !== undefined;
+  }
+
+  /** Is one of the captain's campfires within `r` of (x, z)? */
+  private claimNear(x: number, z: number, r: number): boolean {
+    return this.buildings.some((b) => b.kind === 'campfire' && Math.hypot(fireCentre(b).x - x, fireCentre(b).z - z) < r);
+  }
+
+  /** Opens a bandits' chest: its gold in the purse, its goods spilling out beside it. */
+  openChest(id: number): Outcome {
+    const camp = this.bandits.camps.find((c) => c.id === id);
+    if (!camp || this.bandits.state(id).looted) return fail('It’s empty.');
+    const { gold, goods } = this.bandits.loot(camp, this.random);
+    this.sea.captain.gold += gold;
+    for (const [good, n] of Object.entries(goods) as Array<[Good, number]>) this.drop(good, camp.chest.x + 0.5, camp.chest.y + 1.2, camp.chest.z + 0.5, n);
+    return done(`The bandits’ chest: ${gold} gold${cargoCount(goods) > 0 ? ', and goods spill out' : ''}.`);
   }
 
   inTown(x: number, z: number): boolean {
@@ -1076,6 +1102,7 @@ export class Land {
     const verdict = (ok: boolean, reason: string, y = groundHeight(this.world, cx, cz)): Placement => ({ plot, y, ok, reason });
     if (!this.walker) return verdict(false, 'Go ashore to build.');
     if (this.inTown(cx, cz)) return verdict(false, 'Not in town (its land is marked on the ground): build on your own.');
+    if (kind === 'campfire' && this.bandits.holds(cx, cz)) return verdict(false, 'Bandits hold this ground: clear their camp first.');
     if (kind !== 'campfire' && !this.claimed(cx, cz)) return verdict(false, 'Build a campfire first: it claims the land around it.');
     if (this.buildings.some((b) => overlaps(b, plot, spec.freeform ? 0 : 1))) return verdict(false, 'Too close to another building.');
     if (this.deposits.inPlot(plot, spec.freeform ? 0 : 1)) return verdict(false, 'An outcrop is in the way: mine it first.');
@@ -1215,6 +1242,7 @@ export class Land {
     // Only on the ground as it lay: not over a hole, a field or a path.
     const firm = (x: number, y: number, z: number) => NATURAL_GROUND.includes(this.world.getVoxel(x, y, z));
     this.deposits.regrow(this.world, this.day(), clear, firm);
+    this.bandits.reman(this.day(), (x, z, r) => this.claimNear(x, z, r));
   }
 }
 
