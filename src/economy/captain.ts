@@ -1,3 +1,4 @@
+import type { Gun } from '../land/firearms';
 import type { RelicId } from '../treasure/relics';
 import type { TreasureMap } from '../treasure/Treasure';
 import type { Contract } from './contracts';
@@ -26,6 +27,8 @@ export interface Captain {
   pieces: number;
   /** The sealed letter from Blackwood's hoard. */
   letter: boolean;
+  /** Guns bought at a gunsmith's counter: kept for good, whatever becomes of the ship. */
+  guns: Gun[];
 }
 
 export const STARTING_GOLD = 200;
@@ -35,5 +38,5 @@ export const PACK_SIZE = 40;
 export const PASSENGER_BERTHS = 8;
 
 export function createCaptain(home: Port): Captain {
-  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {}, passengers: 0, maps: [], relics: [], pieces: 0, letter: false };
+  return { gold: STARTING_GOLD, lastPort: home, standing: startingStanding(), contracts: [], logbook: {}, pack: {}, passengers: 0, maps: [], relics: [], pieces: 0, letter: false, guns: [] };
 }

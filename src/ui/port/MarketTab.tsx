@@ -1,7 +1,9 @@
 import { Fragment } from 'react';
+import { sellsGuns } from '../../economy/economy';
 import { GOOD_INFO, GOODS, type GoodKind, cargoCount, isContraband } from '../../economy/goods';
 import { bestSale } from '../../economy/logbook';
 import type { Line } from '../../economy/market';
+import { GUN_LIST, GUNS } from '../../land/firearms';
 import { age, Gold, type TabProps } from './common';
 
 const ROLE_NOTES: Record<Line['role'], string> = { produces: 'local produce', demands: 'in demand', trades: '' };
@@ -109,6 +111,31 @@ export function MarketTab({ port, economy, sea, act }: TabProps) {
           )}
         </tbody>
       </table>
+      {sellsGuns(port) ? (
+        <>
+          <h3>The gunsmith’s counter</h3>
+          <div className="yard-list">
+            {GUN_LIST.map((gun) => {
+              const has = sea.captain.guns.includes(gun);
+              const price = economy.gunPrice(port, gun);
+              return (
+                <div key={gun} className={`yard-item${has ? ' owned' : ''}`}>
+                  <div>
+                    <b>{GUNS[gun].label}</b>
+                    <small>{GUNS[gun].detail}</small>
+                  </div>
+                  <button type="button" disabled={has || price > sea.captain.gold} onClick={() => act(economy.buyGun(port, gun))}>
+                    {has ? 'Yours' : <Gold amount={price} />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="hint">Guns fire cartridges, sold above with the arms. A forge makes twelve from one iron.</p>
+        </>
+      ) : (
+        <p className="hint">Arms are the Crown’s monopoly here: no gunsmith will sell you a gun. Cartridges are another matter.</p>
+      )}
       <p className="hint">Prices climb as you buy and fall as you sell, and recover over a few minutes. Your price book fills in as you visit ports and hear tavern gossip.</p>
     </section>
   );

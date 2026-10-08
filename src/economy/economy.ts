@@ -2,6 +2,7 @@ import { regionTier } from '../combat/encounters';
 import { isNight } from '../core/clock';
 import type { Sea } from '../combat/sea';
 import { syncCondition } from '../combat/vessel';
+import { GUNS, type Gun } from '../land/firearms';
 import type { ShipType } from '../sailing/ships';
 import { hasRelic } from '../treasure/relics';
 import { mulberry32 } from '../worldgen/noise';
@@ -94,6 +95,9 @@ const SHOCK_TARGET = { shortage: 0.3, glut: 2.6 } as const;
 const CUSTOMS_CHANCE = 0.4;
 const CUSTOMS_FINE = 15;
 const FIXERS = ['Silas Crane', 'Old Marta', 'One-Eyed Pell', 'Madame Vey', 'Tobias Rook', 'Scrimshaw Sal', 'Quiet Jonah', 'Lottie Fenn'];
+
+/** Arms are the Crown's monopoly: free ports and the pirate haven keep a gunsmith's counter; Imperial ports don't. */
+export const sellsGuns = (port: Port): boolean => port.faction !== 'imperial';
 
 /**
  * Trade and politics ashore: every port's market, the jobs on offer, sailors for hire,
@@ -315,6 +319,25 @@ export class Economy {
     this.captain.gold += value;
     if (!black) this.notePrice(port, line);
     return done(`Sold ${n} ${label} for ${value} gold.`);
+  }
+
+  // ---- The gunsmith ----
+
+  /** What a gun costs here, by the house's price for your name. */
+  gunPrice(port: Port, gun: Gun): number {
+    return Math.round(GUNS[gun].price * this.factor(port));
+  }
+
+  /** Buys a gun: the captain keeps it for good. */
+  buyGun(port: Port, gun: Gun): Outcome {
+    const label = GUNS[gun].label.toLowerCase();
+    if (!sellsGuns(port)) return fail('Arms are the Crown’s monopoly: no gunsmith here will sell you a gun.');
+    if (this.captain.guns.includes(gun)) return fail(`You already have a ${label}.`);
+    const price = this.gunPrice(port, gun);
+    if (price > this.captain.gold) return fail(`A ${label} costs ${price} gold.`);
+    this.captain.gold -= price;
+    this.captain.guns.push(gun);
+    return done(`Bought a ${label} for ${price} gold. Take it up from the hotbar ashore; it fires cartridges.`);
   }
 
   private notePrice(port: Port, line: Line): void {

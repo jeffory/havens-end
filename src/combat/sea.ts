@@ -7,6 +7,7 @@ import { type Upgrade, withUpgrades } from '../economy/shipyard';
 import { type Cargo, cargoCount, loadCargo, unload } from '../economy/goods';
 import type { Port, PortFaction } from '../economy/ports';
 import { applyDeed, type Deed, portOpen } from '../economy/reputation';
+import type { Gun } from '../land/firearms';
 import { hullContacts, type ShipSpec, stepShip } from '../sailing/ship';
 import type { ShipType } from '../sailing/ships';
 import type { Weather } from '../sailing/weather';
@@ -87,6 +88,8 @@ export interface SeaSnapshot {
     relics?: RelicId[];
     pieces?: number;
     letter?: boolean;
+    /** Version 6. */
+    guns?: Gun[];
   };
 }
 
@@ -199,6 +202,7 @@ export class Sea {
         relics: [...c.relics],
         pieces: c.pieces,
         letter: c.letter,
+        guns: [...c.guns],
       },
     };
   }
@@ -233,6 +237,7 @@ export class Sea {
       relics: [...(c.relics ?? [])],
       pieces: c.pieces ?? 0,
       letter: c.letter ?? false,
+      guns: [...(c.guns ?? [])],
     });
     this.docked = s.docked === null ? null : (this.ports[s.docked] ?? null);
     this.ashore = s.ashore;

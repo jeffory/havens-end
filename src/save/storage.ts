@@ -7,10 +7,11 @@ import type { TreasureSnapshot } from '../treasure/Treasure';
 /**
  * Bumped when the format changes. Version 2 (Phase 6) added the clock, settlers and
  * workshops; version 3 (Phase 7) treasure maps and finds; version 4 (Phase 8) the
- * story; version 5 (Phase 10) worked-out outcrops. Older saves still load.
+ * story; version 5 (Phase 10) worked-out outcrops; version 6 (Phase 10.2) the
+ * captain's guns, bandit camps, and piles that lie a day. Older saves still load.
  */
-export const SAVE_VERSION = 5;
-export const READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5];
+export const SAVE_VERSION = 6;
+export const READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6];
 export const AUTOSAVE = 'autosave';
 
 /** One saved game: the world seed plus everything that has changed since it was generated. */
