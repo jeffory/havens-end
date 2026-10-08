@@ -220,7 +220,7 @@ tap is never lost on a frame where the sim doesn't step (common on 120–144 Hz 
 | Game menu (save, load) | Esc | Start |
 | *On foot:* walk | WASD / arrows | Left stick |
 | *On foot:* use what's in hand / interact | Space or left click / E | X / A |
-| *On foot:* tools, seed and maize | 1–8, Q / R | LB / RB |
+| *On foot:* tools, guns, seed and maize | 1–9 and 0, Q / R | LB / RB |
 | *On foot:* build (turn: Q / R, LB / RB) | B | Y |
 | *Duel:* move | A / D | Left stick |
 | *Duel:* cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
@@ -349,7 +349,8 @@ line, stepped at 60 Hz.
 half her crew if there's room). Lose, or have your crew overrun at sea, and you're
 **jailed**: pay 30% of your gold to get out, lose everything in the hold, and start
 again at your **last port** with a fresh sloop. Sinking also puts you back at the
-last port; the cargo goes down with the ship, but your purse survives.
+last port; the cargo goes down with the ship, but your purse survives. Either way the
+come-to card (§9, Phase 10.2) says what happened.
 
 **Plunder:** merchants carry 2–3 kinds of goods and warships a paymaster's chest.
 What you do with it is §8.
@@ -516,6 +517,9 @@ you set sail.
 - **Customs.** An Imperial port searches a hold carrying muskets 40% of the time
   (60% if the Crown dislikes you). If found, the muskets are seized, the fine is 15
   gold a musket, and standing with the Crown drops by 8.
+- **The gunsmith's counter** (Phase 10.2). A free port's or the pirate haven's market
+  sells the captain a pistol and a rifle, below the goods (§9). The Crown's markets
+  say arms are its monopoly, but sell cartridges like everyone else.
 
 **The price book** (`logbook.ts`) records every price the captain sees (each visit,
 each trade) or hears (tavern rumours). The market shows the best known price
@@ -672,8 +676,8 @@ distance. Your own ship fades while you work beside her.
 if the captain can reach it. Reach is 3.6 across, and from two blocks below the feet
 to two above. The mouse picks through whatever the cutaway hides
 (`ChunkRenderer.hides`, the shader's own test). The target is marked, and red means it
-won't work; nothing out of reach is marked. Click a hotbar slot, or press 1–8, to take
-it up.
+won't work; nothing out of reach is marked. Click a hotbar slot, or press 1–9 or 0, to
+take it up.
 - **Axe:** a tree takes several blows (`blowsToFell`): 3 for a young palm, up to 5 or
   6 for the tallest trunks and broadest crowns. Blows are counted by the foot of the
   trunk, so it doesn't matter where on the tree they land. Each one throws chips and
@@ -734,6 +738,216 @@ archipelago is built and before the world tracks edits.
 - **Miners** (a settler job) work the nearest outcrop within the claim plus 16, 20 s
   each, the yield straight to the stores. With none standing, they cut wood, and the
   camp screen says when the next grows back.
+
+**Guns, hunting and bandits** (Phase 10.2; `land/firearms.ts`, `land/bandits.ts`,
+`worldgen/bandits.ts`). The design is in
+[phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md). What follows is
+what was built, with the numbers tuned after the first fights.
+
+**The guns.** The captain can buy a pistol and a rifle at a gunsmith's counter, below
+the goods in a free port's or the pirate haven's market (`Economy.buyGun`). The Crown's
+markets say arms are its monopoly. A gun is bought once and kept for good
+(`Captain.guns`, saved), whatever becomes of the ship. Bandits carry muskets.
+
+| | Pistol | Rifle | Bandit's musket |
+|---|---|---|---|
+| Price | 120 gold | 350 gold | |
+| Range | 12 | 30 | 24 |
+| Damage | 2 | 4 | 2 |
+| Reload | 2.5 s | 5 s | 7 s |
+| Chance to hit at distance d | 0.9 − 0.55·d/12: 0.9 close in, 0.35 at 12 | 0.45 + 0.08·d inside 5 (a long barrel is slow to bring round), then 0.85 − 0.15·(d − 5)/25: 0.7 at 30 | 0.5 − 0.3·d/24: 0.4 at 8, 0.3 at 16 |
+
+- Prices are scaled, as the market's are, by the captain's standing with the port's
+  faction.
+- Beyond its range a gun can't hit.
+- Health: a bandit has 4, a boar 3, a goat 2, a crab 1 and the captain 10. So one
+  rifle hit brings a bandit down, or two pistol hits.
+
+**Cartridges and the pouch.**
+- **The good.** Cartridges cost 2 gold and are listed with the arms. Every market sells
+  them, the Crown's too. The forge's last recipe makes 12 from 1 iron in 20 s.
+- **Spending.** A shot spends one, and with none to hand the gun won't fire. "To hand"
+  is what the captain could build with (`Land.available`): the pack, storehouses, and
+  the hold if the ship is within 60. That's the number on a gun's hotbar slot.
+- **The pouch.** With a gun, the captain rows ashore to a wild islet with a pouch: up
+  to 24 cartridges from the hold go into the pack, so a fight far from the ship
+  doesn't leave them empty-handed. Going back aboard stows them with the rest of the
+  pack.
+- **In port** the pouch fills only as the captain walks out of town, to hunt the
+  island, and goes back into the hold on the way in. So the market, which reads only
+  the hold, sees and sells them all.
+
+**Firing** (`Land.fire`). Space, a click or X with a gun in hand.
+- **Loading.** The gun loads again by itself, and a shade falls across its slot as it
+  does (not saved). Pressed while loading, or with no cartridges, it doesn't fire,
+  spends nothing and doesn't restart the load.
+- **Aiming with keys or a pad.** The shot goes at the nearest beast or bandit within
+  range and within 36° of the way the captain faces (`AIM_CONE`), or straight ahead
+  if there's none.
+- **Aiming with the mouse.** The shot goes at whatever is within 1.5 of the cursor, or
+  else toward the spot under it.
+- **The marker.** While a gun is in hand, what it would hit is marked. Digging for
+  treasure shows the dig's marker instead, whatever is in hand.
+- **The shot** (`resolveShot`) is an instant line from the captain's chest (1.3 up) to
+  the target's aim point: a bandit's chest, or a beast's flank. It hits if nothing
+  solid is in the way and a roll beats the chance at that distance. A miss flies on to
+  the end of the gun's range, or into whatever it meets.
+- **Cover.** A voxel raycast stops a shot at the first solid block: rock, a trunk or
+  leaves, a wall, or the brow of the hill you're shooting down from. Bandits see the
+  captain by the same test (`clearLine`, eye to chest).
+- **How it looks.** Each shot is a `shot` event:
+  - a puff of smoke just ahead of the muzzle;
+  - a faint cream streak for 0.16 s (`render/Tracers.ts`);
+  - dust where it ends, or a red spurt on a hit.
+
+  The captain brings the gun up for 0.6 s (the aiming pose), and a bandit levels their
+  musket, bayonet and all. The pistol, rifle and levelled musket are voxel models in
+  `render/toolModels.ts`.
+- **Clubs.** The tools still club beasts as before.
+
+**Wild goats** are day game (`land/creatures.ts`, beside the night's crabs and boar).
+- **Where.** By day, every 3 s, a herd of 2–4 may come over a brow 14–34 from the
+  captain, up to 4 goats about at once. They need upland grass: at least 4 above the
+  sea, off town and camp land, and 18 or more from any light.
+- **Grazing.** They graze at a quarter of their running pace (4.2), and wander only to
+  grass they can climb to.
+- **Bolting.** When the captain comes within 8, the goat that sees them bolts, and the
+  rest of the herd within 8 goes with it, for 5 s.
+- **Keeping to the upland.** A fleeing goat veers along the brow rather than off it.
+  A step that would take any goat from its upland to lower ground is undone, so it
+  stands at the drop instead.
+- **Day only.** They're gone at nightfall unless they're fleeing, and they aren't
+  saved.
+- **Loot.** 2 hp: two pistol hits, one rifle hit, or two blows. A goat that's brought
+  down drops 2 meat and 1 hide. Hides are a good (8 gold, camp produce), wanted by the
+  Guild's tanners in the free ports.
+
+**The captain's health** (`Land.health`, out of 10).
+- Only bandits' musket balls hurt, 2 a hit. Beasts don't bite.
+- Wounds mend a point every 6 s once no bandit has fired for 15 s.
+- Health is full again aboard, and on loading a game (a fight isn't saved).
+- The on-foot HUD shows it as ten pips over the pack line, only while the captain is
+  hurt or in a fight.
+
+**Bandit camps.**
+- **Where** (`placeBanditCamps`). Camps are placed at world generation, after the
+  outcrops and before the props are reserved and the world tracks edits.
+  - About a third of the wild islets hold one; never a port's island, never a cursed
+    isle. The islets are ranked by `hash2` of their seeds, and taken in that order
+    until round(n / 3) camps stand.
+  - Each islet draws from a stream of its own (`seed ^ 0xba4d` and its index), trying
+    up to 80 spots within 0.65 of its radius.
+  - A spot needs its 9 × 9 footprint clear of town land and outcrops, and the ground
+    within 2 of the fire level to within 2 and dry. An islet with no such spot falls
+    through to the next in rank.
+  - The game's world has 4, on islets 5, 10, 14 and 16: two in home waters, two in
+    contested waters.
+- **What's in one.** A camp is built from existing blocks:
+  - embers ringed with stones;
+  - a plank lean-to on two posts, its roof sloping to the ground behind, with a canvas
+    bedroll under it;
+  - a chest and a keg.
+
+  The lean-to's footprint is levelled first: stone below, cleared above. Every tree
+  standing over the plot is felled whole, trunk and canopy, so nothing hangs over the
+  roof. A camp holds 2 bandits in home waters, 3 in contested waters and 4 in
+  Imperial waters.
+- **The bandits** (`stepBandits`).
+  - Only the camp on the islet the captain walks (within its radius plus 25) is
+    stepped. Elsewhere camps wait, and their bandits aren't saved.
+  - The first step the captain is there, they muster round the fire, at ease.
+  - They're ragged figures in the pirate haven's dress, with muskets shouldered and
+    4 hp each. They walk with the settlers' walker and pathfinding.
+- **How they behave:**
+  1. **At ease** they amble. Every 3–8 s each picks somewhere new: within 6 of the
+     fire, or by day, a third of the time, anywhere on the islet. At night they keep
+     within 3 of the fire.
+  2. **Alerted.** One bandit is enough to bring the whole camp into the fight: one
+     that sees the captain, hears a shot within 30, or is shot at. Seeing means within
+     18 by day or 9 at night, with a clear line. Shots heard include the captain's
+     hunting shots.
+     - The notice "Bandits! They’ve seen you." comes once a fight.
+     - Their muskets come to bear one after another, the first 2 s on.
+  3. **Fighting,** they keep 8–16 off. Each picks a spot at that distance on its own
+     side of the captain. It picks again when it's too near, too far or out of sight
+     (at most every 0.5 s), and after 1.5 s held up on its path.
+     - They fire when loaded and in sight, within 24. A miss passes 0.8 wide of the
+       captain.
+     - Out of sight for 20 s, a bandit goes back to ease.
+  4. **Fleeing.** Wounded to 2 hp (a pistol hit), a bandit breaks and runs straight
+     away from the captain. It limps at 0.8 of a walk, so the captain can run it down.
+     It's gone (fled) once it's 40 off, or 20 off and out of sight, or at the water's
+     edge rather than wading in.
+  - **Fallen.** A fallen bandit's 3–8 gold (3 more in contested waters, 6 more in
+    Imperial) goes straight to the purse, and 2–3 cartridges fall where it lay.
+  - **Cleared.** When the last of a camp is gone, fallen or fled, the notice says:
+    "The bandits’ camp is cleared. They’ll be back in five days, unless you claim the
+    ground."
+  - Shooting bandits changes nobody's standing.
+- **Holding ground.**
+  - No campfire goes down whose claim would be centred within 60 of a manned camp's
+    fire (`Bandits.holds`): "Bandits hold this ground: clear their camp first."
+  - Bandits never set foot on the captain's claimed ground. They plan their ways round
+    it, with a berth of 1.5. A runaway veers round it.
+  - A bandit that finds a claim made round it steps off it, away from the nearest
+    fire. Pinned for 1.5 s, it gives up and goes about its business where it stands.
+- **Coming back** (`Bandits.reman`).
+  - A cleared camp is manned again 5 days (sea clock) after it was cleared.
+  - If a campfire of the captain's now claims ground within 60 of it, it stays empty
+    for good (`gone`).
+  - On loading (`Bandits.reconcile`), a camp is gone too if an older save's own edits
+    wiped out its embers, or if a save's camp already claims its ground within 60.
+  - Treasure is buried at least 12 from any camp that isn't gone.
+- **The chest** opens with E from within 2.2 (`Land.openChest`). Its gold goes to the
+  purse, and goods spill out beside it. It stays looted until the camp is manned again.
+
+  | Waters | Gold | Goods |
+  |---|---|---|
+  | Home | 40–100 | 3 rum, 6 cartridges |
+  | Contested | 90–180 | 3 rum, 2 tobacco, 8 cartridges |
+  | Imperial | 160–300 | 2 spice, 1 musket, 10 cartridges |
+- **Saved** (version 6, the Land snapshot's `bandits`): for each camp, how many
+  bandits are left, the day it was cleared, and whether it's looted or gone. A save
+  made mid-fight loads with the camp's bandits at ease, as many as were left, and the
+  captain whole.
+
+**Brought down** (`Land.bringDown`, at 0 health).
+- The bandits take a tenth of the captain's gold, as a guardian does.
+- Each good in the pack drops as its own stack where the captain fell. The stacks lie
+  for a full day: the clock's day length, never less than the usual ten minutes.
+  Each drop keeps its own life, and it's saved. A pile keeps the longer life when
+  another merges into it.
+- The crew carry the captain back aboard with full health (`goAboard`). The ship lies
+  where she was anchored.
+- A `downed` event puts the game to sea, under the card.
+
+**The come-to card** (`ui/comeTo.ts` words it, `ui/Fade.ts` shows it).
+- **What happens.** Every way of going down fades to black with a title and a line of
+  what happened. It holds 3 s (a key or a click cuts it short), then fades back in
+  wherever the captain came to. The camera moves while the screen is dark.
+- **The fade.** It grew out of the sleep fade, which is the same `Fade` with a line and
+  no title. The fade is modal: the sim waits, and the menu keys pressed while it's up
+  are drained, not acted on.
+
+| When | Title | Line (an example) |
+|---|---|---|
+| Sunk (after 5 s of watching her go) | Lost at sea | Your sloop went down, and 13 goods with her. You wash ashore at Haven, where the harbourmaster finds you another. |
+| Jailed | In irons | Your freedom costs 300 gold, and your 12 goods are seized. You’re released at Haven with a fresh sloop. |
+| Brought down by bandits | Left for dead | Your crew carries you back aboard. The bandits took 72 gold, and your pack lies where you fell. |
+| A guardian wins | The dead keep their gold | You come to at dawn beside the hole, 80 gold lighter. The hoard, and its guardian, are still there. |
+
+- **The port** is the captain's last port, not always Haven.
+- **The ship** is the kind that sank: the `respawn` event names her.
+- **Clauses drop out** when there were no goods, or no pack.
+- **The guardian's card** shows while the night is slept through.
+
+**The hotbar** gains the guns after the tools, once they're bought. With both guns
+there are ten slots, the tenth on 0 (`item10`). A gun's slot shows the cartridges to
+hand and the reload shade.
+
+**Saves** are version 6. It adds the captain's guns (in the Sea snapshot), the bandit
+camps, and each dropped pile's own life. Older saves load with no guns, every camp
+manned (unless reconciled away), and ten-minute piles.
 
 **Dropped items** (`land/drops.ts`, drawn by `render/DropsView.ts`). What the tools
 break off doesn't go straight into the pack. Felled trees, stone, ore,
@@ -802,6 +1016,16 @@ straight into the storehouses.
   generated world. That keeps restoring simple: nothing from the old session has to
   be unwound.
 - **At startup,** if there's an autosave, the menu offers to continue it.
+- **Versions.** The format's version goes up when the snapshot changes, and every
+  older version still loads (`READABLE_VERSIONS`):
+  1. Phase 5: the first format, as above.
+  2. Phase 6: the clock, passengers, settlers, fallow plots, saplings and workshop
+     batches (§10).
+  3. Phase 7: treasure maps and finds (§11).
+  4. Phase 8: the story (§12).
+  5. Phase 10: worked-out outcrops.
+  6. Phase 10.2: the captain's guns, bandit camps, and each dropped pile's own life
+     (above).
 - **Towns in older saves.** Nobody builds or digs in a town, but a chunk that reaches
   out past a town's land can be changed there, and it's saved whole, town blocks and
   all. So in a save from before the stairs and props, such a chunk keeps the town as
@@ -855,6 +1079,8 @@ straight into the storehouses.
     fence (a beast climbs one voxel, and a fence counts as two high);
   - a tool swing sends them running, and enough of them catches one: a crab for 1
     fish, a boar (3 blows, or 2 with the axe or pickaxe) for 3 meat;
+  - since Phase 10.2 they can be shot as well, and by day wild goats graze the uplands
+    (§9);
   - they're gone by dawn, and they aren't saved.
 - **For the look of it** (`render/NightLife.ts`):
   - Bats flit over the captain's head.
@@ -918,22 +1144,25 @@ until its hand is at the bench:
 | Distillery | 25 timber, 20 stone, 4 iron | 2 molasses + 1 timber → 2 rum | 20 s |
 | Curing shed | 25 timber, 5 stone | 3 leaf → 2 tobacco | 30 s |
 | Smokehouse | 15 timber, 15 stone | 3 fish + 1 timber, or 2 meat + 1 timber → 3 provisions | 15 s |
-| Forge | 30 timber, 30 stone | 2 ore + 2 timber → 1 iron; 1 iron + 1 timber → 1 cutlass; 2 iron + 1 planks → 1 musket | 20–30 s |
+| Forge | 30 timber, 30 stone | 2 ore + 2 timber → 1 iron; 1 iron + 1 timber → 1 cutlass; 2 iron + 1 planks → 1 musket; 1 iron → 12 cartridges (Phase 10.2) | 20–30 s |
 
 **New goods.**
 - **Where they come from:**
   - planks, iron, cutlasses, molasses and provisions are made in workshops;
   - cane, tobacco leaf and maize come off your fields;
   - iron ore comes from outcrops (Phase 10; it came from veins in the rock before);
-  - fish and meat come from the shore and the night's creatures.
+  - fish and meat come from the shore and the night's creatures (and goats, by day);
+  - hides come from goats, and cartridges from the forge (Phase 10.2).
 - **Where they sell.** They're appended to every market, so older saves' stocks still
   line up. Each is drawn from its own seeded numbers:
   - pirate havens want cutlasses, iron, molasses and provisions;
   - the Crown's yards want planks, and its mines sell iron;
   - free ports grow maize;
-  - Phase 10's ores come last: the free ports' foundries want copper ore, the Crown's
+  - Phase 10's ores come next: the free ports' foundries want copper ore, the Crown's
     mint silver and gold ore, the pirate haven gold ore.
-  - Fish and meat aren't traded.
+  - Phase 10.2's cartridges and hides come last. Every market trades cartridges (the
+    Crown keeps the guns, not the shot), and the free ports' tanners want hides.
+  - Fish and meat aren't traded; hides are.
 - **The market** lists goods in groups: cargoes, arms, building materials, camp
   produce, food and seed.
 
@@ -998,7 +1227,7 @@ captain stands on):
 - **Cursed hoards.** By day they won't give. At night the chest raises a `guardian`
   event, and the loot waits until it's beaten (`guardianBeaten`). A guardian that
   wins takes a tenth of your gold (`guardianWon`), and you wake at dawn with the map
-  still in your case.
+  still in your case. Since Phase 10.2 a card says so while the night passes (§9).
 - **The ghost lights** of an isle gather low over a cursed hoard you hold the map
   for.
 - **Blackwood's chart.** With the third piece, the pieces join into a legendary map
@@ -1216,7 +1445,8 @@ src/
                        (who's where, the thread, the journal, the Sovereign)
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
   worldgen/            seeded noise, island generator, archipelago plan, harbours,
-                       deposits (where outcrops go)
+                       deposits (where outcrops go), bandits (where bandit camps
+                       go, and raising them)
   props/               the towns' decoration finer than a block: types, sketch
                        (drawing a model voxel by voxel), models (lanterns, signs,
                        the clock, porch posts and rails), catalog (every kind, the
@@ -1227,13 +1457,16 @@ src/
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
                        Wake, WindStreaks, voxelGeometry, DuelView, CharacterView,
                        LandView (the captain on foot, tool marker, build ghost),
-                       toolModels, PeopleView (settlers, creatures), NightLights,
-                       NightLife (bats, ghost lights), glow, PropsView (the props,
-                       one instanced mesh a kind), lifts (the roof lift's shader
-                       test, shared by the terrain and the props)
+                       toolModels, PeopleView (settlers, townsfolk, bandits,
+                       creatures), NightLights, NightLife (bats, ghost lights),
+                       glow, PropsView (the props, one instanced mesh a kind),
+                       lifts (the roof lift's shader test, shared by the terrain
+                       and the props), Tracers (a shot's faint streak)
   land/                on foot: the walker, tools, camps and buildings, crops,
-                       settlers and their paths, workshops, night creatures,
-                       deposits (outcrops of stone and ore)
+                       settlers and their paths, workshops, creatures (the night's
+                       and the goats), deposits (outcrops of stone and ore),
+                       firearms (the guns, the chance to hit, aim and cover),
+                       bandits (the camps' state, and the bandits themselves)
   save/                save format, IndexedDB slots, chunk run-length encoding
   Shore.ts             the captain on foot: controls to land orders, the view and HUD
   ui/                  Hud (help, compass, combat panel, prompts, messages),
@@ -1243,7 +1476,9 @@ src/
                        WorldLabels (signs), BuildMenu, StoreScreen, SystemMenu,
                        CampScreen, settings, MapsView and treasureMap (the
                        treasure maps on parchment), buildStamp; story/ (the
-                       painted panels, the journal); port/People
+                       painted panels, the journal); port/People; comeTo (the
+                       card's words for going down) and Fade (the fade to black,
+                       for sleep and the card)
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
@@ -1290,6 +1525,14 @@ verified in the running game. None of those directories import from `render`,
       build them. The towns have props finer than a block: lanterns on the posts and
       by the doors, signboards and signposts, a clock on the office, porches before
       the tavern and the office, and the sloop on the stocks.
+    - ✅ **10.2: guns, hunting and bandits** (§9;
+      [plan](superpowers/plans/2026-09-30-phase-10-2-guns-bandits.md)). A pistol and a
+      rifle from the gunsmith's counter in the free ports and the pirate haven, firing
+      cartridges, with a pouch of 24 taken ashore. Wild goats on the uplands, for meat
+      and hides. Bandit camps on four wild islets: their bandits see, hear, fight and
+      flee, the camp has a chest to loot, and it's manned again five days after it's
+      cleared. The captain's health on foot, and a come-to card for every way of going
+      down. Save version 6. Still to come in 10: 10.3, the sound.
     - **Next: a town art pass.** The critic's open points from its last pass
       (`.playwright-mcp/critic-town-4/report.md`, not in git):
       - ✅ The Tavern, Guildhall and Governor's House have a porch, a hanging
@@ -1322,6 +1565,17 @@ verified in the running game. None of those directories import from `render`,
       - At Kingsreach, in the street between the tavern and the Governor's House with
         the camera from the south-west, a roof hides the captain and doesn't lift (the
         same on `main`).
+    - **Asked for after 10.2**, with the town art pass (GitHub issues):
+      - Shopkeepers behind the counters in the port shops, dressed for the port
+        ([#1](https://github.com/jeffory/havens-end/issues/1)).
+      - Shop roofs that lift away to show the inside, as house roofs do
+        ([#2](https://github.com/jeffory/havens-end/issues/2)).
+      - The small cart-like stalls in front of the shops, which read badly at play
+        zoom, reworked into a clear stall or a proper cart
+        ([#3](https://github.com/jeffory/havens-end/issues/3)).
+      - House interiors dressed (beds, tables, shelves, hearths and the rest), checked
+        with a visual-critic pass
+        ([#4](https://github.com/jeffory/havens-end/issues/4)).
 11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
 12. **Farming:** growth cycles, seeds, the hoe, watering and harvest yields, built on the crops already there.
 

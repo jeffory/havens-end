@@ -37,7 +37,7 @@ npm run characters:voxelize    # -> public/models/characters/*.vox
 | **On foot:** walk | WASD / arrows | Left stick |
 | **On foot:** use what's in hand / interact | Space or left click / E | X / A |
 | **On foot:** dig for treasure where you stand | F or right click | LT |
-| **On foot:** axe, pickaxe, hoe, seed, maize and saplings | 1–8, click a slot, or Q / R to cycle | LB / RB |
+| **On foot:** axe, pickaxe, hoe, guns, seed, maize and saplings | 1–9 and 0, click a slot, or Q / R to cycle | LB / RB |
 | **On foot:** build (Q / R turns a building) | B | Y |
 | **Duel:** move | A / D | Left stick |
 | **Duel:** cut / heavy / thrust / kick | J / K / U / I (left click cuts) | X / Y / RB / B |
@@ -95,7 +95,7 @@ you bring them ashore at a camp with a hut for them (two to a hut). At the campf
 (E) give each a job: **farmers** harvest and resow your fields, **woodcutters** fell
 trees and plant saplings, **miners** break up outcrops near the camp, **fishers** work the shore, and **workshop hands** run the
 sawpit (planks), sugar mill (sugar and molasses), distillery (rum), curing shed
-(tobacco), smokehouse (provisions) and forge (iron, cutlasses, muskets). Workshops
+(tobacco), smokehouse (provisions) and forge (iron, cutlasses, muskets, cartridges). Workshops
 draw on the camp's storehouses and fill them. Settlers eat one food each at sunrise
 (provisions, fish, meat or maize) and leave if they go hungry too long. Planks in the
 hold let your carpenter mend the hull at sea.
@@ -106,6 +106,18 @@ keep to port, customs officers are slack, and the fixer and the back room open f
 business. Ashore, crabs and boar come for your crops: fence your fields and light
 torches, or catch them for the pot. Sleep through the night in a hut, or take a room
 at a tavern. Something glows over a few islets after dark...
+
+**Guns and bandits.** The gunsmith's counter in a free port or the pirate haven's
+market sells a pistol (quick, good close in) and a rifle (slow, deadly far out); the
+Crown keeps arms to itself. Take one up from the hotbar ashore and fire with Space, a
+click or X: keys aim at the nearest target ahead, the mouse at what's under it. Each
+shot spends a cartridge (every market sells them, and a forge makes them), and you
+row ashore with a pouch of them from the hold. By day, wild goats graze the uplands
+and bolt if you come close: shoot one for meat and a hide. About a third of the wild
+islets hold a bandits' camp. They'll see or hear you and shoot back, poorly but
+often, so watch your health; wound one and it runs. Clear the camp and its chest is
+yours, but they're back in five days unless you claim the ground. Brought down, you
+come to aboard, a tenth of your gold lighter, with your pack lying where you fell.
 
 **Treasure.** Fixers sell treasure maps after dark, captured ships sometimes carry
 them, and sailors talk of treasure over a round. Read them on the chart (M, then Q/E).

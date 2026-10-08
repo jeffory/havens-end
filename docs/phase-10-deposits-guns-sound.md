@@ -76,6 +76,39 @@ They get pixel icons for when they're lying on the ground. Iron ore stays the `o
 
 ## 10.2 Guns, hunting and bandits
 
+**Built** (2026-10-09; [the plan](superpowers/plans/2026-09-30-phase-10-2-guns-bandits.md)).
+ARCHITECTURE.md §9 ("Guns, hunting and bandits") describes what was built. It
+differs from the design below in these rulings, all open to the player:
+- **A pouch of cartridges.** With a gun, the captain rows ashore to a wild islet with
+  up to 24 cartridges from the hold. In port the pouch fills as they walk out of town
+  and goes back to the hold on the way in, so the market still sees them all.
+  Otherwise cartridges count from the pack, storehouses and the ship within 60, like
+  seed.
+- **Bandits flee at 2 hp, not 1.** A 4 hp bandit hit by 2- and 4-damage guns never
+  has 1 left. So a pistol hit makes one run, and a second brings it down.
+- **Wounded bandits limp,** at 0.8 of a walk, so the captain can run one down. A
+  runaway is gone at the water's edge rather than wading into the sea.
+- **Muskets are poor shots and slow:** the chance to hit is 0.5 − 0.3 × d/24 (0.4 at
+  8, 0.3 at 16), and they reload in 7 s, not 6.
+- **A warning.** The first volley comes about 2 s after a camp takes up the fight,
+  with the notice "Bandits! They’ve seen you.", once a fight.
+- **Loot.** A fallen bandit's gold goes straight to the purse, since things on the
+  ground can only be goods. Their cartridges fall to the ground.
+- **"One pile".** Where the captain falls, each good in the pack lands as its own
+  stack at that spot. The stacks lie a full day, never less than ten minutes.
+- **The card names the real port,** the last one the captain was in, which isn't
+  always Haven. It names the kind of ship that went down.
+- **The health bar** shows only while the captain is hurt or in a fight.
+- **Guns go in the hotbar after the tools,** once bought. With both, there are ten
+  slots, the tenth on 0.
+- **Camps.** On these islets no clearing is level and bare across the whole camp.
+  So only the ground by the fire must be level (to within 2), the lean-to's footprint
+  is levelled as it's built, and any tree over the plot is felled whole. An islet
+  with no clearing passes to the next in the seed's order, so about a third still
+  hold camps (4 in the game's world).
+- **Goats never step down off their upland,** even to reach grass across a gully. A
+  step that would take them below is undone.
+
 **The guns** (new `land/firearms.ts`):
 
 | | Pistol | Rifle |
