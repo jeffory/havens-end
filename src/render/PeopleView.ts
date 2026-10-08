@@ -9,7 +9,7 @@ import { CharacterView } from './CharacterView';
 import { type HeldModel, heldCells } from './toolModels';
 import { meshCells } from './voxelGeometry';
 
-/** Settlers and creatures further than this from the view aren't drawn. */
+/** People and creatures further than this from the view aren't drawn. */
 const DRAW_RANGE = 110;
 /** Names show over settlers this close to the captain. */
 const NAME_RANGE = 7;
@@ -18,7 +18,7 @@ const CREATURE_SCALE = 0.12;
 
 const TOOL: Record<Settler['job'], HeldModel | null> = { idle: null, farmer: 'hoe', woodcutter: 'axe', miner: 'pickaxe', fisher: 'rod', worker: 'hammer' };
 
-/** What someone has in hand: a tool, or a soldier's musket. */
+/** What someone has in hand: a tool, or a soldier's or a bandit's musket. */
 type InHand = HeldModel | 'musket';
 
 interface Figure {
@@ -28,7 +28,7 @@ interface Figure {
 
 /**
  * The people and animals on land besides the captain: settlers going about their work,
- * and the night's creatures. Presentation only: it draws what the `Land` says.
+ * townsfolk, bandits, and the beasts. Presentation only: it draws what the `Land` says.
  */
 export class PeopleView {
   readonly group = new Group();
@@ -107,6 +107,32 @@ export class PeopleView {
       figure.view.root.position.set(x, y, z);
       figure.view.root.rotation.y = w.facing;
       figure.view.walk({ speed: Math.hypot(w.vx, w.vz), swing: working ? (time * 1.1 + f.id * 0.37) % 1 : null, lying: false, fishing: false }, dt, time);
+    }
+    // Bandits (by keys clear of the townsfolk's): ragged, muskets on their shoulders at
+    // ease, levelled when they fire.
+    for (const b of land.bandits.live) {
+      const w = b.walker;
+      const x = w.prev.x + (w.x - w.prev.x) * alpha;
+      const y = w.prev.y + (w.y - w.prev.y) * alpha;
+      const z = w.prev.z + (w.z - w.prev.z) * alpha;
+      if (Math.hypot(x - focus.x, z - focus.z) > DRAW_RANGE) continue;
+      const key = -1_000_000 - b.id;
+      seen.add(key);
+      let figure = this.figures.get(key);
+      if (!figure) {
+        figure = { view: new CharacterView(buildSettlerModel(b.look, b.dress)), held: null };
+        figure.view.lift(0.05);
+        this.figures.set(key, figure);
+        this.group.add(figure.view.root);
+      }
+      const held: InHand = b.aiming > 0 ? 'musketLevelled' : 'musket';
+      if (held !== figure.held) {
+        figure.held = held;
+        figure.view.hold(held === 'musket' ? musketCells() : heldCells(held));
+      }
+      figure.view.root.position.set(x, y, z);
+      figure.view.root.rotation.y = w.facing;
+      figure.view.walk({ speed: Math.hypot(w.vx, w.vz), swing: null, aiming: b.aiming > 0 }, dt, time);
     }
     for (const [id, figure] of this.figures) {
       if (seen.has(id)) continue;

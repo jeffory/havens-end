@@ -370,7 +370,8 @@ export class Shore {
       prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase, this.land.sea.docked),
       north: this.north(),
       lodestone: this.lodestone(),
-      health: this.land.health < HEALTH_MAX ? { now: this.land.health, most: HEALTH_MAX } : null,
+      // Shown while hurt, and all through a fight.
+      health: this.land.health < HEALTH_MAX || this.land.bandits.fighting() ? { now: this.land.health, most: HEALTH_MAX } : null,
       hint,
       hintOk,
       placing,

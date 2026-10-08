@@ -11,7 +11,7 @@ import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { groundHeight, levelGround, clearSite, overlaps, TREE_BLOCKS, type Footprint } from '../worldgen/buildings';
 import { mulberry32 } from '../worldgen/noise';
 import { WATER_LEVEL } from '../ocean/waves';
-import { Bandits, type BanditsSnapshot } from './bandits';
+import { type Bandit, Bandits, type BanditsSnapshot, FLEE_AT, stepBandits } from './bandits';
 import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
 import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
 import { type Creature, CREATURES, harm, stepCreatures, strike } from './creatures';
@@ -261,6 +261,8 @@ export class Land {
     this.deposits.reconcile(this.world, this.day(), (x, z) => this.claimed(x, z));
     if (s.bandits) this.bandits.restore(s.bandits);
     this.bandits.reconcile(this.world, (x, z, r) => this.claimNear(x, z, r));
+    // A fight isn't saved: the captain comes back whole, and the bandits at ease.
+    this.health = HEALTH_MAX;
   }
 
   takeEvents(): LandEvent[] {
@@ -311,6 +313,8 @@ export class Land {
     stepDrops(this, dt);
     if (watched) stepCreatures(this, dt, this.random);
     else this.creatures.length = 0;
+    if (watched) stepBandits(this, dt, this.random);
+    else Object.assign(this.bandits, { live: [], liveCamp: null });
     stepTownsfolk(this, dt, this.random);
   }
 
@@ -662,19 +666,55 @@ export class Land {
     const distance = Math.hypot(at.x - from.x, at.z - from.z);
     const shot = resolveShot(this.world, from, at, spec.range, target, target ? hitChance(gun, distance) : 0, this.random());
     this.events.push({ kind: 'shot', gun, from, to: shot.end, hit: shot.hit ? shot.hit.kind : null });
+    this.bandits.heard(from.x, from.z);
     return shot.hit ? this.wound(shot.hit, spec.damage) : done('');
   }
 
-  /** What a shot could hit round the captain. */
+  /** What a shot could hit round the captain: the beasts, and the bandits. */
   private shootables(): Shootable[] {
-    return this.creatures.map((c) => ({ kind: 'creature' as const, id: c.id, x: c.walker.x, y: c.walker.y, z: c.walker.z }));
+    const beasts = this.creatures.map((c) => ({ kind: 'creature' as const, id: c.id, x: c.walker.x, y: c.walker.y, z: c.walker.z }));
+    const bandits = this.bandits.live.map((b) => ({ kind: 'bandit' as const, id: b.id, x: b.walker.x, y: b.walker.y, z: b.walker.z }));
+    return [...beasts, ...bandits];
   }
 
   /** A shot lands on something. */
   private wound(t: Shootable, damage: number): Outcome {
-    const c = this.creatures.find((o) => o.id === t.id);
     const w = this.walker!;
+    if (t.kind === 'bandit') {
+      const b = this.bandits.live.find((o) => o.id === t.id);
+      return b ? this.shootBandit(b, damage) : done('');
+    }
+    const c = this.creatures.find((o) => o.id === t.id);
     return c ? this.landed(c, harm(c, damage, w.x, w.z), 'Shot') : done('');
+  }
+
+  /** A shot lands on a bandit: the camp takes up the fight; badly hurt they run; down, they leave cartridges and a few gold. */
+  private shootBandit(b: Bandit, damage: number): Outcome {
+    b.hp -= damage;
+    this.bandits.alertAll();
+    if (b.hp <= 0) {
+      const camp = this.bandits.camps.find((c) => c.id === b.camp)!;
+      const { x, y, z } = b.walker;
+      this.banditGone(b, 'fell');
+      const gold = 3 + Math.floor(this.random() * 6) + camp.tier * 3;
+      this.sea.captain.gold += gold;
+      this.drop('cartridges', x, y + 0.4, z, 2 + Math.floor(this.random() * 2));
+      return done(`The bandit falls: ${gold} gold in their purse.`);
+    }
+    if (b.hp <= FLEE_AT) {
+      Object.assign(b, { mode: 'flee', path: null });
+      return done('The bandit breaks and runs!');
+    }
+    return done('A hit!');
+  }
+
+  /** A bandit is gone from their camp, fallen or fled: the last of them clears it. */
+  banditGone(b: Bandit, how: 'fell' | 'fled'): void {
+    this.bandits.live = this.bandits.live.filter((o) => o !== b);
+    const camp = this.bandits.camps.find((c) => c.id === b.camp);
+    if (camp && this.bandits.lose(camp, this.day())) {
+      this.events.push({ kind: 'notice', text: `The bandits’ camp is cleared${how === 'fled' ? ', the last of them fled' : ''}. They’ll be back in five days, unless you claim the ground.`, tone: 'good' });
+    }
   }
 
   // ---- Working the land ----

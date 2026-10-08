@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Sea } from '../combat/sea';
 import { shipClass } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
+import { phaseOf } from '../core/clock';
 import type { Port } from '../economy/ports';
 import { footprintSamples } from '../sailing/hull';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP } from '../sailing/ships';
@@ -10,7 +11,7 @@ import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import type { BanditCamp } from '../worldgen/bandits';
 import { Bandits, CAMP_BACK_DAYS, HOLD_RADIUS } from './bandits';
-import { Land } from './Land';
+import { HEALTH_MAX, Land } from './Land';
 
 const CLASSES = new Map(
   [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG].map((type) => {
@@ -125,5 +126,234 @@ describe('bandits’ camps', () => {
     world.setVoxel(0, GROUND, 0, Block.Air);
     land.restore(JSON.parse(JSON.stringify(land.snapshot())));
     expect(land.bandits.state(camp.id).gone).toBe(true);
+  });
+});
+
+/** The captain ashore on the bandits' islet at (x, z), at noon, a rifle and cartridges to hand. */
+function ashore(x: number, z: number, size = 3) {
+  const setup = banditIslet(size);
+  const { land, sea } = setup;
+  sea.clock.phase = phaseOf(12);
+  sea.captain.guns.push('pistol', 'rifle');
+  sea.player.cargo.cartridges = 40;
+  land.goAshore();
+  Object.assign(land.walker!, { x, z, y: GROUND });
+  return setup;
+}
+const run = (land: Land, seconds: number, keepAlive = true) => {
+  for (let t = 0; t < seconds; t += 1 / 20) {
+    land.step(1 / 20);
+    if (keepAlive && land.walker) land.health = HEALTH_MAX;
+  }
+};
+const shots = (land: Land) => land.takeEvents().filter((e) => e.kind === 'shot' && e.gun === 'musket');
+/** A wall of stone across z = 10, x -40..40, ten high: out of sight to the south of it. */
+const wall = (world: VoxelWorld) => {
+  for (let x = -40; x < 40; x++) for (let y = GROUND; y < GROUND + 10; y++) world.setVoxel(x, y, 10, Block.Stone);
+};
+
+describe('bandits', () => {
+  it('muster at their camp at ease, as many as it holds', () => {
+    const { land } = ashore(0.5, 30.5);
+    wall(land.world);
+    run(land, 1);
+    expect(land.bandits.live).toHaveLength(3);
+    for (const b of land.bandits.live) expect(b.mode).toBe('ease');
+  });
+
+  it('see the captain within about 18 blocks by day, and the whole camp is alerted', () => {
+    const { land } = ashore(0.5, 30.5);
+    run(land, 2);
+    expect(land.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
+    Object.assign(land.walker!, { x: 0.5, z: 12.5 });
+    run(land, 1);
+    expect(land.bandits.live.every((b) => b.mode === 'fight')).toBe(true);
+  });
+
+  it('at night see only half as far', () => {
+    const { land, sea } = ashore(0.5, 13.5);
+    sea.clock.phase = phaseOf(23);
+    run(land, 1);
+    expect(land.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
+  });
+
+  it('hear a shot within about 30 blocks, out of sight', () => {
+    const { land, world } = ashore(0.5, 25.5);
+    wall(world);
+    run(land, 1);
+    expect(land.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
+    land.fire('pistol');
+    run(land, 0.1);
+    expect(land.bandits.live.every((b) => b.mode === 'fight')).toBe(true);
+  });
+
+  it('need a clear line to fire', () => {
+    const { land, world } = ashore(0.5, 25.5);
+    wall(world);
+    run(land, 0.5);
+    land.bandits.alertAll();
+    expect(land.bandits.fighting()).toBe(true);
+    land.takeEvents();
+    run(land, 12);
+    expect(shots(land)).toHaveLength(0);
+  });
+
+  it('keep 8 to 16 off, and load between shots', () => {
+    const { land } = ashore(0.5, 12.5);
+    run(land, 0.5);
+    land.bandits.alertAll();
+    land.takeEvents();
+    run(land, 20);
+    const fired = shots(land);
+    // Three muskets, six seconds to load: no more than four shots each in 20 s.
+    expect(fired.length).toBeGreaterThan(0);
+    expect(fired.length).toBeLessThanOrEqual(12);
+    const w = land.walker!;
+    const off = land.bandits.live.map((b) => Math.hypot(b.walker.x - w.x, b.walker.z - w.z));
+    expect(off.filter((d) => d >= 6 && d <= 18).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('wear the captain down, and bring them down', () => {
+    const { land } = ashore(0.5, 12.5, 4);
+    run(land, 0.5);
+    land.bandits.alertAll();
+    for (let t = 0; t < 120 && land.walker; t += 1 / 20) land.step(1 / 20);
+    expect(land.walker).toBeNull();
+    expect(land.takeEvents().some((e) => e.kind === 'downed')).toBe(true);
+  });
+
+  it('a wounded bandit breaks and runs, and is gone once out of sight', () => {
+    const { land, camp } = ashore(0.5, 12.5);
+    run(land, 0.5);
+    const b = land.bandits.live[0];
+    b.hp = 3;
+    land.fire('pistol', { x: b.walker.x, y: b.walker.y + 1.2, z: b.walker.z });
+    // A hit leaves 1 hp; a miss leaves them fighting. Try again until they're hit.
+    for (let i = 0; i < 12 && b.mode !== 'flee' && land.bandits.live.includes(b); i++) {
+      run(land, 2.6);
+      land.fire('pistol', { x: b.walker.x, y: b.walker.y + 1.2, z: b.walker.z });
+    }
+    expect(b.mode === 'flee' || !land.bandits.live.includes(b)).toBe(true);
+    run(land, 30);
+    expect(land.bandits.live).not.toContain(b);
+    expect(land.bandits.state(camp.id).left).toBeLessThan(3);
+  });
+
+  it('a fallen bandit leaves cartridges and a few gold, and the last one gone clears the camp', () => {
+    const { land, sea, camp } = ashore(0.5, 12.5, 2);
+    run(land, 0.5);
+    const gold = sea.captain.gold;
+    for (const b of [...land.bandits.live]) land.banditGone(b, 'fell');
+    expect(land.bandits.manned(camp)).toBe(false);
+    expect(land.bandits.state(camp.id).cleared).not.toBeNull();
+    expect(land.takeEvents().some((e) => e.kind === 'notice')).toBe(true);
+    // (banditGone doesn't pay: the shot that fells them does. See Land.wound.)
+    expect(sea.captain.gold).toBe(gold);
+  });
+
+  it('a rifle shot fells a bandit; they drop cartridges and pay a few gold', () => {
+    const { land, sea } = ashore(0.5, 12.5);
+    run(land, 0.5);
+    const gold = sea.captain.gold;
+    const b = land.bandits.live[0];
+    for (let i = 0; i < 12 && land.bandits.live.includes(b); i++) {
+      land.fire('rifle', { x: b.walker.x, y: b.walker.y + 1.2, z: b.walker.z });
+      run(land, 5.1);
+    }
+    expect(land.bandits.live).not.toContain(b);
+    expect(sea.captain.gold).toBeGreaterThan(gold);
+    expect(land.drops.some((d) => d.good === 'cartridges')).toBe(true);
+  });
+
+  it('a save made mid-fight loads with the bandits at ease, as many as were left', () => {
+    const { land, camp } = ashore(0.5, 12.5);
+    run(land, 0.5);
+    land.bandits.alertAll();
+    land.hurt(4);
+    land.banditGone(land.bandits.live[0], 'fell');
+    const saved = JSON.parse(JSON.stringify(land.snapshot()));
+    const loaded = banditIslet().land;
+    loaded.restore(saved);
+    expect(loaded.health).toBe(HEALTH_MAX);
+    expect(loaded.bandits.live).toHaveLength(0);
+    loaded.step(1 / 20);
+    expect(loaded.bandits.live).toHaveLength(2);
+    expect(loaded.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
+    expect(loaded.bandits.state(camp.id).left).toBe(2);
+  });
+});
+
+describe('bandits never set foot on the captain’s claimed ground', () => {
+  /**
+   * A campfire of the captain's 60 from the bandits' fire, as near as one can be built to a
+   * manned camp: its claim (32 round it) reaches to within 28 of their fire, over the east of the islet.
+   */
+  function claimed(x: number, z: number, size = 3) {
+    const setup = ashore(x, z, size);
+    setup.land.buildings.push({ id: 90, kind: 'campfire', x0: 59, z0: -1, w: 3, d: 3, y: GROUND, rot: 0 });
+    expect(setup.land.claimed(28.6, 0.5)).toBe(true);
+    expect(setup.land.claimed(28.4, 0.5)).toBe(false);
+    return setup;
+  }
+  /** Steps on, the captain kept alive; the furthest east any bandit got, and whether one ever stood on claimed ground. */
+  function watch(land: Land, seconds: number): { east: number; trespassed: boolean } {
+    let east = -Infinity;
+    let trespassed = false;
+    for (let t = 0; t < seconds; t += 1 / 20) {
+      land.step(1 / 20);
+      if (land.walker) land.health = HEALTH_MAX;
+      for (const b of land.bandits.live) {
+        east = Math.max(east, b.walker.x);
+        if (land.claimed(b.walker.x, b.walker.z)) trespassed = true;
+      }
+    }
+    return { east, trespassed };
+  }
+
+  it('wandering at ease', () => {
+    // The camp sits on the west of a wide islet whose middle (where wanderers range about) is
+    // toward the claim; the captain is out of sight beyond a wall, all morning.
+    const { land, sea, camp } = claimed(0.5, 30.5);
+    sea.clock.phase = phaseOf(8);
+    Object.assign(camp, { islandX: 20, islandRadius: 50 });
+    wall(land.world);
+    const seen = watch(land, 240);
+    expect(land.bandits.live.every((b) => b.mode === 'ease')).toBe(true);
+    expect(seen.east).toBeGreaterThan(20);
+    expect(seen.trespassed).toBe(false);
+  }, 20_000);
+
+  it('fighting the captain who stands on it', () => {
+    const { land } = claimed(37.5, 0.5, 4);
+    run(land, 0.5);
+    land.bandits.alertAll();
+    land.takeEvents();
+    const seen = watch(land, 40);
+    expect(land.bandits.fighting()).toBe(true);
+    expect(seen.east).toBeGreaterThan(24);
+    expect(seen.trespassed).toBe(false);
+    // From the edge of the claim they're still in range, and fire.
+    expect(shots(land).length).toBeGreaterThan(0);
+  }, 20_000);
+
+  it('running from the captain toward it', () => {
+    const { land } = claimed(4.5, 0.5);
+    run(land, 0.5);
+    for (const b of land.bandits.live) Object.assign(b.walker, { x: 20.5, z: b.walker.z });
+    for (const b of land.bandits.live) b.mode = 'flee';
+    const seen = watch(land, 20);
+    expect(seen.east).toBeGreaterThan(24);
+    expect(seen.trespassed).toBe(false);
+  }, 20_000);
+
+  it('and walk off it if a camp is made round them', () => {
+    const { land, world } = ashore(0.5, 30.5);
+    wall(world);
+    run(land, 0.5);
+    land.buildings.push({ id: 90, kind: 'campfire', x0: 29, z0: -1, w: 3, d: 3, y: GROUND, rot: 0 });
+    expect(land.bandits.live.some((b) => land.claimed(b.walker.x, b.walker.z))).toBe(true);
+    run(land, 15);
+    expect(land.bandits.live).toHaveLength(3);
+    for (const b of land.bandits.live) expect(land.claimed(b.walker.x, b.walker.z)).toBe(false);
   });
 });
