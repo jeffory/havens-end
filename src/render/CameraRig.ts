@@ -74,11 +74,17 @@ export class CameraRig {
     this.place();
   }
 
-  update(target: Vector3, dt: number): void {
+  /** Where the zoom has the camera stand, before anything else stands it further back. */
+  get zoomed(): number {
+    return this.targetDistance;
+  }
+
+  /** Follows `target`; for now standing back at least `atLeast`, whatever the zoom (to frame a fight on foot). */
+  update(target: Vector3, dt: number, atLeast = 0): void {
     // Frame-rate independent exponential smoothing.
     this.focus.lerp(target, 1 - Math.exp(-6 * dt));
     this.yaw += (this.targetYaw - this.yaw) * (1 - Math.exp(-10 * dt));
-    this.distance += (this.targetDistance - this.distance) * (1 - Math.exp(-10 * dt));
+    this.distance += (Math.max(this.targetDistance, atLeast) - this.distance) * (1 - Math.exp(-10 * dt));
     this.place();
   }
 
