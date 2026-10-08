@@ -1019,7 +1019,8 @@ function buildPorch(world: VoxelWorld, door: Door, decor: PropPlacement[]): Set<
   // A point `t` out from the wall's face and `s` along it from the door's middle.
   const at = (t: number, s: number) => ({ x: door.x + 0.5 + ox * (0.5 + t) + ax * s, z: door.z + 0.5 + oz * (0.5 + t) + az * s });
   const facing = facingOf(ox, oz);
-  for (const s of [-1.25, 1.25]) decor.push({ kind: 'porchPost', ...at(deep - 0.25, s), y: door.y + 0.5, facing, anchor: null });
+  // The posts hold up the canopy, and go with it when the roof lifts on foot.
+  for (const s of [-1.25, 1.25]) decor.push({ kind: 'porchPost', ...at(deep - 0.25, s), y: door.y + 0.5, facing, anchor: { ...cell(Math.sign(s), deep), y: door.y + 3 } });
   for (const s of [-1, 1]) decor.push({ kind: 'porchRail', ...at(deep - 0.125, s), y: door.y + 0.5, facing, anchor: null });
   return deck;
 }

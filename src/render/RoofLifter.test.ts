@@ -167,4 +167,126 @@ describe('RoofLifter', () => {
       expect(roofOf(world, beside).filter(([x, y, z]) => lifted(lifts, x, y, z))).toEqual([]);
     });
   });
+
+  describe('shops', () => {
+    /** Flat grass round the shop. */
+    function flat() {
+      const world = new VoxelWorld();
+      for (let x = -12; x < 30; x++) for (let z = -20; z < 20; z++) for (let y = 0; y <= GROUND; y++) world.setVoxel(x, y, z, Block.Grass);
+      return world;
+    }
+    /** The camera straight over the captain, so only nearness lifts. */
+    const overhead = (x: number, z: number) => ({ x, y: BASE + 40, z: z + 0.01 });
+    /** The blocks of these kinds in a plot and a block round it. */
+    function blocks(world: VoxelWorld, f: Footprint, ids: readonly number[]): Array<[number, number, number]> {
+      const out: Array<[number, number, number]> = [];
+      for (let x = f.x0 - 1; x <= f.x0 + f.w; x++) {
+        for (let z = f.z0 - 1; z <= f.z0 + f.d; z++) for (let y = BASE; y < BASE + 12; y++) if (ids.includes(world.getVoxel(x, y, z))) out.push([x, y, z]);
+      }
+      return out;
+    }
+
+    /**
+     * An open hall like the market's: posts at the corners and every other cell down both
+     * sides, a wall across the back, open at the front (toward −z), under a gable roof whose
+     * ridge runs along the front, its eaves at head height.
+     */
+    function openHall(world: VoxelWorld, f: Footprint): void {
+      const [x1, z1] = [f.x0 + f.w - 1, f.z0 + f.d - 1];
+      for (let x = f.x0; x <= x1; x++) {
+        for (let z = f.z0; z <= z1; z++) {
+          world.setVoxel(x, BASE - 1, z, Block.Planks);
+          const side = x === f.x0 || x === x1;
+          if (z === z1) for (let y = BASE; y < BASE + 3; y++) world.setVoxel(x, y, z, Block.Plaster);
+          else if (side && (z - f.z0) % 2 === 0) for (let y = BASE; y < BASE + 3; y++) world.setVoxel(x, y, z, Block.Wood);
+        }
+      }
+      for (let x = f.x0 - 1; x <= x1 + 1; x++) {
+        for (let z = f.z0 - 1; z <= z1 + 1; z++) world.setVoxel(x, BASE + 3 + Math.round((f.d + 1) / 2 - Math.abs(z - (f.z0 + (f.d - 1) / 2))) - 1, z, Block.Thatch);
+      }
+    }
+
+    /**
+     * A shipyard's shed: a plank wall across the back and up one end, posts at the open
+     * corners, a gable roof with its ridge along the shed, and timber stacked against the
+     * back. Open at the front (toward −z) and at the other end.
+     */
+    function shed(world: VoxelWorld, f: Footprint): void {
+      const [x1, z1] = [f.x0 + f.w - 1, f.z0 + f.d - 1];
+      for (let x = f.x0; x <= x1; x++) {
+        for (let z = f.z0; z <= z1; z++) {
+          world.setVoxel(x, BASE - 1, z, Block.Planks);
+          const wall = z === z1 || x === x1;
+          const post = (x === f.x0 || x === x1) && (z === f.z0 || z === z1);
+          if (wall || post) for (let y = BASE; y < BASE + 3; y++) world.setVoxel(x, y, z, wall ? Block.Planks : Block.Wood);
+        }
+      }
+      const half = (f.d - 1) / 2 + 1;
+      for (let x = f.x0 - 1; x <= x1 + 1; x++) {
+        for (let z = f.z0 - 1; z <= z1 + 1; z++) world.setVoxel(x, BASE + 3 + Math.round(half - Math.abs(z - (f.z0 + (f.d - 1) / 2))) - 1, z, Block.Thatch);
+      }
+      for (let x = f.x0 + 1; x < x1; x++) for (let y = BASE; y < BASE + 2; y++) world.setVoxel(x, y, z1 - 1, Block.Wood);
+    }
+
+    it('lifts an open market hall’s roof whole, from the middle of its open front and from inside, and leaves its posts to head height', () => {
+      const world = flat();
+      const hall: Footprint = { x0: 10, z0: -6, w: 6, d: 6 };
+      openHall(world, hall);
+      for (const [x, z] of [[12.5, -6.5], [12.5, -3.5]]) {
+        const lifts = new RoofLifter(world).update({ x, y: BASE + 1.2, z }, BASE, overhead(x, z), 1 / 60, 2);
+        expect(blocks(world, hall, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
+        expect(blocks(world, hall, [Block.Wood, Block.Plaster]).filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), `lifted below head height, from ${x},${z}`).toEqual([]);
+      }
+    });
+
+    it('lifts a three-sided shed’s roof whole, from its open front and from inside, and leaves its walls to head height', () => {
+      const world = flat();
+      const yard: Footprint = { x0: 10, z0: -6, w: 5, d: 5 };
+      shed(world, yard);
+      for (const [x, z] of [[12.5, -6.5], [11.5, -4.5]]) {
+        const lifts = new RoofLifter(world).update({ x, y: BASE + 1.2, z }, BASE, overhead(x, z), 1 / 60, 2);
+        expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
+        expect(blocks(world, yard, [Block.Wood, Block.Planks]).filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), `lifted below head height, from ${x},${z}`).toEqual([]);
+      }
+    });
+
+    it('cuts a two-storey shop at head height from its porch, canopy, jambs and all, as a house is cut', () => {
+      const world = flat();
+      const plot: Footprint = { x0: 0, z0: 0, w: 7, d: 6 };
+      const door = buildHouse(world, plot, BASE, { walls: Block.Plaster, roof: Block.Thatch }, 3.5, -10, 2);
+      // A porch as the town builds one: a deck of plank slabs three wide and two deep, a canopy
+      // over it a storey up, and the doorway opened a storey high, its jambs carried up beside it.
+      for (let k = 1; k <= 2; k++) {
+        for (let a = -1; a <= 1; a++) {
+          world.setVoxel(door.x + a, BASE, door.z - k, Block.PlanksSlab);
+          world.setVoxel(door.x + a, BASE + 3, door.z - k, Block.PlanksSlab);
+        }
+      }
+      world.setVoxel(door.x, BASE + 2, door.z, Block.Air);
+      for (const a of [-1, 1]) for (let y = BASE; y <= BASE + 2; y++) world.setVoxel(door.x + a, y, door.z, Block.Wood);
+      // The captain on the deck, half a block up, before the door.
+      const [x, z] = [door.x + 0.5, door.z - 0.5];
+      const lifts = new RoofLifter(world).update({ x, y: BASE + 1.7, z }, BASE + 0.5, overhead(x, z), 1 / 60, 2);
+      const withPorch: Footprint = { x0: plot.x0, z0: plot.z0 - 2, w: plot.w, d: plot.d + 2 };
+      const shop = blocks(world, withPorch, [Block.Plaster, Block.Window, Block.Wood, Block.Thatch, Block.PlanksSlab]);
+      expect(shop.filter(([bx, by, bz]) => by >= BASE + 2 && !lifted(lifts, bx, by, bz)), 'left standing from head height up').toEqual([]);
+      expect(shop.filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), 'lifted below head height').toEqual([]);
+    });
+
+    it('looks past a stall in the way to the roof behind it', () => {
+      const world = village();
+      // A stall's corner post between the captain and the house, and the camera beyond the house.
+      for (let y = BASE; y < BASE + 3; y++) world.setVoxel(3, y, -4, Block.Wood);
+      const chest = { x: 3.5, y: BASE + 1.2, z: -6.5 };
+      const camera = { x: 3.5, y: BASE + 8, z: 16 };
+      const lifts = new RoofLifter(world).update(chest, BASE, camera, 1 / 60);
+      const d = Math.hypot(camera.x - chest.x, camera.y - chest.y, camera.z - chest.z);
+      const inTheWay: string[] = [];
+      for (let t = 0; t < d; t += 0.05) {
+        const [x, y, z] = [chest.x, chest.y, chest.z].map((c, i) => Math.floor(c + (([camera.x, camera.y, camera.z][i] - c) * t) / d));
+        if ([Block.Plaster, Block.Window, Block.Thatch, Block.Wood].includes(world.getVoxel(x, y, z) as never) && !lifted(lifts, x, y, z)) inTheWay.push(`${x},${y},${z}`);
+      }
+      expect(inTheWay).toEqual([]);
+    });
+  });
 });

@@ -515,6 +515,20 @@ describe('towns', () => {
     }
   });
 
+  it('anchor each porch post to the canopy over it, so the posts go when the roof lifts', () => {
+    for (const { name, world, harbour } of PORTS) {
+      const posts = harbour.decor.filter((d) => d.kind === 'porchPost');
+      expect(posts.length, name).toBeGreaterThan(0);
+      for (const p of posts) {
+        const a = p.anchor;
+        expect(a, `${name} post at ${p.x},${p.z}`).not.toBeNull();
+        expect(world.getVoxel(a!.x, a!.y, a!.z), `${name} canopy over the post at ${p.x},${p.z}`).toBe(Block.PlanksSlab);
+        expect(a!.y, `${name} post at ${p.x},${p.z}`).toBe(Math.floor(p.y) + 3);
+        expect([Math.floor(p.x), Math.floor(p.z)], `${name} post at ${p.x},${p.z}`).toEqual([a!.x, a!.z]);
+      }
+    }
+  });
+
   it('let the captain in at the tavern’s and office’s doors, walking from the porch', () => {
     for (const { name, world, harbour } of PORTS) {
       for (const kind of ['tavern', 'office'] as const) {
