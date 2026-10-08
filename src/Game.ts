@@ -454,7 +454,7 @@ export class Game {
       card ? CARD_SECONDS : 0,
       () => {
         this.autosave();
-        this.controls.setMode(this.land.walker ? 'foot' : 'sea');
+        if (!this.overlay.kind) this.controls.setMode(this.land.walker ? 'foot' : 'sea');
         if (card) return;
         const clock = this.sea.clock;
         this.hud.toast(until === 'morning' ? `Morning, day ${clock.day}. The game is saved.` : `Dusk falls (${clockText(clock.phase)}). The game is saved.`, 'good');
@@ -472,7 +472,9 @@ export class Game {
         this.rig.snapTo(this.cameraTarget.set(w?.x ?? this.ship.x, w ? w.y + 1.2 : WATER_LEVEL, w?.z ?? this.ship.z));
       },
       CARD_SECONDS,
-      () => this.controls.setMode(this.land.walker ? 'foot' : 'sea'),
+      () => {
+        if (!this.overlay.kind) this.controls.setMode(this.land.walker ? 'foot' : 'sea');
+      },
     );
   }
 
@@ -571,15 +573,18 @@ export class Game {
     this.footHud.setHelpShown(help);
     this.hud.setScheme(scheme);
     this.footHud.setScheme(scheme);
+    // The fade is modal: a key or a click that skips a card (or a night's sleep) also lands
+    // on these bindings, so they're drained every frame (never left to fire once it's done)
+    // but only acted on once the screen isn't fading.
     if (this.overlay.kind) {
       for (const action of MENU_ACTIONS) for (let n = controls.take(action); n > 0; n--) this.overlay.nav(action);
-    } else if (!this.duel && controls.take('chart') > 0) {
+    } else if (!this.duel && controls.take('chart') > 0 && !this.fade.active) {
       this.openChart();
-    } else if (!this.duel && controls.take('journal') > 0) {
+    } else if (!this.duel && controls.take('journal') > 0 && !this.fade.active) {
       this.openJournal();
-    } else if (!this.duel && !this.land.walker && controls.take('shanty') > 0) {
+    } else if (!this.duel && !this.land.walker && controls.take('shanty') > 0 && !this.fade.active) {
       this.toggleShanties();
-    } else if (!this.duel && !this.land.walker && controls.take('system') > 0) {
+    } else if (!this.duel && !this.land.walker && controls.take('system') > 0 && !this.fade.active) {
       this.openSystem(false);
     }
 
