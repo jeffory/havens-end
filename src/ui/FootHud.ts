@@ -9,6 +9,8 @@ export interface Slot {
   item?: Held;
   /** How many there are to hand (seeds); undefined for tools. */
   count?: number;
+  /** A gun's loading still to go, 0 to 1 (a shade over its slot). */
+  reload?: number;
   active: boolean;
 }
 
@@ -36,7 +38,7 @@ const FOOT_KEYS: KeyEntries = [
   ['Space Click', 'use'],
   ['F Right-click', 'dig for treasure'],
   ['E', 'interact'],
-  ['1–8', 'tools and seeds'],
+  ['1–0', 'tools, guns and seeds'],
   ['B', 'build'],
   ['M', 'chart'],
   ['J', 'journal'],
@@ -50,7 +52,7 @@ const FOOT_PAD: KeyEntries = [
   ['X', 'use'],
   ['LT', 'dig for treasure'],
   ['A', 'interact'],
-  ['LB RB', 'tools and seeds'],
+  ['LB RB', 'tools, guns and seeds'],
   ['Y', 'build'],
   ['View', 'chart'],
   ['Start', 'menu'],
@@ -131,6 +133,11 @@ export class FootHud {
       this.shownSlots = slots;
       this.slots.replaceChildren(...r.slots.map(slotElement));
     }
+    r.slots.forEach((s, i) => {
+      if (s.reload === undefined) return;
+      const shade = this.slots.children[i]?.querySelector<HTMLElement>('.foot-reload');
+      if (shade) shade.style.transform = `scaleY(${s.reload.toFixed(3)})`;
+    });
     set(this.pack, `Pack ${r.packUsed}/${r.packSize}${r.packSummary ? ` · ${r.packSummary}` : ''}`);
     showPrompt(this.prompt, r.placing ?? r.prompt ?? '', this.scheme);
     this.prompt.hidden = !(r.placing ?? r.prompt);
@@ -168,6 +175,11 @@ function slotElement(s: Slot, index: number): HTMLElement {
     const count = document.createElement('b');
     count.textContent = `${s.count}`;
     el.append(count);
+  }
+  if (s.reload !== undefined) {
+    const shade = document.createElement('i');
+    shade.className = 'foot-reload';
+    el.append(shade);
   }
   return el;
 }

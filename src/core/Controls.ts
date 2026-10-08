@@ -35,6 +35,7 @@ export type Action =
   | 'item7'
   | 'item8'
   | 'item9'
+  | 'item10'
   | 'build'
   | 'cancel'
   // Menus (port screens, the chart)
@@ -153,6 +154,7 @@ const FOOT_KEYS: Bindings<string> = [
   ['Digit7', 'item7'],
   ['Digit8', 'item8'],
   ['Digit9', 'item9'],
+  ['Digit0', 'item10'],
   ['KeyB', 'build'],
   ['Escape', 'system'],
   ['KeyZ', 'rotateLeft'],

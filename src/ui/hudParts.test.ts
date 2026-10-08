@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Held } from '../land/Land';
-import { ICON_SIZE, ICONS, SACK, TOOL_ICONS } from '../render/itemIcons';
+import { GUN_ICONS, ICON_SIZE, ICONS, SACK, TOOL_ICONS } from '../render/itemIcons';
 import { heldByLabel, heldIcon, iconUrl, splitPrompt } from './hudParts';
 
-/** What the hotbar holds: the tools, the seeds and saplings. */
-const HOTBAR: Held[] = ['axe', 'pickaxe', 'hoe', 'caneCuttings', 'tobaccoSeed', 'pepperSeed', 'maize', 'sapling'];
+/** What the hotbar holds: the tools, the guns, the seeds and saplings. */
+const HOTBAR: Held[] = ['axe', 'pickaxe', 'hoe', 'pistol', 'rifle', 'caneCuttings', 'tobaccoSeed', 'pepperSeed', 'maize', 'sapling'];
 
 describe('hotbar icons', () => {
   it('give every tool and good a square picture with every pixel coloured', () => {
-    for (const [tool, icon] of [...Object.entries(TOOL_ICONS), ...Object.entries(ICONS)]) {
+    for (const [tool, icon] of [...Object.entries(TOOL_ICONS), ...Object.entries(GUN_ICONS), ...Object.entries(ICONS)]) {
       expect(icon.rows.length, tool).toBe(ICON_SIZE);
       for (const row of icon.rows) {
         expect(row.length, `${tool}: "${row}"`).toBe(ICON_SIZE);

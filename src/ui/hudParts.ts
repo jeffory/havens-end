@@ -1,6 +1,7 @@
 import { GOOD_INFO, GOODS, type Good } from '../economy/goods';
+import { GUNS, type Gun, isGun } from '../land/firearms';
 import type { Held, Tool } from '../land/Land';
-import { ICON_SIZE, ICONS, type Icon, SACK, TOOL_ICONS } from '../render/itemIcons';
+import { GUN_ICONS, ICON_SIZE, ICONS, type Icon, SACK, TOOL_ICONS } from '../render/itemIcons';
 
 /** Which controls the player is using: the keyboard (and mouse), or a gamepad. */
 export type Scheme = 'keys' | 'pad';
@@ -90,14 +91,15 @@ export class Legend {
 
 const isTool = (item: Held): item is Tool => Object.hasOwn(TOOL_ICONS, item);
 
-/** The picture for something in the hotbar: a tool's own, a good's, or a sack for a good without one. */
+/** The picture for something in the hotbar: a tool's own, a gun's, a good's, or a sack for a good without one. */
 export function heldIcon(item: Held): Icon {
-  return isTool(item) ? TOOL_ICONS[item] : (ICONS[item as Good] ?? SACK);
+  return isTool(item) ? TOOL_ICONS[item] : isGun(item) ? GUN_ICONS[item] : (ICONS[item as Good] ?? SACK);
 }
 
 /** Hotbar labels, lower-cased, to what they name: tools by their name, goods by their market label. */
 const BY_LABEL = new Map<string, Held>([
   ...(Object.keys(TOOL_ICONS) as Tool[]).map((tool) => [tool, tool] as const),
+  ...(Object.keys(GUNS) as Gun[]).map((gun) => [GUNS[gun].label.toLowerCase(), gun] as const),
   ...GOODS.map((good) => [GOOD_INFO[good].label.toLowerCase(), good] as const),
 ]);
 

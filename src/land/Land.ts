@@ -13,8 +13,9 @@ import { mulberry32 } from '../worldgen/noise';
 import { WATER_LEVEL } from '../ocean/waves';
 import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
 import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
-import { type Creature, CREATURES, stepCreatures, strike } from './creatures';
+import { type Creature, CREATURES, harm, stepCreatures, strike } from './creatures';
 import { type Drop, dropItem, stepDrops } from './drops';
+import { aimPoint, GUN_LIST, GUNS, type Gun, hitChance, isGun, pickTarget, type Point3, resolveShot, type Shootable } from './firearms';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
 import { type Building, doorOf, isWorkshop, PIECES, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
 import { DEPOSITS, Deposits, type DepositsSnapshot } from './deposits';
@@ -23,8 +24,12 @@ import { createWalker, groundBelow, HALF_WIDTH, HEIGHT, standable, stepWalker, t
 
 export type Tool = 'axe' | 'pickaxe' | 'hoe';
 export const TOOL_LIST: readonly Tool[] = ['axe', 'pickaxe', 'hoe'];
-/** What's in the captain's hands: a tool, or a seed to plant. */
-export type Held = Tool | Good;
+/** What's in the captain's hands: a tool, a gun, or a seed to plant. */
+export type Held = Tool | Gun | Good;
+/** Cartridges the captain takes ashore from the hold, with a gun to fire them. */
+export const POUCH = 24;
+/** A gun is fired from the chest. */
+const MUZZLE = 1.3;
 
 export { CLAIM_RADIUS } from './camps';
 /** A port's town and harbour: nobody digs, fells or builds within this of the berth. */
@@ -63,7 +68,8 @@ export type LandEvent =
   | { kind: 'built'; structure: Structure; x: number; y: number; z: number }
   | { kind: 'razed'; structure: Structure; x: number; y: number; z: number }
   | { kind: 'made'; building: number; x: number; y: number; z: number }
-  | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' };
+  | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' }
+  | { kind: 'shot'; gun: Gun | 'musket'; from: Point3; to: Point3; hit: 'creature' | 'bandit' | 'captain' | null };
 
 export type Action = 'fell' | 'chop' | 'mine' | 'break' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
 
@@ -188,6 +194,8 @@ export class Land {
   private readonly surveys = new Map<string, { at: number; spots: TreeSpot[] | ShoreSpot[] }>();
   /** Axe blows each tree has taken, by the foot of its trunk: not saved, and forgotten when it falls. */
   private readonly blows = new Map<string, number>();
+  /** Seconds each gun has left to load (not saved: loaded again by the time a save is loaded). */
+  private readonly loading: Partial<Record<Gun, number>> = {};
 
   constructor(
     readonly world: VoxelWorld,
@@ -269,6 +277,7 @@ export class Land {
       stepSettler(this, s, dt, live);
     }
     this.work(dt);
+    for (const gun of GUN_LIST) if (this.loading[gun]) this.loading[gun] = Math.max(0, this.loading[gun]! - dt);
     stepDrops(this, dt);
     if (watched) stepCreatures(this, dt, this.random);
     else this.creatures.length = 0;
@@ -514,6 +523,7 @@ export class Land {
     const p = this.sea.player.ship;
     this.walker = createWalker(spot.x, spot.y, spot.z, Math.atan2(spot.x - p.x, spot.z - p.z));
     this.sea.ashore = true;
+    this.fillPouch();
     this.events.push({ kind: 'ashore', ...spot });
     return done('You row ashore; the crew keep her at anchor.');
   }
@@ -523,6 +533,7 @@ export class Land {
     const port = this.sea.docked;
     if (!port) return;
     this.walker = createWalker(port.pier.x, port.pier.y, port.pier.z, port.heading + Math.PI);
+    this.fillPouch();
     this.events.push({ kind: 'ashore', ...port.pier });
   }
 
@@ -544,6 +555,61 @@ export class Land {
     const stowed = cargoCount(moved);
     this.events.push({ kind: 'aboard', stowed, left: cargoCount(this.pack) });
     return done(stowed > 0 ? `Back aboard; ${stowed} goods stowed in the hold.` : 'Back aboard.');
+  }
+
+  /** With a gun, the captain takes a pouch of cartridges ashore from the hold. */
+  private fillPouch(): void {
+    if (this.sea.captain.guns.length === 0) return;
+    const want = POUCH - (this.pack.cartridges ?? 0);
+    if (want > 0) Land.transfer(this.sea.player.cargo, this.pack, 'cartridges', want, this.packRoom());
+  }
+
+  // ---- Guns ----
+
+  /** How much of a gun's loading is still to go: 1 just fired, 0 ready. */
+  reloadLeft(gun: Gun): number {
+    return (this.loading[gun] ?? 0) / GUNS[gun].reload;
+  }
+
+  /** What a shot would be aimed at: at the cursor (`toward`), or else the nearest target ahead. */
+  gunTarget(gun: Gun, toward: Point3 | null): Shootable | null {
+    const w = this.walker;
+    return w ? pickTarget(w, this.shootables(), GUNS[gun].range, toward) : null;
+  }
+
+  /**
+   * Fires a gun: at what's under the mouse (`toward`), or else the nearest target within
+   * the cone ahead, or straight ahead. It costs a cartridge, and the gun loads again by itself.
+   */
+  fire(gun: Gun, toward: Point3 | null = null): Outcome {
+    const w = this.walker;
+    if (!w) return fail('You’re aboard ship.');
+    const spec = GUNS[gun];
+    if (!this.sea.captain.guns.includes(gun)) return fail(`You have no ${spec.label.toLowerCase()}.`);
+    if ((this.loading[gun] ?? 0) > 0) return fail('Still loading.');
+    if (this.available('cartridges') < 1) return fail('No cartridges to hand: buy some in port, or make them at a forge.');
+    this.spend({ cartridges: 1 });
+    this.loading[gun] = spec.reload;
+    const target = pickTarget(w, this.shootables(), spec.range, toward);
+    const from = { x: w.x, y: w.y + MUZZLE, z: w.z };
+    const at = target ? aimPoint(target) : (toward ?? { x: w.x + Math.sin(w.facing) * spec.range, y: from.y, z: w.z + Math.cos(w.facing) * spec.range });
+    w.facing = Math.atan2(at.x - w.x, at.z - w.z);
+    const distance = Math.hypot(at.x - from.x, at.z - from.z);
+    const shot = resolveShot(this.world, from, at, spec.range, target, target ? hitChance(gun, distance) : 0, this.random());
+    this.events.push({ kind: 'shot', gun, from, to: shot.end, hit: shot.hit ? shot.hit.kind : null });
+    return shot.hit ? this.wound(shot.hit, spec.damage) : done('');
+  }
+
+  /** What a shot could hit round the captain. */
+  private shootables(): Shootable[] {
+    return this.creatures.map((c) => ({ kind: 'creature' as const, id: c.id, x: c.walker.x, y: c.walker.y, z: c.walker.z }));
+  }
+
+  /** A shot lands on something. */
+  private wound(t: Shootable, damage: number): Outcome {
+    const c = this.creatures.find((o) => o.id === t.id);
+    const w = this.walker!;
+    return c ? this.landed(c, harm(c, damage, w.x, w.z), 'Shot') : done('');
   }
 
   // ---- Working the land ----
@@ -601,6 +667,7 @@ export class Land {
   aim(held: Held, t: Target): Aim {
     const w = this.walker;
     if (!w) return { ok: false, reason: 'You’re aboard ship.' };
+    if (isGun(held)) return { ok: false, reason: 'Fire it with Space or a click.' };
     const { x, z } = t;
     if (this.inTown(x, z)) return { ok: false, reason: 'This is the town’s land (marked on the ground): work it in your own camp.' };
 
@@ -650,6 +717,7 @@ export class Land {
   /** Uses what's in hand on a target (the column in front, by default). */
   use(held: Held, target: Target | null = this.front()): Outcome {
     if (!target) return fail('You’re aboard ship.');
+    if (isGun(held)) return this.fire(held);
     const beast = this.creatureAt(target.x + 0.5, target.z + 0.5);
     if (beast && (TOOL_LIST as readonly Held[]).includes(held)) return this.hit(beast, held as Tool);
     const aim = this.aim(held, target);

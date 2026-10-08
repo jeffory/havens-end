@@ -5,6 +5,7 @@ import type { Input } from './core/Input';
 import { PACK_SIZE } from './economy/captain';
 import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
+import { GUN_LIST, GUNS, isGun, type Point3 } from './land/firearms';
 import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
 import { hasRelic, LODESTONE_RANGE } from './treasure/relics';
 import type { Treasure } from './treasure/Treasure';
@@ -34,6 +35,8 @@ export interface ShoreHost {
 
 const TOOL_LABELS: Record<Tool, string> = { axe: 'Axe', pickaxe: 'Pickaxe', hoe: 'Hoe' };
 const SWING_SECONDS = 0.38;
+/** How long the captain's pose shows them bringing up a gun after firing it. */
+const AIM_SECONDS = 0.6;
 /** How long it takes to dig for treasure, and how far the captain can shift before they've given up. */
 const DIG_SECONDS = 1.5;
 const DIG_WANDER = 0.3;
@@ -61,6 +64,8 @@ export class Shore {
   private item = 0;
   placing: { kind: Structure; rot: number } | null = null;
   private swing: number | null = null;
+  /** Seconds left showing the captain bringing a gun up to fire. */
+  private aiming = 0;
   /** Digging for treasure: where the captain stood to dig, and how long is left. */
   private digging: { x: number; z: number; left: number } | null = null;
   private hint: { text: string; until: number; ok: boolean; tally?: boolean } | null = null;
@@ -96,9 +101,10 @@ export class Shore {
     hud.onSelect = (i) => this.select(i);
   }
 
-  /** The hotbar: the tools, each kind of seed, and saplings. */
+  /** The hotbar: the tools, the guns the captain owns, each kind of seed, and saplings. */
   items(): Held[] {
-    return [...TOOL_LIST, ...PLANTABLE, 'sapling'];
+    const guns = GUN_LIST.filter((g) => this.land.sea.captain.guns.includes(g));
+    return [...TOOL_LIST, ...guns, ...PLANTABLE, 'sapling'];
   }
 
   /** Takes up the item in hotbar slot `i` (clicked, or its number key). */
@@ -127,6 +133,7 @@ export class Shore {
   /** One fixed step: walk, and act on what was pressed. */
   update(dt: number, controls: Controls): void {
     this.clock += dt;
+    this.aiming = Math.max(0, this.aiming - dt);
     if (this.swing !== null) {
       this.swing += dt / SWING_SECONDS;
       // Digging is one swing of the spade after another.
@@ -198,6 +205,14 @@ export class Shore {
       this.report(result);
       this.markTown(spot);
       if (result.ok && !STRUCTURES[this.placing.kind].freeform) this.placing = null;
+      return;
+    }
+    const held = this.held;
+    if (isGun(held)) {
+      this.digging = null;
+      this.swing = null;
+      this.aiming = AIM_SECONDS;
+      this.report(this.land.fire(held, this.aimAt(atCursor)));
       return;
     }
     const target = this.cursor(atCursor) ?? this.land.front();
@@ -272,6 +287,13 @@ export class Shore {
     return this.clock < this.mouseUntil;
   }
 
+  /** Where the mouse is aiming a gun: the top of the block under it, at any distance, if the mouse is in use. */
+  private aimAt(clicked = false): Point3 | null {
+    const h = this.hover;
+    if (!h || !(clicked || this.mouseActive())) return null;
+    return { x: h.x + 0.5, y: h.y + 1, z: h.z + 0.5 };
+  }
+
   private inReach(cell: { x: number; z: number }, reach: number): boolean {
     const w = this.land.walker!;
     return Math.hypot(cell.x + 0.5 - w.x, cell.z + 0.5 - w.z) <= reach;
@@ -317,19 +339,26 @@ export class Shore {
       }
     } else {
       this.view.showGhost(null);
-      const target = this.cursor() ?? this.land.front();
-      // Nothing can be worked in town, so there's nothing to mark.
-      const aim = this.digging ? this.land.digAim() : target && !this.land.inTown(target.x, target.z) ? this.land.aim(this.held, target) : null;
-      this.view.mark(aim && aim.x !== undefined ? { x: aim.x, y: aim.y!, z: aim.z!, ok: aim.ok } : null);
+      const held = this.held;
+      if (isGun(held)) {
+        const t = this.land.gunTarget(held, this.aimAt());
+        this.view.mark(t ? { x: Math.floor(t.x), y: Math.floor(t.y), z: Math.floor(t.z), ok: true } : null);
+      } else {
+        const target = this.cursor() ?? this.land.front();
+        // Nothing can be worked in town, so there's nothing to mark.
+        const aim = this.digging ? this.land.digAim() : target && !this.land.inTown(target.x, target.z) ? this.land.aim(held, target) : null;
+        this.view.mark(aim && aim.x !== undefined ? { x: aim.x, y: aim.y!, z: aim.z!, ok: aim.ok } : null);
+      }
     }
 
     const pack = this.land.pack;
     this.hud.update({
       slots: this.items().map((held, i) => ({
-        key: `${i + 1}`,
+        key: i === 9 ? '0' : `${i + 1}`,
         item: held,
-        label: isTool(held) ? TOOL_LABELS[held] : GOOD_INFO[held].label,
-        count: isTool(held) ? undefined : this.land.available(held),
+        label: isTool(held) ? TOOL_LABELS[held] : isGun(held) ? GUNS[held].label : GOOD_INFO[held].label,
+        count: isTool(held) ? undefined : this.land.available(isGun(held) ? 'cartridges' : held),
+        reload: isGun(held) ? this.land.reloadLeft(held) : undefined,
         active: i === this.item,
       })),
       packUsed: cargoCount(pack),

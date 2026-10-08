@@ -3,6 +3,7 @@ import { Sea } from '../combat/sea';
 import { createAi } from '../combat/ai';
 import { createVessel, shipClass } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
+import { phaseOf } from '../core/clock';
 import { cargoCount } from '../economy/goods';
 import type { Port } from '../economy/ports';
 import { footprintSamples } from '../sailing/hull';
@@ -14,9 +15,11 @@ import { PACK_SIZE } from '../economy/captain';
 import { WATER_LEVEL } from '../ocean/waves';
 import { CROPS } from './crops';
 import { DROP_SECONDS } from './drops';
+import { GUNS, type Gun } from './firearms';
 import { palmTree } from '../worldgen/island';
+import { createWalker } from './walker';
 import { type Deposit, type DepositKind, DEPOSITS, Deposits, REGROW_DAYS } from './deposits';
-import { CLAIM_RADIUS, Land, TOOL_LIST } from './Land';
+import { CLAIM_RADIUS, Land, POUCH, TOOL_LIST } from './Land';
 
 function box(length: number, beam: number): Float32Array {
   const cells: Array<[number, number]> = [];
@@ -580,5 +583,91 @@ describe('building', () => {
     // On the grass beside them, as ever.
     expect(land.build('fence', 8, 4, 0).ok).toBe(true);
     expect(land.build('torch', 10, 4, 0).ok).toBe(true);
+  });
+});
+
+describe('guns', () => {
+  /** The captain ashore with a gun and 30 cartridges in the hold, at night (so beasts stay about). */
+  function armed(gun: Gun = 'pistol') {
+    const { world, sea, land } = setup();
+    sea.clock.phase = phaseOf(23);
+    sea.captain.guns.push(gun);
+    sea.player.cargo.cartridges = 30;
+    land.goAshore();
+    walkTo(land, 0.5, 0.5, 0);
+    return { world, sea, land };
+  }
+  const boar = (land: Land, x: number, z: number) =>
+    land.creatures.push({ id: land.nextCreature++, kind: 'boar', walker: createWalker(x, SEA_LEVEL + 1, z), hp: 3, target: null, eating: 0, fleeing: 0, flee: { x: 0, z: 0 }, think: 0 });
+  const reload = (land: Land, gun: Gun) => {
+    for (let t = 0; t < GUNS[gun].reload + 0.1; t += 1 / 60) land.step(1 / 60);
+  };
+
+  it('takes a pouch of cartridges ashore from the hold', () => {
+    const { land, sea } = armed();
+    expect(land.pack.cartridges).toBe(POUCH);
+    expect(sea.player.cargo.cartridges).toBe(30 - POUCH);
+  });
+
+  it('takes no cartridges ashore without a gun', () => {
+    const { land, sea } = setup();
+    sea.player.cargo.cartridges = 30;
+    land.goAshore();
+    expect(land.pack.cartridges).toBeUndefined();
+  });
+
+  it('spends a cartridge a shot, and loads before it fires again', () => {
+    const { land } = armed();
+    expect(land.fire('pistol').ok).toBe(true);
+    expect(land.available('cartridges')).toBe(29);
+    expect(land.reloadLeft('pistol')).toBeCloseTo(1, 5);
+    reload(land, 'pistol');
+    expect(land.reloadLeft('pistol')).toBe(0);
+    expect(land.fire('pistol').ok).toBe(true);
+    expect(land.available('cartridges')).toBe(28);
+  });
+
+  it('won’t fire while loading, and doesn’t spend a cartridge trying', () => {
+    const { land } = armed();
+    land.fire('pistol');
+    land.step(1);
+    const left = land.reloadLeft('pistol');
+    const again = land.fire('pistol');
+    expect(again.ok).toBe(false);
+    expect(again.message).toBe('Still loading.');
+    expect(land.available('cartridges')).toBe(29);
+    expect(land.reloadLeft('pistol')).toBeCloseTo(left, 5);
+  });
+
+  it('won’t fire without cartridges, or without the gun', () => {
+    const { land, sea } = armed();
+    delete land.pack.cartridges;
+    delete sea.player.cargo.cartridges;
+    expect(land.fire('pistol').ok).toBe(false);
+    expect(land.reloadLeft('pistol')).toBe(0);
+    expect(land.fire('rifle').ok).toBe(false);
+  });
+
+  it('shoots a boar ahead, and it falls and gives its meat', () => {
+    const { land } = armed('rifle');
+    boar(land, 0.5, 6.5);
+    for (let i = 0; i < 10 && land.creatures.some((c) => c.kind === 'boar' && c.walker.z < 10); i++) {
+      land.fire('rifle');
+      reload(land, 'rifle');
+    }
+    expect(land.creatures.filter((c) => c.kind === 'boar' && c.walker.z < 10)).toHaveLength(0);
+    expect(land.drops.some((d) => d.good === 'meat')).toBe(true);
+  });
+
+  it('with the mouse, fires toward the cursor; a wall in the way takes the shot', () => {
+    const { world, land } = armed('rifle');
+    boar(land, 8.5, 0.5);
+    for (let y = SEA_LEVEL + 1; y < SEA_LEVEL + 5; y++) for (let z = -2; z <= 2; z++) world.setVoxel(4, y, z, Block.Stone);
+    land.takeEvents();
+    land.fire('rifle', { x: 8.5, y: SEA_LEVEL + 1.4, z: 0.5 });
+    const shot = land.takeEvents().find((e) => e.kind === 'shot');
+    expect(shot).toMatchObject({ kind: 'shot', gun: 'rifle', hit: null });
+    expect(land.creatures.find((c) => c.kind === 'boar')!.hp).toBe(3);
+    expect(land.walker!.facing).toBeCloseTo(Math.PI / 2, 1);
   });
 });

@@ -1,5 +1,6 @@
 import type { BufferGeometry } from 'three';
 import type { Good } from '../economy/goods';
+import type { Gun } from '../land/firearms';
 import type { Tool } from '../land/Land';
 import { paletteFromRgba } from '../voxel/palette';
 import { meshCells } from './voxelGeometry';
@@ -119,6 +120,18 @@ export const TOOL_ICONS: Record<Tool, Icon> = {
   hoe: {
     colors: TOOL_COLORS,
     rows: ['............', '..ddddd..he.', '.dSSmmmd.he.', 'dSSddddmhe..', 'dSd...dhe...', 'dd....he....', '.....he.....', '....he......', '...he.......', '..he........', '.he.........', 'he..........'],
+  },
+};
+
+/** The guns as the hotbar shows them: iron barrels on walnut stocks, pointing right. */
+export const GUN_ICONS: Record<Gun, Icon> = {
+  pistol: {
+    colors: TOOL_COLORS,
+    rows: ['............', '............', '............', '..ddddddddd.', '.hhSsssssssd', '.hhhhdddddd.', '.hhhe.......', '.hhhe.......', '..hhe.......', '..hee.......', '............', '............'],
+  },
+  rifle: {
+    colors: TOOL_COLORS,
+    rows: ['............', '............', '............', '............', '....dddddddd', 'hhhhSssssssd', 'ehhhhhdddddd', 'ehhh.e......', 'ee..........', '............', '............', '............'],
   },
 };
 
