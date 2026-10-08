@@ -61,7 +61,9 @@ const placeName = (kind: PortPlace['kind'], port: Port | null) => (kind === 'off
  * scene, it's the glue between the simulation and what's drawn.
  */
 export class Shore {
+  /** The hotbar slot in hand, and what's in it: kept by what it is (see `slot`). */
   private item = 0;
+  private holding: Held = TOOL_LIST[0];
   placing: { kind: Structure; rot: number } | null = null;
   private swing: number | null = null;
   /** Seconds left showing the captain bringing a gun up to fire. */
@@ -109,7 +111,29 @@ export class Shore {
 
   /** Takes up the item in hotbar slot `i` (clicked, or its number key). */
   select(i: number): void {
-    if (i >= 0 && i < this.items().length) this.item = i;
+    const items = this.items();
+    if (i < 0 || i >= items.length) return;
+    this.item = i;
+    this.holding = items[i];
+  }
+
+  /**
+   * The slot in hand: wherever what's held sits in the hotbar now (a gun bought ashore adds a
+   * slot before the seeds, moving them along), or the nearest slot there is if it's gone.
+   */
+  private slot(): number {
+    const items = this.items();
+    const at = items.indexOf(this.holding);
+    this.item = at >= 0 ? at : Math.min(this.item, items.length - 1);
+    this.holding = items[this.item];
+    return this.item;
+  }
+
+  /** Brought down: whatever was being placed is put down, and digging stops. */
+  broughtDown(): void {
+    this.placing = null;
+    this.digging = null;
+    this.swing = null;
   }
 
   /** Something was picked up: it's added to the running tally in the hint. */
@@ -122,7 +146,7 @@ export class Shore {
   }
 
   get held(): Held {
-    return this.items()[this.item];
+    return this.items()[this.slot()];
   }
 
   /** Placing a building from the build menu. */
@@ -157,7 +181,7 @@ export class Shore {
     const step = controls.take('itemNext') - controls.take('itemPrev');
     if (step !== 0) {
       if (this.placing) this.placing.rot = (this.placing.rot + step + 4) % 4;
-      else this.item = (this.item + step + items) % items;
+      else this.select((this.slot() + step + items) % items);
     }
 
     if (controls.take('build') > 0) {
@@ -356,6 +380,7 @@ export class Shore {
     }
 
     const pack = this.land.pack;
+    const inHand = this.slot();
     this.hud.update({
       slots: this.items().map((held, i) => ({
         key: i === 9 ? '0' : `${i + 1}`,
@@ -363,7 +388,7 @@ export class Shore {
         label: isTool(held) ? TOOL_LABELS[held] : isGun(held) ? GUNS[held].label : GOOD_INFO[held].label,
         count: isTool(held) ? undefined : this.land.available(isGun(held) ? 'cartridges' : held),
         reload: isGun(held) ? this.land.reloadLeft(held) : undefined,
-        active: i === this.item,
+        active: i === inHand,
       })),
       packUsed: packLoad(pack),
       packSize: PACK_SIZE,

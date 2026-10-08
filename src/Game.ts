@@ -1008,6 +1008,7 @@ export class Game {
       }
       if (e.kind === 'notice') this.hud.toast(e.text, e.tone);
       if (e.kind === 'downed') {
+        this.shore.broughtDown();
         this.toSea('');
         this.comeTo({ kind: 'bandits', toll: e.toll, pack: e.pack });
       }
