@@ -42,6 +42,8 @@ const CORE = 2;
 /** The ground within the core may rise or fall this many voxels, not more. */
 const TOLERANCE = 2;
 const TRIES = 80;
+/** A felled tree's connected blocks (trunk and canopy) won't grow past this many, however it's tangled with its neighbours. */
+const FELL_LIMIT = 300;
 
 /**
  * Places bandit camps on about a third of the wild islets (never a port's island, never a
@@ -53,10 +55,13 @@ const TRIES = 80;
  */
 export function placeBanditCamps(world: VoxelWorld, islands: readonly IslandPlan[], seed: number, tierOf: (x: number, z: number) => 0 | 1 | 2, avoid: (x: number, z: number) => boolean): BanditCamp[] {
   const wild = islands.map((plan, index) => ({ plan, index })).filter(({ plan }) => !plan.port && !plan.cursed);
-  const held = [...wild].sort((a, b) => hash2(a.plan.seed, 23, seed) - hash2(b.plan.seed, 23, seed)).slice(0, Math.round(wild.length * SHARE));
-  held.sort((a, b) => a.index - b.index);
+  const rank = [...wild].sort((a, b) => hash2(a.plan.seed, 23, seed) - hash2(b.plan.seed, 23, seed));
+  const wanted = Math.round(wild.length * SHARE);
   const camps: BanditCamp[] = [];
-  for (const { plan, index } of held) {
+  // Still hash2-ranked and deterministic: an islet with no clearing (town, outcrops, or
+  // just no level ground to be had) is skipped for the next in rank, not left short.
+  for (const { plan, index } of rank) {
+    if (camps.length >= wanted) break;
     const random = mulberry32((seed ^ 0xba4d ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0);
     for (let attempt = 0; attempt < TRIES; attempt++) {
       const angle = random() * Math.PI * 2;
@@ -71,6 +76,7 @@ export function placeBanditCamps(world: VoxelWorld, islands: readonly IslandPlan
       break;
     }
   }
+  camps.sort((a, b) => a.id - b.id);
   return camps;
 }
 
@@ -99,7 +105,11 @@ function raiseCamp(world: VoxelWorld, x: number, z: number): { x: number; y: num
     for (let dz = -1; dz <= 1; dz++) world.setVoxel(x + dx, at(x + dx, z + dz), z + dz, dx === 0 && dz === 0 ? Block.Embers : (dx + dz) % 2 === 0 ? Block.Stone : Block.Air);
   }
   // The lean-to: two posts at its open front, its roof sloping down to the ground behind.
+  // Its whole footprint is levelled to one height first, so a post never hangs over a dip
+  // nor a back plank sits buried in a rise: the ground it's checked against is only the
+  // core round the fire, not this far out.
   const base = at(x - 2, z + 3);
+  levelFootprint(world, x, z, base);
   for (const px of [x - 3, x - 1]) for (let py = base; py < base + 2; py++) world.setVoxel(px, py, z + 2, Block.Wood);
   for (let px = x - 3; px <= x - 1; px++) {
     world.setVoxel(px, base + 2, z + 2, Block.Planks);
@@ -113,14 +123,57 @@ function raiseCamp(world: VoxelWorld, x: number, z: number): { x: number; y: num
   return chest;
 }
 
-/** Fells whatever stands over the camp's plot (and a little round it), so none of it rises through the new roof. */
+/** Forces the lean-to's footprint level with `base`: fills what's low with stone, clears what's high. */
+function levelFootprint(world: VoxelWorld, x: number, z: number, base: number): void {
+  for (let dx = -3; dx <= -1; dx++) {
+    for (let dz = 2; dz <= 4; dz++) {
+      const cx = x + dx;
+      const cz = z + dz;
+      const ground = groundHeight(world, cx, cz);
+      if (ground < base) for (let y = ground; y < base; y++) world.setVoxel(cx, y, cz, Block.Stone);
+      else for (let y = base; y < ground; y++) world.setVoxel(cx, y, cz, Block.Air);
+    }
+  }
+}
+
+/**
+ * Fells whatever stands over the camp's plot (and a little round it), so none of it rises
+ * through the new roof: the whole of each tree found there, trunk and canopy together
+ * (touching at a face, an edge or a corner, as a leaning palm's fronds droop), not just
+ * the part that happened to stand in the window — so no canopy is left hanging where its
+ * trunk was cut. Run before anything is built, so it never fells the camp's own posts.
+ */
 function clearTrees(world: VoxelWorld, x: number, z: number): void {
   for (let dx = -4; dx <= 3; dx++) {
     for (let dz = -2; dz <= 6; dz++) {
       const cx = x + dx;
       const cz = z + dz;
       const top = groundHeight(world, cx, cz);
-      for (let y = top; y < top + 14; y++) if (TREE_BLOCKS.has(world.getVoxel(cx, y, cz))) world.setVoxel(cx, y, cz, Block.Air);
+      for (let y = top; y < top + 14; y++) if (TREE_BLOCKS.has(world.getVoxel(cx, y, cz))) fellWholeTree(world, cx, y, cz);
+    }
+  }
+}
+
+/** Clears every tree block connected to (x, y, z), flooding out through face, edge and corner neighbours. */
+function fellWholeTree(world: VoxelWorld, x: number, y: number, z: number): void {
+  const stack: Array<[number, number, number]> = [[x, y, z]];
+  world.setVoxel(x, y, z, Block.Air);
+  let cleared = 1;
+  while (stack.length > 0 && cleared < FELL_LIMIT) {
+    const [cx, cy, cz] = stack.pop()!;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (dx === 0 && dy === 0 && dz === 0) continue;
+          const nx = cx + dx;
+          const ny = cy + dy;
+          const nz = cz + dz;
+          if (!TREE_BLOCKS.has(world.getVoxel(nx, ny, nz))) continue;
+          world.setVoxel(nx, ny, nz, Block.Air);
+          cleared++;
+          stack.push([nx, ny, nz]);
+        }
+      }
     }
   }
 }
