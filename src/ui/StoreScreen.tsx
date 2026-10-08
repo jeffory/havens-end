@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from 'react';
-import { PACK_SIZE } from '../economy/captain';
+import { PACK_SIZE, packLoad } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, GOODS } from '../economy/goods';
 import { Land, SUPPLY_RANGE } from '../land/Land';
 import { type Building, STORE_SIZE } from '../land/structures';
@@ -25,8 +25,10 @@ export function StoreScreen({ land, building, close, nav }: { land: Land; buildi
 
   const store: Container = { label: 'Storehouse', cargo: building.store!, size: STORE_SIZE };
   const other: Container = side === 'pack' ? { label: 'Your pack', cargo: land.pack, size: PACK_SIZE } : { label: 'Ship’s hold', cargo: ship.cargo, size: ship.cls.type.hold };
+  // The pouch's cartridges ride beside the pack, and take none of its room.
+  const used = (c: Container) => (c.cargo === land.pack ? packLoad(c.cargo) : cargoCount(c.cargo));
   const move = (from: Container, to: Container, good: (typeof GOODS)[number], n: number) => {
-    Land.transfer(from.cargo, to.cargo, good, n, to.size - cargoCount(to.cargo));
+    Land.transfer(from.cargo, to.cargo, good, n, to.cargo === land.pack ? land.roomFor(good) : to.size - used(to));
     redraw();
   };
   const goods = GOODS.filter((g) => (store.cargo[g] ?? 0) + (other.cargo[g] ?? 0) > 0);
@@ -37,7 +39,7 @@ export function StoreScreen({ land, building, close, nav }: { land: Land; buildi
         <div>
           <h2>Storehouse</h2>
           <span className="port-kind">
-            {store.label} {cargoCount(store.cargo)}/{store.size} · {other.label} {cargoCount(other.cargo)}/{other.size}
+            {store.label} {used(store)}/{store.size} · {other.label} {used(other)}/{other.size}
           </span>
         </div>
         <button type="button" onClick={close}>

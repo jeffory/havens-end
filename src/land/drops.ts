@@ -99,7 +99,7 @@ export function stepDrops(land: Land, dt: number): void {
       const dy = w.y + 0.9 - (d.y + 0.2);
       const dz = w.z - d.z;
       const distance = Math.hypot(dx, dy, dz);
-      if (distance < MAGNET && land.packRoom() > 0) {
+      if (distance < MAGNET && land.roomFor(d.good) > 0) {
         if (distance < PICKUP) {
           const taken = land.pocket(d.good, d.amount);
           land.emit({ kind: 'pickup', good: d.good, amount: taken });

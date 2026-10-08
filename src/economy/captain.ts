@@ -2,7 +2,7 @@ import type { Gun } from '../land/firearms';
 import type { RelicId } from '../treasure/relics';
 import type { TreasureMap } from '../treasure/Treasure';
 import type { Contract } from './contracts';
-import type { Cargo } from './goods';
+import { type Cargo, cargoCount } from './goods';
 import type { Logbook } from './logbook';
 import type { Port } from './ports';
 import { type Standing, startingStanding } from './reputation';
@@ -34,6 +34,8 @@ export interface Captain {
 export const STARTING_GOLD = 200;
 /** How much the captain can carry ashore. */
 export const PACK_SIZE = 40;
+/** How much of the pack's room its goods take: all but cartridges, which go in the pouch beside it. */
+export const packLoad = (pack: Cargo): number => cargoCount(pack) - (pack.cartridges ?? 0);
 /** Settlers a ship will carry, over and above her crew. */
 export const PASSENGER_BERTHS = 8;
 

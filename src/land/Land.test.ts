@@ -609,6 +609,19 @@ describe('guns', () => {
     expect(sea.player.cargo.cartridges).toBe(30 - POUCH);
   });
 
+  it('carries the pouch beside the pack: its cartridges take none of the pack’s room', () => {
+    const { land } = armed();
+    expect(land.pack.cartridges).toBe(POUCH);
+    expect(land.packRoom()).toBe(PACK_SIZE);
+    // A whole pack's worth of timber goes in, and cartridges picked up besides, even into a full pack.
+    land.drop('timber', 3.5, SEA_LEVEL + 2, 0.5, PACK_SIZE);
+    land.drop('cartridges', -3.5, SEA_LEVEL + 2, 0.5, 6);
+    gather(land);
+    expect(land.pack.timber).toBe(PACK_SIZE);
+    expect(land.pack.cartridges).toBe(POUCH + 6);
+    expect(land.packRoom()).toBe(0);
+  });
+
   it('takes no pouch ashore in port: the hold’s cartridges stay there for the market', () => {
     const { land, sea } = setup();
     sea.captain.guns.push('pistol');

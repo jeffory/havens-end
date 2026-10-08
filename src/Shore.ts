@@ -2,8 +2,8 @@ import { type Camera, Raycaster, Vector2, Vector3 } from 'three';
 import { partOfDay } from './core/clock';
 import type { Controls } from './core/Controls';
 import type { Input } from './core/Input';
-import { PACK_SIZE } from './economy/captain';
-import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
+import { PACK_SIZE, packLoad } from './economy/captain';
+import { GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
 import { GUN_LIST, GUNS, isGun, type Point3 } from './land/firearms';
 import { HEALTH_MAX, type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
@@ -365,7 +365,7 @@ export class Shore {
         reload: isGun(held) ? this.land.reloadLeft(held) : undefined,
         active: i === this.item,
       })),
-      packUsed: cargoCount(pack),
+      packUsed: packLoad(pack),
       packSize: PACK_SIZE,
       packSummary: (Object.entries(pack) as Array<[Good, number]>).map(([g, n]) => `${n} ${GOOD_INFO[g].label.toLowerCase()}`).join(', '),
       prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase, this.land.sea.docked),

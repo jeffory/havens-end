@@ -3,7 +3,7 @@ import { distanceToBody } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
 import { isNight } from '../core/clock';
 import type { Dress } from '../duel/dress';
-import { PACK_SIZE, PASSENGER_BERTHS } from '../economy/captain';
+import { PACK_SIZE, packLoad, PASSENGER_BERTHS } from '../economy/captain';
 import { type Cargo, cargoCount, GOOD_INFO, type Good, loadCargo, unload } from '../economy/goods';
 import type { Port, PortPlace } from '../economy/ports';
 import { Block, blocksWalker, shapeOf } from '../voxel/blocks';
@@ -634,7 +634,7 @@ export class Land {
   private fillPouch(): void {
     if (this.sea.captain.guns.length === 0) return;
     const want = POUCH - (this.pack.cartridges ?? 0);
-    if (want > 0) Land.transfer(this.sea.player.cargo, this.pack, 'cartridges', want, this.packRoom());
+    if (want > 0) Land.transfer(this.sea.player.cargo, this.pack, 'cartridges', want, this.roomFor('cartridges'));
   }
 
   /**
@@ -916,7 +916,7 @@ export class Land {
 
   /** Puts what's picked up in the pack, as much as there's room for; returns how much went in. */
   pocket(good: Good, amount: number): number {
-    const n = Math.min(amount, this.packRoom());
+    const n = Math.min(amount, this.roomFor(good));
     this.stow(good, n);
     return n;
   }
@@ -1228,7 +1228,7 @@ export class Land {
     raze(this.world, b);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     for (const [good, n] of Object.entries(spec.cost) as Array<[Good, number]>) {
-      this.stow(good, Math.min(this.packRoom(), spec.freeform ? n : Math.floor(n / 2)));
+      this.stow(good, Math.min(this.roomFor(good), spec.freeform ? n : Math.floor(n / 2)));
     }
     this.events.push({ kind: 'razed', structure: b.kind, x: b.x0, y: b.y, z: b.z0 });
     return done(spec.freeform ? '' : `${spec.label} taken down.`);
@@ -1242,8 +1242,14 @@ export class Land {
 
   // ---- Materials: the pack, storehouses nearby, and the ship at anchor ----
 
+  /** Room left in the pack (the pouch's cartridges take none of it). */
   packRoom(): number {
-    return PACK_SIZE - cargoCount(this.pack);
+    return PACK_SIZE - packLoad(this.pack);
+  }
+
+  /** Room for `good` in what the captain carries: cartridges go in the pouch, with no limit. */
+  roomFor(good: Good): number {
+    return good === 'cartridges' ? Infinity : this.packRoom();
   }
 
   private stow(good: Good, amount: number): void {
