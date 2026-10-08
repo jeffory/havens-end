@@ -1,7 +1,7 @@
 import type { Held } from '../land/Land';
 
-/** What someone on foot can have in hand: the captain's tools and seed, the spade they dig for treasure with, and a settler's rod or hammer. */
-export type HeldModel = Held | 'spade' | 'rod' | 'hammer';
+/** What someone on foot can have in hand: the captain's tools, guns and seed, the spade they dig for treasure with, a settler's rod or hammer, and a bandit's musket levelled. */
+export type HeldModel = Held | 'spade' | 'rod' | 'hammer' | 'musketLevelled';
 
 /**
  * Voxel tools for the captain's hand, in character voxels, laid along −x from the
@@ -42,6 +42,21 @@ export function heldCells(held: HeldModel): { cells: Int32Array; palette: Uint8A
         put(-13, -4, 0, 3);
         break;
     }
+  } else if (held === 'pistol') {
+    // A pistol: the grip down from the hand, a short barrel out along −x.
+    for (let y = 0; y >= -3; y--) put(1, y, 0, 1);
+    put(2, -3, 0, 1);
+    for (let x = 1; x >= -3; x--) put(x, 1, 0, 1);
+    for (let x = 0; x >= -7; x--) put(x, 2, 0, x === -7 ? 3 : 2);
+    put(0, 3, 0, 3); // the lock
+  } else if (held === 'rifle' || held === 'musketLevelled') {
+    // A long gun at the shoulder: the stock back from the hand, the barrel out along −x.
+    for (let x = 6; x >= -4; x--) put(x, 0, 0, 1);
+    for (let y = -1; y >= -2; y--) put(6, y, 0, 1); // the butt
+    const muzzle = held === 'rifle' ? -18 : -16;
+    for (let x = -2; x >= muzzle; x--) put(x, 1, 0, x <= muzzle + 1 ? 3 : 2);
+    put(0, 2, 0, 3); // the lock
+    if (held === 'musketLevelled') for (let x = muzzle - 1; x >= muzzle - 4; x--) put(x, 1, 0, 3); // the bayonet
   } else {
     // A sack of seed.
     for (let x = -3; x <= 0; x++) for (let y = -4; y <= -1; y++) for (let z = -1; z <= 1; z++) put(x, y, z, 4);

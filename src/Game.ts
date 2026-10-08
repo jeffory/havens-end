@@ -32,6 +32,7 @@ import { OceanRenderer } from './render/OceanRenderer';
 import { RangeArcs } from './render/RangeArcs';
 import { ShotsView } from './render/ShotsView';
 import { Sun } from './render/Sun';
+import { Tracers } from './render/Tracers';
 import { WakePool } from './render/Wake';
 import { WindStreaks } from './render/WindStreaks';
 import { angleOffWind, pointOfSailName } from './sailing/pointOfSail';
@@ -174,6 +175,7 @@ export class Game {
   private readonly shots = new ShotsView();
   private readonly barrels = new BarrelsView();
   private readonly arcs = new RangeArcs();
+  private readonly tracers = new Tracers();
   private readonly landView: LandView;
   private readonly people = new PeopleView();
   private readonly drops = new DropsView();
@@ -313,6 +315,7 @@ export class Game {
       this.barrels.mesh,
       this.effects.mesh,
       this.streaks.mesh,
+      this.tracers.group,
       this.landView.group,
       this.people.group,
       this.drops.group,
@@ -648,6 +651,7 @@ export class Game {
     this.arcs.update(player);
     this.arcs.mesh.visible &&= !this.duel;
     this.effects.update(frameSeconds);
+    this.tracers.update(frameSeconds);
     this.handleLand(time);
 
     this.renderer.info.reset();
@@ -967,6 +971,14 @@ export class Game {
       if (e.kind === 'pickup') this.shore.picked(e.good, e.amount);
       if (e.kind === 'built' || e.kind === 'razed') this.effects.emit('dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 1);
       if (e.kind === 'made' && near(e.x, e.z)) this.effects.emit('smoke', e.x, e.y + 2, e.z, 0, 0);
+      if (e.kind === 'shot' && near(e.from.x, e.from.z)) {
+        const dx = e.to.x - e.from.x;
+        const dz = e.to.z - e.from.z;
+        const d = Math.hypot(dx, dz) || 1;
+        this.effects.emit('smoke', e.from.x + (dx / d) * 0.8, e.from.y, e.from.z + (dz / d) * 0.8, dx / d, dz / d, 0.35);
+        this.tracers.add(e.from, e.to);
+        this.effects.emit(e.hit ? 'wound' : 'dust', e.to.x, e.to.y, e.to.z, 0, 0, e.hit ? 0.6 : 0.35);
+      }
       if (e.kind === 'notice') this.hud.toast(e.text, e.tone);
     }
   }

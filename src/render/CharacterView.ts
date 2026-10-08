@@ -61,6 +61,8 @@ export interface Stride {
   lying?: boolean;
   /** Holding a rod out over the water. */
   fishing?: boolean;
+  /** A gun levelled at something. */
+  aiming?: boolean;
 }
 
 /** An animated voxel captain: a duelist with a cutlass, or on foot with a tool in hand. */
@@ -183,6 +185,12 @@ export class CharacterView {
     if (stride.fishing) {
       t.armR.set(-0.2, -0.15, 1).normalize();
       t.blade.set(0, 0.35, 1).normalize();
+    }
+    if (stride.aiming) {
+      // The gun levelled at the shoulder, straight out ahead.
+      t.armR.set(-0.05, 0.02, 1).normalize();
+      t.blade.set(0, 0.03, 1).normalize();
+      t.lean = 0.05;
     }
     if (stride.swing !== null) {
       // Up and back, then down and forward through the work.

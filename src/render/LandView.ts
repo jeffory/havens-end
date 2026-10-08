@@ -51,7 +51,7 @@ export class LandView {
   }
 
   /** Places and poses the captain (interpolated between sim steps). */
-  update(w: Walker, alpha: number, held: HeldModel, swing: number | null, dt: number, time: number): void {
+  update(w: Walker, alpha: number, held: HeldModel, swing: number | null, dt: number, time: number, aiming = false): void {
     const x = w.prev.x + (w.x - w.prev.x) * alpha;
     const y = w.prev.y + (w.y - w.prev.y) * alpha;
     const z = w.prev.z + (w.z - w.prev.z) * alpha;
@@ -63,7 +63,7 @@ export class LandView {
       this.held = held;
       this.captain.hold(heldCells(held));
     }
-    this.captain.walk({ speed: Math.hypot(w.vx, w.vz), swing }, dt, time);
+    this.captain.walk({ speed: Math.hypot(w.vx, w.vz), swing, aiming }, dt, time);
   }
 
   /** Sizes the ring at the captain's feet for the camera's distance, so it stays findable zoomed out. */

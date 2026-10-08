@@ -313,7 +313,7 @@ export class Shore {
   render(alpha: number, frameSeconds: number, time: number, camera: Camera): WorldLabel[] {
     const w = this.land.walker;
     if (!w) return [];
-    this.view.update(w, alpha, this.digging ? 'spade' : this.held, this.swing, frameSeconds, time);
+    this.view.update(w, alpha, this.digging ? 'spade' : this.held, this.swing, frameSeconds, time, this.aiming > 0);
     this.view.setCameraDistance(this.rig.distance);
     this.focus.copy(this.view.captain.root.position).setY(this.view.captain.root.position.y + 1.2);
     this.pick(camera);
