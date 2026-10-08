@@ -89,6 +89,10 @@ export class RoofLifter {
     this.structures = {
       getVoxel: (x, y, z) => {
         const id = world.getVoxel(x, y, z);
+        // A prop that keeps people out is seen by the blocker in its cells, as planks: part of
+        // the room it stands in, or a thing of its own in the open, lifted (and gone, by its
+        // anchor) when it's in the way.
+        if (id === Block.Blocker) return Block.Planks;
         return ((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) !== 0 ? id : Block.Air;
       },
     };

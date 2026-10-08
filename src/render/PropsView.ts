@@ -1,4 +1,4 @@
-import { Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshLambertMaterial } from 'three';
+import { type BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshLambertMaterial } from 'three';
 import { placementMatrix } from '../props/place';
 import type { PropKind, PropModel, PropPlacement } from '../props/types';
 import { LIFT_GLSL, type Lifts } from './lifts';
@@ -8,14 +8,20 @@ import { meshCells } from './voxelGeometry';
 const NEVER_LIFTED = -1e6;
 
 /**
- * The towns' props: one instanced mesh a kind, for every town at once (about ten draw
- * calls). They're lit like the terrain, their lantern glass glows after dark, and one hung
- * on a building goes with it when it's lifted away on foot.
+ * Props within this of a town's first share its meshes: one a kind a town, so a town that's
+ * off screen isn't drawn (ports lie hundreds apart; a town is about a hundred across).
+ */
+const TOWN_REACH = 150;
+
+/**
+ * The towns' props: one instanced mesh a kind a town (one mesh a kind a town, so a town off
+ * screen isn't drawn). They're lit like the terrain, their lantern glass glows after dark,
+ * and one hung on a building goes with it when it's lifted away on foot.
  */
 export class PropsView {
   readonly group = new Group();
-  /** Each kind's mesh (none for a kind no town uses). */
-  readonly meshes = new Map<PropKind, InstancedMesh>();
+  /** Each kind's meshes, one a town (none for a kind no town uses). */
+  readonly meshes = new Map<PropKind, InstancedMesh[]>();
   private readonly glow = { value: 0.2 };
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
 
@@ -35,12 +41,31 @@ export class PropsView {
     };
     this.material.customProgramCacheKey = () => 'havens-end-props';
 
-    const byKind = new Map<PropKind, PropPlacement[]>();
-    for (const p of placements) byKind.set(p.kind, [...(byKind.get(p.kind) ?? []), p]);
+    // Each town's props of a kind together: a town's first prop marks it, and the rest within reach join it.
+    const towns: Array<{ x: number; z: number }> = [];
+    const townOf = (p: PropPlacement): number => {
+      const i = towns.findIndex((t) => Math.hypot(t.x - p.x, t.z - p.z) < TOWN_REACH);
+      return i >= 0 ? i : towns.push({ x: p.x, z: p.z }) - 1;
+    };
+    const groups = new Map<string, PropPlacement[]>();
+    for (const p of placements) {
+      const key = `${p.kind}@${townOf(p)}`;
+      const list = groups.get(key);
+      if (list) list.push(p);
+      else groups.set(key, [p]);
+    }
+    const shapes = new Map<PropKind, BufferGeometry>();
     const matrix = new Matrix4();
-    for (const [kind, list] of byKind) {
+    for (const list of groups.values()) {
+      const kind = list[0].kind;
       const model = catalog[kind];
-      const geometry = meshCells(model.cells, model.palette);
+      let shape = shapes.get(kind);
+      if (!shape) {
+        shape = meshCells(model.cells, model.palette);
+        shapes.set(kind, shape);
+      }
+      // Its own copy, for its own instances' anchors.
+      const geometry = shape.clone();
       const anchors = new Float32Array(list.length * 3);
       list.forEach((p, i) => anchors.set(p.anchor ? [p.anchor.x + 0.5, p.anchor.y + 0.5, p.anchor.z + 0.5] : [0, NEVER_LIFTED, 0], i * 3));
       geometry.setAttribute('anchor', new InstancedBufferAttribute(anchors, 3));
@@ -50,7 +75,7 @@ export class PropsView {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.name = `props:${kind}`;
-      this.meshes.set(kind, mesh);
+      this.meshes.set(kind, [...(this.meshes.get(kind) ?? []), mesh]);
       this.group.add(mesh);
     }
   }

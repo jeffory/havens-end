@@ -1,6 +1,7 @@
 import type { ShipModel } from '../sailing/shipModel';
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
 import { paletteFromRgba } from '../voxel/palette';
+import { barrel, crate } from './furniture';
 import { clock, lantern, porchPost, porchRail, signboard, signpost, wallLantern } from './models';
 import type { Point, PropKind, PropModel } from './types';
 
@@ -47,5 +48,7 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     porchPost: porchPost(),
     porchRail: porchRail(),
     hullOnStocks: hullOnStocks(sloop),
+    barrel: barrel(),
+    crate: crate(),
   };
 }

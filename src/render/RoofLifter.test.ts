@@ -288,5 +288,14 @@ describe('RoofLifter', () => {
       }
       expect(inTheWay).toEqual([]);
     });
+
+    it('takes a prop that keeps people out away when it’s in the way: the lifter sees its blocker', () => {
+      const world = village();
+      // A stall's cells, as the town builder keeps people out of them (three high), between the captain and the house.
+      for (let y = BASE; y < BASE + 3; y++) world.setVoxel(3, y, -4, Block.Blocker);
+      const lifts = new RoofLifter(world).update({ x: 3.5, y: BASE + 1.2, z: -6.5 }, BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60);
+      // Its anchor is the cell its top is in: lifted, so the prop goes.
+      expect(lifted(lifts, 3, BASE + 2, -4)).toBe(true);
+    });
   });
 });
