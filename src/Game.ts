@@ -82,6 +82,7 @@ import { type ShipLabel, ShipLabels } from './ui/ShipLabels';
 import { parseVox } from './vox/parseVox';
 import { VoxelWorld } from './voxel/VoxelWorld';
 import { buildArchipelago, type IslandPlan, islandName, planArchipelago } from './worldgen/archipelago';
+import { placeBanditCamps } from './worldgen/bandits';
 import { placeDeposits } from './worldgen/deposits';
 
 const WORLD_SEED = 1717;
@@ -258,6 +259,10 @@ export class Game {
     // Outcrops keep off town land (and a little beyond, so none sits at a town's edge).
     const inTown = (x: number, z: number) => this.ports.some((p) => Math.hypot(p.x - x, p.z - z) < TOWN_RADIUS + 8);
     const deposits = placeDeposits(this.world, this.islands, WORLD_SEED, regionTier, inTown);
+    // Bandit camps on about a third of the wild islets, clear of the outcrops.
+    const nearOutcrop = (x: number, z: number) => deposits.some((d) => Math.abs(d.x + 1 - x) <= 3 && Math.abs(d.z + 1 - z) <= 3);
+    const camps = placeBanditCamps(this.world, this.islands, WORLD_SEED, regionTier, (x, z) => inTown(x, z) || nearOutcrop(x, z));
+    void camps; // Task 10 hands these to Land, which keeps the bandits' state
     // The towns' props, and the ship on the stocks keeping people out of the cells she fills.
     const decor = this.ports.flatMap((p) => p.decor ?? []);
     const catalog = propCatalog(models.get(SLOOP)!);
