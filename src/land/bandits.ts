@@ -239,7 +239,7 @@ export function stepBandits(land: Land, dt: number, random: () => number): void 
     bandits.liveCamp = camp.id;
     return;
   }
-  const r: Round = { land, camp, captain: { x: ashore.x, y: ashore.y + 1.2, z: ashore.z }, night: isNight(land.sea.clock.phase), claims: claimsOf(land), dt, random };
+  const r: Round = { land, camp, captain: { x: ashore.x, y: ashore.y + 1.2, z: ashore.z }, night: isNight(land.sea.clock.phase), claims: claimsOf(land, camp), dt, random };
   for (const b of [...bandits.live]) {
     if (!land.walker) return; // the last shot brought the captain down
     b.aiming = Math.max(0, b.aiming - dt);
@@ -291,8 +291,14 @@ interface Claims {
   ways: VoxelReader;
 }
 
-function claimsOf(land: Land): Claims {
-  const fires = land.buildings.filter((b) => b.kind === 'campfire').map(fireCentre);
+function claimsOf(land: Land, camp: BanditCamp): Claims {
+  // Only the fires whose claims (and the berth round them) can reach the camp's islet: there
+  // are usually none, and then their ways are searched over the plain world, as fast as it goes.
+  const reach = camp.islandRadius + ISLET_MARGIN + CLAIM_RADIUS + CLAIM_BERTH;
+  const fires = land.buildings
+    .filter((b) => b.kind === 'campfire')
+    .map(fireCentre)
+    .filter((f) => Math.hypot(f.x - camp.islandX, f.z - camp.islandZ) <= reach);
   const at = (x: number, z: number, berth = 0) => {
     let nearest: { x: number; z: number } | undefined;
     let best = CLAIM_RADIUS + berth;
@@ -340,9 +346,13 @@ function muster(land: Land, camp: BanditCamp, random: () => number): Bandit[] {
 
 const eyeOf = (b: Bandit): Point3 => ({ x: b.walker.x, y: b.walker.y + 1.5, z: b.walker.z });
 
-/** A way there, if it isn't on the captain's claimed ground and there is one. */
+/**
+ * A way there, if it isn't out in the sea or on the captain's claimed ground, and there is
+ * one. (A search for a way into the sea finds none, and is the slowest search there is.)
+ */
 function wayTo(r: Round, b: Bandit, to: { x: number; z: number }, near: number): PathPoint[] | null {
-  return r.claims.holds(to.x, to.z, CLAIM_BERTH) ? null : findPath(r.claims.ways, b.walker, to, near, PATH_NODES);
+  if (wet(r.land.world, to.x, to.z, b.walker.y) || r.claims.holds(to.x, to.z, CLAIM_BERTH)) return null;
+  return findPath(r.claims.ways, b.walker, to, near, PATH_NODES);
 }
 
 function ease(r: Round, b: Bandit): void {
