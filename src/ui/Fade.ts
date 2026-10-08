@@ -45,9 +45,13 @@ export class Fade {
       this.phase = 'dark';
       work();
       let timer = 0;
+      // A key held down as the card came up (walking, say) doesn't skip it: only a fresh press does.
+      const key = (e: KeyboardEvent) => {
+        if (!e.repeat) out();
+      };
       const out = () => {
         window.clearTimeout(timer);
-        window.removeEventListener('keydown', out);
+        window.removeEventListener('keydown', key);
         window.removeEventListener('pointerdown', out);
         this.phase = 'out';
         this.el.classList.remove('shown');
@@ -58,7 +62,7 @@ export class Fade {
       };
       if (hold <= 0) return out();
       timer = window.setTimeout(out, hold * 1000);
-      window.addEventListener('keydown', out);
+      window.addEventListener('keydown', key);
       window.addEventListener('pointerdown', out);
     }, FADE_MS + 100);
   }
