@@ -101,9 +101,10 @@ describe('bandit camps', () => {
 
   it('sits every post, back plank, bedroll, chest and keg on solid ground, none of it buried', () => {
     // Everything the lean-to's footprint can legitimately hold, base to base + 2: the
-    // structure itself, or bare air (its open front, and the gaps either side of the
-    // bedroll) — never a scrap of the ground it was levelled against left standing.
-    const allowed = new Set<BlockId>([Block.Air, Block.Wood, Block.Planks, Block.Canvas]);
+    // structure itself (all planks, posts too, and the bedroll), or bare air (its open
+    // front, and the gaps either side of the bedroll) — never a scrap of the ground it was
+    // levelled against left standing, nor wood an axe would take for a tree.
+    const allowed = new Set<BlockId>([Block.Air, Block.Planks, Block.Canvas]);
     for (const seed of [1717, 2, 3, 5, 16, 21, 28, 30]) {
       const world = new VoxelWorld();
       const islands = planArchipelago(seed);
@@ -112,15 +113,17 @@ describe('bandit camps', () => {
         // The lean-to's shared floor: read back off the post that's always placed on it.
         let base = -1;
         for (let y = SEA_LEVEL - 8; y < SEA_LEVEL + 80; y++) {
-          if (world.getVoxel(c.x - 3, y, c.z + 2) === Block.Wood) {
+          if (world.getVoxel(c.x - 3, y, c.z + 2) === Block.Planks) {
             base = y;
             break;
           }
         }
         expect(base).toBeGreaterThan(-1);
         const pieces: ReadonlyArray<readonly [number, number, number, number]> = [
-          [c.x - 3, base, c.z + 2, Block.Wood], // post, open side
-          [c.x - 1, base, c.z + 2, Block.Wood], // post, open side
+          [c.x - 3, base, c.z + 2, Block.Planks], // post, open side: planks, which an axe doesn't fell as a tree
+          [c.x - 1, base, c.z + 2, Block.Planks], // post, open side
+          [c.x - 3, base + 1, c.z + 2, Block.Planks],
+          [c.x - 1, base + 1, c.z + 2, Block.Planks],
           [c.x - 3, base, c.z + 4, Block.Planks], // back plank
           [c.x - 2, base, c.z + 4, Block.Planks], // back plank
           [c.x - 1, base, c.z + 4, Block.Planks], // back plank

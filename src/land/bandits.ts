@@ -3,14 +3,14 @@ import { isNight } from '../core/clock';
 import { type Dress, townDress } from '../duel/dress';
 import type { Cargo } from '../economy/goods';
 import { hash2 } from '../util/hash';
-import { Block } from '../voxel/blocks';
+import { Block, type BlockId } from '../voxel/blocks';
 import type { VoxelReader } from '../voxel/raycast';
 import type { BanditCamp } from '../worldgen/bandits';
 import { CLAIM_RADIUS, fireCentre } from './camps';
 import { clearLine, hitChance, MUSKET, type Point3, resolveShot } from './firearms';
 import type { Land } from './Land';
 import { findPath, type PathPoint } from './paths';
-import { createWalker, groundBelow, STEP_UP, standable, stepWalker, WALK_SPEED, type Walker } from './walker';
+import { createWalker, groundBelow, HALF_WIDTH, STEP_UP, standable, stepWalker, WALK_SPEED, type Walker } from './walker';
 
 /** No campfire within this of a manned camp; a claim within this keeps a cleared camp empty for good. */
 export const HOLD_RADIUS = 60;
@@ -59,6 +59,10 @@ const MISS_WIDE = 0.8;
 const CLAIM_BERTH = 1.5;
 /** …and running, look this far ahead for it, and for the water. */
 const LOOK_AHEAD = 1.5;
+/** What a camp is built of, over its ground: mustering, a bandit stands beside these, never up on them. */
+const CAMP_MADE: ReadonlySet<BlockId> = new Set([Block.Planks, Block.Canvas, Block.Chest, Block.Barrel]);
+/** Mustering, a bandit tries this many ways round the fire, a step at a time, for a place on the ground. */
+const MUSTER_TRIES = 12;
 
 /** How a camp stands. */
 export interface CampState {
@@ -319,16 +323,14 @@ function muster(land: Land, camp: BanditCamp, random: () => number): Bandit[] {
   const out: Bandit[] = [];
   const n = land.bandits.state(camp.id).left;
   for (let i = 0; i < n; i++) {
-    const angle = (i / n) * Math.PI * 2 + random();
-    const x = camp.x + 0.5 + Math.sin(angle) * 3;
-    const z = camp.z + 0.5 + Math.cos(angle) * 3;
+    const spot = musterSpot(land.world, camp, (i / n) * Math.PI * 2 + random());
     const look = Math.floor(hash2(camp.id, i, 0xba4d) * 1e6);
     out.push({
       id: land.bandits.nextBandit++,
       camp: camp.id,
       look,
       dress: { ...townDress('pirate', look), ragged: true },
-      walker: createWalker(x, standable(land.world, x, z, camp.y + 4) ?? camp.y, z, angle + Math.PI),
+      walker: createWalker(spot.x, spot.y, spot.z, spot.angle + Math.PI),
       hp: BANDIT_HP,
       mode: 'ease',
       loading: 0,
@@ -342,6 +344,29 @@ function muster(land: Land, camp: BanditCamp, random: () => number): Bandit[] {
     });
   }
   return out;
+}
+
+/**
+ * Where a bandit musters, 3 off the middle of the fire about `angle` round it: on the ground,
+ * not up on the lean-to, the chest or the keg (which stand on the ground at the fire's height
+ * too), turning on round the fire till that's so. At the fire's height there if nowhere is.
+ */
+function musterSpot(world: VoxelReader, camp: BanditCamp, angle: number): { x: number; y: number; z: number; angle: number } {
+  for (let i = 0; i < MUSTER_TRIES; i++) {
+    const a = angle + (i * Math.PI * 2) / MUSTER_TRIES;
+    const x = camp.x + 0.5 + Math.sin(a) * 3;
+    const z = camp.z + 0.5 + Math.cos(a) * 3;
+    const y = standable(world, x, z, camp.y + STEP_UP);
+    if (y !== null && !onCampMade(world, x, y, z)) return { x, y, z, angle: a };
+  }
+  return { x: camp.x + 0.5 + Math.sin(angle) * 3, y: camp.y, z: camp.z + 0.5 + Math.cos(angle) * 3, angle };
+}
+
+/** Is someone with their feet at (x, y, z) standing on anything of a camp's making, under any corner of their feet? */
+function onCampMade(world: VoxelReader, x: number, y: number, z: number): boolean {
+  const r = HALF_WIDTH - 0.01;
+  for (const dx of [-r, r]) for (const dz of [-r, r]) if (CAMP_MADE.has(world.getVoxel(Math.floor(x + dx), Math.floor(y - 0.01), Math.floor(z + dz)))) return true;
+  return false;
 }
 
 const eyeOf = (b: Bandit): Point3 => ({ x: b.walker.x, y: b.walker.y + 1.5, z: b.walker.z });

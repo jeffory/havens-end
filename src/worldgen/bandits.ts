@@ -110,7 +110,8 @@ function raiseCamp(world: VoxelWorld, x: number, z: number): { x: number; y: num
   // core round the fire, not this far out.
   const base = at(x - 2, z + 3);
   levelFootprint(world, x, z, base);
-  for (const px of [x - 3, x - 1]) for (let py = base; py < base + 2; py++) world.setVoxel(px, py, z + 2, Block.Wood);
+  // Posts of planks, not wood: an axe would fell a wooden post as a tree, and leave the roof hanging.
+  for (const px of [x - 3, x - 1]) for (let py = base; py < base + 2; py++) world.setVoxel(px, py, z + 2, Block.Planks);
   for (let px = x - 3; px <= x - 1; px++) {
     world.setVoxel(px, base + 2, z + 2, Block.Planks);
     world.setVoxel(px, base + 1, z + 3, Block.Planks);

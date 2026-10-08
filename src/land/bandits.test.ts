@@ -8,12 +8,13 @@ import { WATER_LEVEL } from '../ocean/waves';
 import { footprintSamples } from '../sailing/hull';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP } from '../sailing/ships';
 import { Weather } from '../sailing/weather';
-import { Block } from '../voxel/blocks';
+import { Block, type BlockId } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
-import type { BanditCamp } from '../worldgen/bandits';
-import { Bandits, CAMP_BACK_DAYS, HOLD_RADIUS } from './bandits';
+import type { IslandPlan } from '../worldgen/archipelago';
+import { type BanditCamp, placeBanditCamps } from '../worldgen/bandits';
+import { Bandits, CAMP_BACK_DAYS, HOLD_RADIUS, stepBandits } from './bandits';
 import { HEALTH_MAX, Land, type LandEvent } from './Land';
-import { WALK_SPEED } from './walker';
+import { createWalker, HALF_WIDTH, WALK_SPEED } from './walker';
 
 const CLASSES = new Map(
   [SLOOP, BRIG, MERCHANT_SLOOP, MERCHANT_BRIG].map((type) => {
@@ -176,6 +177,44 @@ describe('bandits', () => {
     run(land, 1);
     expect(land.bandits.live).toHaveLength(3);
     for (const b of land.bandits.live) expect(b.mode).toBe('ease');
+  });
+
+  it('muster on the ground round a camp as it’s really built, never up on its lean-to, chest or keg', () => {
+    // Two flat wild islets, so one of them is held, and its camp built as the world builds it.
+    const world = new VoxelWorld();
+    const plans: IslandPlan[] = [0, 1].map((i) => ({ seed: 100 + i, centerX: i * 200, centerZ: 0, radius: 24, peak: 4, port: null }));
+    for (const p of plans) {
+      for (let x = p.centerX - 24; x <= p.centerX + 24; x++) {
+        for (let z = -24; z <= 24; z++) if (Math.hypot(x - p.centerX, z) <= 24) for (let y = 0; y <= SEA_LEVEL + 3; y++) world.setVoxel(x, y, z, y === SEA_LEVEL + 3 ? Block.Grass : Block.Dirt);
+      }
+    }
+    const [built] = placeBanditCamps(world, plans, 1717, () => 1, () => false);
+    // Seven of them, so that between them they stand all the way round the fire.
+    const camp = { ...built, size: 7 };
+    const sea = new Sea(world, new Weather({ cells: [] }), CLASSES, SLOOP, [FAR_PORT], 1, false);
+    const land = new Land(world, sea);
+    land.walker = createWalker(camp.islandX + 0.5, SEA_LEVEL + 4, camp.islandZ + 0.5);
+    const made = new Set<BlockId>([Block.Planks, Block.Canvas, Block.Chest, Block.Barrel]);
+    /** What a bandit stands on, under each corner of their feet: something of the camp's making, if any is. */
+    const standsOn = (x: number, y: number, z: number) => {
+      const under = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => world.getVoxel(Math.floor(x + sx * (HALF_WIDTH - 0.01)), Math.floor(y - 0.01), Math.floor(z + sz * (HALF_WIDTH - 0.01)))));
+      return under.find((id) => made.has(id)) ?? null;
+    };
+    let mustered = 0;
+    for (let k = 0; k < 60; k++) {
+      land.bandits = new Bandits([camp]);
+      const turn = () => k / 60; // how far round the fire they start, a different way each time
+      stepBandits(land, 1 / 20, turn);
+      for (let step = 0; step < 2; step++) {
+        for (const b of land.bandits.live) {
+          const w = b.walker;
+          expect(standsOn(w.x, w.y, w.z), `a bandit at ${w.x.toFixed(2)}, ${w.y}, ${w.z.toFixed(2)} (fire at ${camp.x}, ${camp.y}, ${camp.z})`).toBeNull();
+          mustered++;
+        }
+        stepBandits(land, 1 / 20, turn);
+      }
+    }
+    expect(mustered).toBe(60 * 7 * 2);
   });
 
   it('see the captain within about 18 blocks by day, and the whole camp is alerted', () => {
