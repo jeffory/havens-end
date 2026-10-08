@@ -607,7 +607,7 @@ export class Land {
     const toll = Math.round(captain.gold * DOWNED_TOLL);
     captain.gold -= toll;
     const goods = Object.entries(this.pack) as Array<[Good, number]>;
-    for (const [good, n] of goods) this.drop(good, w.x, w.y + 0.5, w.z, n, this.sea.clock.length);
+    for (const [good, n] of goods) this.drop(good, w.x, w.y + 0.5, w.z, n, Math.max(DROP_SECONDS, this.sea.clock.length));
     for (const [good] of goods) delete this.pack[good];
     this.goAboard();
     this.events.push({ kind: 'downed', toll, pack: goods.length > 0 });

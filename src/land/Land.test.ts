@@ -741,4 +741,16 @@ describe('the captain’s health', () => {
     land.restore(saved);
     expect(land.drops.find((d) => d.good === 'stone')!.life).toBe(sea.clock.length);
   });
+
+  it('even on a short day, the pack still outlasts an ordinary drop lying beside it', () => {
+    const { land, sea } = setup();
+    sea.clock.length = 360; // a six-minute day: shorter than DROP_SECONDS
+    land.goAshore();
+    land.pack.stone = 5;
+    land.hurt(HEALTH_MAX);
+    land.drop('timber', 0.5, SEA_LEVEL + 2, 0.5);
+    for (let t = 0; t < DROP_SECONDS - 5; t += 1) land.step(1);
+    expect(land.drops.some((d) => d.good === 'timber')).toBe(true);
+    expect(land.drops.some((d) => d.good === 'stone')).toBe(true);
+  });
 });
