@@ -35,8 +35,8 @@ const HALF = 4;
 /**
  * Level, dry ground is only demanded this close to the fire, not over the whole footprint:
  * a wild islet is rarely bare for a stretch wide enough to hold a whole camp under its
- * canopy, so the lean-to's corners settle for whatever the ground there gives them, and
- * any tree in the way is felled as the camp goes up rather than ruled out beforehand.
+ * canopy. The lean-to's own footprint is levelled as it's built instead (`levelFootprint`),
+ * and any tree in the way is felled as the camp goes up rather than ruled out beforehand.
  */
 const CORE = 2;
 /** The ground within the core may rise or fall this many voxels, not more. */

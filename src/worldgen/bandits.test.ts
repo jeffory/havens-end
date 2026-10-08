@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
-import { Block } from '../voxel/blocks';
+import { Block, type BlockId } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildArchipelago, planArchipelago, type IslandPlan } from './archipelago';
 import { placeBanditCamps } from './bandits';
@@ -100,6 +100,10 @@ describe('bandit camps', () => {
   }, 20_000);
 
   it('sits every post, back plank, bedroll, chest and keg on solid ground, none of it buried', () => {
+    // Everything the lean-to's footprint can legitimately hold, base to base + 2: the
+    // structure itself, or bare air (its open front, and the gaps either side of the
+    // bedroll) — never a scrap of the ground it was levelled against left standing.
+    const allowed = new Set<BlockId>([Block.Air, Block.Wood, Block.Planks, Block.Canvas]);
     for (const seed of [1717, 2, 3, 5, 16, 21, 28, 30]) {
       const world = new VoxelWorld();
       const islands = planArchipelago(seed);
@@ -127,6 +131,19 @@ describe('bandit camps', () => {
           expect(world.getVoxel(px, py, pz)).toBe(expected); // the piece itself, not buried under terrain
           expect(world.getVoxel(px, py - 1, pz)).not.toBe(Block.Air); // solid ground directly under it
         }
+        // Nothing of the natural ground is left standing inside the lean-to's own footprint.
+        for (let dx = -3; dx <= -1; dx++) {
+          for (let dz = 2; dz <= 4; dz++) {
+            for (let dy = 0; dy <= 2; dy++) {
+              expect(allowed.has(world.getVoxel(c.x + dx, base + dy, c.z + dz))).toBe(true);
+            }
+          }
+        }
+        // Its open front, and the gaps either side of the bedroll, are bare, not buried.
+        expect(world.getVoxel(c.x - 2, base, c.z + 2)).toBe(Block.Air);
+        expect(world.getVoxel(c.x - 2, base + 1, c.z + 2)).toBe(Block.Air);
+        expect(world.getVoxel(c.x - 3, base, c.z + 3)).toBe(Block.Air);
+        expect(world.getVoxel(c.x - 1, base, c.z + 3)).toBe(Block.Air);
         let kegY = -1;
         for (let y = SEA_LEVEL - 8; y < SEA_LEVEL + 80; y++) {
           if (world.getVoxel(c.x + 2, y, c.z + 3) === Block.Barrel) {
@@ -155,21 +172,23 @@ describe('bandit camps', () => {
     expect(first).toBeTruthy();
 
     const { world, islands } = bigIslets();
-    // A tree's trunk and canopy, as a straight chain of blocks straddling the edge of the
-    // window a camp clears (checked dx ∈ [-4, 3], dz ∈ [-2, 6]): one cell inside it, two
-    // more face-connected cells outside, as a real canopy can reach past a felled trunk.
+    // A tree's trunk and canopy, standing on the ground (TOP is the grass itself; a trunk
+    // stands at TOP + 1), as a straight chain of blocks straddling the edge of the window
+    // a camp clears (checked dx ∈ [-4, 3], dz ∈ [-2, 6]): one cell inside it, two more
+    // face-connected cells outside, as a real canopy can reach past a felled trunk.
     const tx = first.x - 4;
     const tz = first.z - 2;
-    world.setVoxel(tx, TOP, tz, Block.Wood);
-    world.setVoxel(tx - 1, TOP, tz, Block.Wood);
-    world.setVoxel(tx - 2, TOP, tz, Block.Leaves);
+    const ty = TOP + 1;
+    world.setVoxel(tx, ty, tz, Block.Wood);
+    world.setVoxel(tx - 1, ty, tz, Block.Wood);
+    world.setVoxel(tx - 2, ty, tz, Block.Leaves);
 
     const camps = placeBanditCamps(world, islands, 1717, tierOf60, () => false);
     expect(camps).toHaveLength(1);
     expect(camps[0].x).toBe(first.x);
     expect(camps[0].z).toBe(first.z);
-    expect(world.getVoxel(tx, TOP, tz)).toBe(Block.Air);
-    expect(world.getVoxel(tx - 1, TOP, tz)).toBe(Block.Air); // outside the window: left floating by a felled-trunk-only clearing
-    expect(world.getVoxel(tx - 2, TOP, tz)).toBe(Block.Air); // further outside still, same whole tree
+    expect(world.getVoxel(tx, ty, tz)).toBe(Block.Air);
+    expect(world.getVoxel(tx - 1, ty, tz)).toBe(Block.Air); // outside the window: left floating by a felled-trunk-only clearing
+    expect(world.getVoxel(tx - 2, ty, tz)).toBe(Block.Air); // further outside still, same whole tree
   });
 });
