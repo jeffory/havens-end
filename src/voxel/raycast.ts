@@ -20,13 +20,16 @@ export interface VoxelHit {
  * Walks the voxel grid cell by cell along a ray (Amanatides & Woo DDA). Exact and
  * cheap, and it reads the voxel data directly, so it never goes stale when terrain
  * is dug. Used for tool picking now, and for cannonball-vs-terrain later. It stops
- * at what's drawn and solid (rays pass through the blocker a prop stands in).
+ * at what's drawn and solid (rays pass through the blocker a prop stands in). If the
+ * ray starts inside a solid voxel, that's the first hit (all-zero normal) — pass
+ * `skipStart` to step past it instead and report whatever's next along the ray.
  */
 export function raycastVoxels(
   world: VoxelReader,
   ox: number, oy: number, oz: number,
   dx: number, dy: number, dz: number,
   maxDistance: number,
+  skipStart = false,
 ): VoxelHit | null {
   let x = Math.floor(ox);
   let y = Math.floor(oy);
@@ -45,9 +48,7 @@ export function raycastVoxels(
   let nz = 0;
   let t = 0;
 
-  while (t <= maxDistance) {
-    if (isPickable(world.getVoxel(x, y, z))) return { x, y, z, nx, ny, nz, distance: t };
-
+  const step = () => {
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
       x += stepX;
       t = tMaxX;
@@ -64,6 +65,12 @@ export function raycastVoxels(
       tMaxZ += tDeltaZ;
       nx = 0; ny = 0; nz = -stepZ;
     }
+  };
+
+  if (skipStart) step();
+  while (t <= maxDistance) {
+    if (isPickable(world.getVoxel(x, y, z))) return { x, y, z, nx, ny, nz, distance: t };
+    step();
   }
   return null;
 }

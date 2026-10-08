@@ -30,4 +30,22 @@ describe('raycastVoxels', () => {
     expect(raycastVoxels(world, 0.5, 20, 0.5, 0, 1, 0, 100)).toBeNull();
     expect(raycastVoxels(world, 0.5, 20, 0.5, 0, -1, 0, 10)).toBeNull();
   });
+
+  it('reports the voxel it starts inside, with no face normal', () => {
+    const hit = raycastVoxels(world, 2.5, 4.5, 2.5, 0, -1, 0, 100);
+    expect(hit).toMatchObject({ x: 2, y: 4, z: 2, nx: 0, ny: 0, nz: 0, distance: 0 });
+  });
+
+  it('skips the voxel it starts inside when told to, and reports the next one along', () => {
+    // Starting inside the ground layer, with nothing below it: skipping finds nothing.
+    expect(raycastVoxels(world, 2.5, 4.5, 2.5, 0, -1, 0, 100, true)).toBeNull();
+
+    // Two blocks in a row: starting inside the first, skipping reports the second, with
+    // its proper face normal, exactly as if the ray had started outside the first.
+    const wall = new VoxelWorld();
+    wall.setVoxel(0, 0, 0, Block.Stone);
+    wall.setVoxel(1, 0, 0, Block.Stone);
+    const hit = raycastVoxels(wall, 0.5, 0.5, 0.5, 1, 0, 0, 100, true);
+    expect(hit).toMatchObject({ x: 1, y: 0, z: 0, nx: -1, ny: 0, nz: 0 });
+  });
 });

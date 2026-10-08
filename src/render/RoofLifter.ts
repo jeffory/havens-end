@@ -84,8 +84,11 @@ export class RoofLifter {
   private clock = 0;
   /** The world as the lifter sees it: only trees and buildings. */
   private readonly structures: VoxelReader;
+  /** The world itself, to tell a prop's blocker from the real thing it's seen as. */
+  private readonly raw: VoxelReader;
 
   constructor(world: VoxelReader) {
+    this.raw = world;
     this.structures = {
       getVoxel: (x, y, z) => {
         const id = world.getVoxel(x, y, z);
@@ -124,7 +127,12 @@ export class RoofLifter {
       const passed: Lift[] = [];
       const clear: VoxelReader = { getVoxel: (vx, vy, vz) => (passed.some((l) => holds(l, vx, vy, vz)) ? Block.Air : this.structures.getVoxel(vx, vy, vz)) };
       for (let n = 0; n < THROUGH; n++) {
-        const hit = raycastVoxels(clear, x, y, z, dx, dy, dz, Math.min(d, 40));
+        let hit = raycastVoxels(clear, x, y, z, dx, dy, dz, Math.min(d, 40));
+        if (hit && hit.nx === 0 && hit.ny === 0 && hit.nz === 0) {
+          // The ray starts inside solid: the captain's leaning on it, not looking through it
+          // to something in the way. Don't lift what's underfoot — look straight past it.
+          hit = raycastVoxels(clear, x, y, z, dx, dy, dz, Math.min(d, 40), true);
+        }
         if (!hit) break;
         const known = this.held.find((l) => holds(l, hit.x, hit.y, hit.z));
         if (known) {
@@ -213,7 +221,14 @@ export class RoofLifter {
       y0 = Math.min(y0, cy);
       y1 = Math.max(y1, cy);
       if (ROOFING.has(id)) eaves = Math.min(eaves, cy);
-      for (const [dx, dy, dz] of NEIGHBOURS) queue.push([cx + dx, cy + dy, cz + dz]);
+      // A prop's blocker only joins what it meets face to face: the diagonal reach that
+      // lets a stepped roof's courses meet at their edges isn't for a stall or a cart
+      // grazing the corner of a building it stands nowhere near otherwise.
+      const fromBlocker = this.raw.getVoxel(cx, cy, cz) === Block.Blocker;
+      for (const [dx, dy, dz] of NEIGHBOURS) {
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) === 2 && (fromBlocker || this.raw.getVoxel(cx + dx, cy + dy, cz + dz) === Block.Blocker)) continue;
+        queue.push([cx + dx, cy + dy, cz + dz]);
+      }
     }
     const from = Math.min(y0 + STOREY, eaves) - 0.5;
     return { x0, z0, x1: x1 + 1, z1: z1 + 1, from, roofed: eaves !== Infinity, above: y1 + 0.5 > from };

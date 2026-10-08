@@ -3,7 +3,7 @@ import { SEA_LEVEL } from '../config';
 import type { Port } from '../economy/ports';
 import { findPath } from '../land/paths';
 import { guardPosts } from '../land/townsfolk';
-import { collides, createWalker, groundBelow, stepWalker } from '../land/walker';
+import { collides, createWalker, groundBelow, STEP_UP, stepWalker } from '../land/walker';
 import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropKind } from '../props/types';
 import { baseOf, Block, blocksWalker, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
@@ -275,16 +275,17 @@ describe('towns', () => {
       const steps = [...harbour.places, ...harbour.spots.filter((s) => s.kind === 'door')].map((p) => ({ x: Math.floor(p.x), z: Math.floor(p.z) }));
       const market = harbour.places.find((p) => p.kind === 'market')!;
       const hall = harbour.town.houses.find((h) => outside(h, Math.floor(market.x), Math.floor(market.z)) <= 1);
+      expect(hall, `${name} market hall`).toBeDefined();
       for (const d of harbour.decor.filter((p) => p.kind.startsWith('stall') || p.kind === 'handCart')) {
         for (const c of shapeCells(d, PROP_SHAPES[d.kind]!)) {
           for (const s of steps) expect(Math.max(Math.abs(c.x - s.x), Math.abs(c.z - s.z)), `${name} ${d.kind} at ${c.x},${c.z} by the step at ${s.x},${s.z}`).toBeGreaterThanOrEqual(3);
-          if (hall) expect(outside(hall, c.x, c.z), `${name} ${d.kind} at ${c.x},${c.z} in the market’s front`).toBeGreaterThanOrEqual(2);
+          expect(outside(hall!, c.x, c.z), `${name} ${d.kind} at ${c.x},${c.z} in the market’s front`).toBeGreaterThanOrEqual(2);
         }
       }
     }
   });
 
-  it('keep everyone out of the stalls and the cart: nobody walks in or scrambles up on top', () => {
+  it('keep everyone out of the stalls and the cart: nobody walks in or scrambles up on top, even by way of a bench, a gun or the well', () => {
     let tried = 0;
     for (const { name, world, harbour } of PORTS) {
       for (const d of harbour.decor.filter((p) => p.kind.startsWith('stall') || p.kind === 'handCart')) {
@@ -293,12 +294,16 @@ describe('towns', () => {
         for (const c of cells) {
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const [bx, bz] = [c.x + dx, c.z + dz];
-            if (inProp(bx, bz) || collides(world, bx + 0.5, d.y, bz + 0.5) || groundBelow(world, bx + 0.5, bz + 0.5, d.y + 0.5) !== d.y) continue;
+            if (inProp(bx, bz)) continue;
+            // Whatever the neighbour stands on, up to a climb's reach above the prop's own floor: the
+            // ground itself, or a bench, a gun or the well's ring that'd give a leg up onto it.
+            const nh = groundBelow(world, bx + 0.5, bz + 0.5, d.y + STEP_UP + 1);
+            if (nh < d.y || nh > d.y + STEP_UP || collides(world, bx + 0.5, nh, bz + 0.5)) continue;
             tried++;
-            const w = createWalker(bx + 0.5, d.y, bz + 0.5);
+            const w = createWalker(bx + 0.5, nh, bz + 0.5);
             for (let t = 0; t < 1.5; t += 1 / 60) stepWalker(w, -dx, -dz, world, 1 / 60);
-            expect(inProp(w.x, w.z), `${name} ${d.kind}: walked in from ${bx},${bz}`).toBe(false);
-            expect(w.y, `${name} ${d.kind}: climbed from ${bx},${bz}`).toBe(d.y);
+            expect(inProp(w.x, w.z), `${name} ${d.kind}: walked in from ${bx},${bz} (stands ${nh})`).toBe(false);
+            expect(w.y, `${name} ${d.kind}: climbed from ${bx},${bz} (stands ${nh})`).toBe(nh);
           }
         }
       }

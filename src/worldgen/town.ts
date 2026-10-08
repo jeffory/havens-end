@@ -373,8 +373,10 @@ export function buildTown(
   const stalls: PropKind[] = style.dress === 'free' ? ['stallProduceBlue', 'stallClothBlue'] : ['stallProduceRed', 'stallClothRed'];
   if (style.mirror) stalls.reverse();
   // Either side of the column of the market's door, their fronts to the square's middle and
-  // two clear rows between their backs and the market's step.
-  for (const [u0, kind] of [[clamp(doorU - 4, q + 1, q + 7), stalls[0]], [clamp(doorU + 2, q + 1, q + 7), stalls[1]]] as const) {
+  // two clear rows between their backs and the market's step. Clamped a cell shy of the
+  // benches at the square's top and the quay gun at its seaward edge, so nothing standable
+  // above the floor is ever next to one (a bench or a gun is a step the blocker's easily climbed from).
+  for (const [u0, kind] of [[clamp(doorU - 4, q + 2, q + 6), stalls[0]], [clamp(doorU + 2, q + 2, q + 6), stalls[1]]] as const) {
     const r: Rect = { u0, u1: u0 + 2, ...side(STALL_BACK - 1, STALL_BACK, ms) };
     standProp(world, decor, kind, plotCells(footprint(f, r)), low, facingOf(-ms * f.sx, -ms * f.sz));
     props.push(r);
@@ -385,7 +387,10 @@ export function buildTown(
     for (const [u, v] of cells(r)) place(world, f, u, v, low, Block.Planks);
     props.push(r);
   }
-  const corner: Rect = { u0: q + 6, u1: q + 8, ...side(6, 7, ys) };
+  // A cell further out than the well, so its ring is never next to the cart's blocker, and
+  // clear of the shed's roof overhang (it reaches to q + 6), so touching or sighting the
+  // cart never lifts the shed with it.
+  const corner: Rect = { u0: q + 7, u1: q + 9, ...side(6, 7, ys) };
   if (style.dress === 'brethren') buildGallows(world, f, corner, low, ys);
   else standProp(world, decor, 'handCart', plotCells(footprint(f, corner)), low, facingOf(f.ix, f.iz));
   props.push(corner);
@@ -417,6 +422,9 @@ export function buildTown(
     everyDoor.some((d) => Math.abs(d.outX - x) + Math.abs(d.outZ - z) <= 1) || Math.abs(yard.x - 0.5 - x) + Math.abs(yard.z - 0.5 - z) <= 1;
   // A lamp keeps back from the buildings: none stands against a wall.
   const byBuilding = (u: number, v: number) => chosen.some((l) => touches({ u0: u, u1: u, v0: v, v1: v }, l, 1));
+  // Nor does it stand next to a stall, the cart or anything else dressing the square: a lamp
+  // post is itself a step up, that'd let someone climb from it onto a prop beside it.
+  const byProp = (u: number, v: number) => props.some((r) => touches({ u0: u, u1: u, v0: v, v1: v }, r, 1));
   // Lamps at the top corners of the square; the Brethren fly the black flag either side
   // of the top of the ramp from the pier, to greet whoever comes ashore.
   const spots: Array<[number, number]> = [
@@ -434,7 +442,7 @@ export function buildTown(
   for (const [u, v] of spots) {
     const { x, z } = at(f, u, v);
     const height = levelled.get(`${u},${v}`);
-    if (height === undefined || onRoad(u, v) || byBuilding(u, v) || inDoorway(x, z) || world.getVoxel(x, height, z) !== Block.Air) continue;
+    if (height === undefined || onRoad(u, v) || byBuilding(u, v) || byProp(u, v) || inDoorway(x, z) || world.getVoxel(x, height, z) !== Block.Air) continue;
     lamps.push(lampPost(world, x, height, z, decor));
   }
 

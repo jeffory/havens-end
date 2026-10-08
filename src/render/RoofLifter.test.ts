@@ -250,6 +250,21 @@ describe('RoofLifter', () => {
       }
     });
 
+    it('doesn’t take a shed’s roof with it for a prop grazing its corner, only its own edge', () => {
+      const world = flat();
+      const yard: Footprint = { x0: 10, z0: -6, w: 5, d: 5 };
+      shed(world, yard);
+      // A stall's blocker just beyond the shed's own ground, its top course touching the
+      // eave's corner tile only at the edge (one cell out diagonally both ways), as a cart
+      // squeezed into a tight corner of the square might.
+      for (let y = BASE; y < BASE + 3; y++) world.setVoxel(8, y, -8, Block.Blocker);
+      // Straight and level down the line x = 8.5, z = -20 to 10, well clear of the shed
+      // itself (x 9 to 15 with its eaves), through the blocker's own height.
+      const lifts = new RoofLifter(world).update({ x: 8.5, y: BASE + 1, z: -20 }, BASE, { x: 8.5, y: BASE + 1, z: 10 }, 1 / 60);
+      expect(lifted(lifts, 8, BASE + 2, -8), 'the prop, in the way').toBe(true);
+      expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => lifted(lifts, bx, by, bz)), 'the shed, only grazed at the corner').toEqual([]);
+    });
+
     it('cuts a two-storey shop at head height from its porch, canopy, jambs and all, as a house is cut', () => {
       const world = flat();
       const plot: Footprint = { x0: 0, z0: 0, w: 7, d: 6 };
@@ -296,6 +311,21 @@ describe('RoofLifter', () => {
       const lifts = new RoofLifter(world).update({ x: 3.5, y: BASE + 1.2, z: -6.5 }, BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60);
       // Its anchor is the cell its top is in: lifted, so the prop goes.
       expect(lifted(lifts, 3, BASE + 2, -4)).toBe(true);
+    });
+
+    it('doesn’t take a prop away just for the captain leaning on it, only when it’s really in the way', () => {
+      const world = village();
+      // The same stall's blocker, with the captain pressed right up against its near face
+      // (half the walker's own width off it): some of the lifter's side rays start inside it.
+      for (let y = BASE; y < BASE + 3; y++) world.setVoxel(3, y, -4, Block.Blocker);
+      const chest = { x: 3.5, y: BASE + 1.2, z: -4.3 };
+      // The camera behind the captain, the same side as them: the prop isn't in the way of
+      // anything, so it stays, however hard they're leaning on it.
+      const near = new RoofLifter(world).update(chest, BASE, { x: 3.5, y: BASE + 8, z: -16 }, 1 / 60);
+      expect(lifted(near, 3, BASE + 2, -4), 'not in the way: stays').toBe(false);
+      // The camera beyond it, toward the house: genuinely in the way, so it still goes.
+      const through = new RoofLifter(world).update(chest, BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60);
+      expect(lifted(through, 3, BASE + 2, -4), 'in the way: goes').toBe(true);
     });
   });
 });
