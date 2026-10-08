@@ -161,8 +161,9 @@ describe('camp goods', () => {
     expect(role(crown, 'goldOre')).toBe('demands');
     expect(role(nest, 'goldOre')).toBe('demands');
     // They come after every older line, so earlier saves' stocks still line up.
+    // (Phase 10.2's cartridges and hides now sit after them in turn.)
     const lines = economy.lines(free).map((l) => l.good);
-    expect(lines.slice(-3)).toEqual(['copperOre', 'silverOre', 'goldOre']);
+    expect(lines.slice(-5, -2)).toEqual(['copperOre', 'silverOre', 'goldOre']);
     expect(GOOD_INFO.goldOre.price).toBeGreaterThan(GOOD_INFO.silverOre.price);
     expect(GOOD_INFO.silverOre.price).toBeGreaterThan(GOOD_INFO.copperOre.price);
   });

@@ -94,6 +94,14 @@ export const ICONS: Partial<Record<Good, Icon>> = {
     colors: { a: 0x5e1712, r: 0xbf3326, R: 0xec7a60, t: 0xd8b56f, T: 0x9c7a3e, s: 0xf6e4a4 },
     rows: ['............', '...assssa...', '..arRsRrra..', '...arrrra...', '....tttt....', '...arRrrat..', '..arRRrrraT.', '.arRRrrrrra.', '.arRrrrrrra.', '.arrrrrrrra.', '..aaaaaaaa..', '............'],
   },
+  cartridges: {
+    colors: { a: 0x6b5a3e, b: 0xe8dcc0, c: 0x5a5f66, d: 0xa89878 },
+    rows: ['............', '..ccc..ccc..', '..aba..aba..', '..aba..aba..', '..aba..aba..', '.ddddddddd..', '..aba..aba..', '..aba..aba..', '..aba..aba..', '..aaa..aaa..', '............', '............'],
+  },
+  hides: {
+    colors: { a: 0x5e4128, b: 0xa8784a, c: 0xc8966a },
+    rows: ['............', '.a.......a..', '..abbbbbba..', '.abbcccbbba.', '.abcccccbba.', '..bcccccba..', '..bcccccba..', '.abcccccbba.', '.abbcccbbba.', '..abbbbbba..', '.a.......a..', '............'],
+  },
 };
 
 const TOOL_COLORS = { d: 0x3d4247, m: 0x6c7278, s: 0x9aa0a6, S: 0xdde2e6, h: 0xb07f45, e: 0x6b4526 };

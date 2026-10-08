@@ -120,6 +120,10 @@ const CAMP_GOODS: Partial<Record<Good, Record<PortFaction, Role | null>>> = {
   copperOre: { merchant: 'demands', pirate: 'trades', imperial: 'trades' },
   silverOre: { merchant: 'trades', pirate: 'trades', imperial: 'demands' },
   goldOre: { merchant: 'trades', pirate: 'demands', imperial: 'demands' },
+  // Phase 10.2, last so older saves' lines keep their places: cartridges sold
+  // everywhere (the Crown keeps the guns, not the shot), hides wanted by the Guild's tanners.
+  cartridges: { merchant: 'trades', pirate: 'trades', imperial: 'trades' },
+  hides: { merchant: 'demands', pirate: 'trades', imperial: 'trades' },
 };
 
 const MUSKETS: Record<PortFaction, Role | null> = { merchant: 'produces', pirate: 'demands', imperial: null };

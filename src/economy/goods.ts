@@ -31,6 +31,9 @@ export const GOODS = [
   'earth',
   'sand',
   'sapling',
+  // Phase 10.2, last so nothing before them moves: shot for the captain's guns, and goat hides.
+  'cartridges',
+  'hides',
 ] as const;
 export type Good = (typeof GOODS)[number];
 export type Cargo = Partial<Record<Good, number>>;
@@ -77,6 +80,8 @@ export const GOOD_INFO: Record<Good, { label: string; price: number; kind: GoodK
   earth: { label: 'Earth', price: 1, kind: 'material' },
   sand: { label: 'Sand', price: 1, kind: 'material' },
   sapling: { label: 'Sapling', price: 2, kind: 'seed' },
+  cartridges: { label: 'Cartridges', price: 2, kind: 'arms' },
+  hides: { label: 'Hides', price: 8, kind: 'produce' },
 };
 
 /**

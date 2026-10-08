@@ -129,7 +129,7 @@ export const STRUCTURES: Record<Structure, StructureSpec> = {
   },
   forge: {
     label: 'Forge',
-    detail: 'Smelts ore into iron, and makes cutlasses and muskets to sell.',
+    detail: 'Smelts ore into iron, and makes cutlasses, muskets, and cartridges for your guns.',
     cost: { timber: 30, stone: 30 },
     w: 5,
     d: 5,
@@ -140,6 +140,7 @@ export const STRUCTURES: Record<Structure, StructureSpec> = {
       { label: 'Iron', inputs: { ore: 2, timber: 2 }, outputs: { iron: 1 }, seconds: 20 },
       { label: 'Cutlasses', inputs: { iron: 1, timber: 1 }, outputs: { cutlasses: 1 }, seconds: 20 },
       { label: 'Muskets', inputs: { iron: 2, planks: 1 }, outputs: { muskets: 1 }, seconds: 30 },
+      { label: 'Cartridges', inputs: { iron: 1 }, outputs: { cartridges: 12 }, seconds: 20 },
     ],
   },
   fence: { label: 'Fence', detail: 'Keeps the boar out of the cane.', cost: { timber: 1 }, w: 1, d: 1, freeform: true, height: 1, pad: 0 },
