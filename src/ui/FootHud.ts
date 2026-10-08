@@ -30,6 +30,8 @@ export interface FootReadout {
   north: number;
   /** The lodestone's pull toward buried treasure, if it's stirring. */
   lodestone: string | null;
+  /** The captain's health, shown when hurt or in a fight. */
+  health: { now: number; most: number } | null;
 }
 
 /** The keys on foot, keyboard and mouse. */
@@ -73,8 +75,10 @@ export class FootHud {
   /** The N, turned back the other way so it always reads upright. */
   private readonly northLetter: SVGTextElement;
   private readonly lodestone = document.createElement('div');
+  private readonly health = document.createElement('div');
   private shownSlots = '';
   private shownNorth = NaN;
+  private shownHealth = '';
   /** A hotbar slot was clicked. */
   onSelect: ((index: number) => void) | null = null;
 
@@ -106,7 +110,8 @@ export class FootHud {
     this.northLetter = this.compass.querySelector('.dial-n')!;
     this.compass.hidden = true;
     this.lodestone.className = 'foot-lodestone';
-    this.root.append(this.lodestone, this.prompt, this.hint, this.pack, this.slots);
+    this.health.className = 'foot-health';
+    this.root.append(this.health, this.lodestone, this.prompt, this.hint, this.pack, this.slots);
     parent.append(this.legend.el, this.compass, this.root);
   }
 
@@ -146,6 +151,21 @@ export class FootHud {
     this.hint.classList.toggle('ok', r.hintOk);
     set(this.lodestone, r.lodestone ?? '');
     this.lodestone.hidden = !r.lodestone;
+    const pips = r.health ? `${r.health.now}/${r.health.most}` : '';
+    if (pips !== this.shownHealth) {
+      this.shownHealth = pips;
+      this.health.hidden = !r.health;
+      if (r.health) {
+        this.health.title = `Health ${r.health.now} of ${r.health.most}`;
+        this.health.replaceChildren(
+          ...Array.from({ length: r.health.most }, (_, i) => {
+            const pip = document.createElement('span');
+            pip.className = i < r.health!.now ? 'pip on' : 'pip';
+            return pip;
+          }),
+        );
+      }
+    }
     if (r.north !== this.shownNorth) {
       this.shownNorth = r.north;
       this.card.style.transform = `rotate(${r.north}rad)`;

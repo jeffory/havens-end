@@ -14,7 +14,7 @@ import { WATER_LEVEL } from '../ocean/waves';
 import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
 import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
 import { type Creature, CREATURES, harm, stepCreatures, strike } from './creatures';
-import { type Drop, dropItem, stepDrops } from './drops';
+import { type Drop, DROP_SECONDS, dropItem, stepDrops } from './drops';
 import { aimPoint, GUN_LIST, GUNS, type Gun, hitChance, isGun, pickTarget, type Point3, resolveShot, type Shootable } from './firearms';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
 import { type Building, doorOf, isWorkshop, PIECES, plotFor, raise, raze, type Structure, STRUCTURES } from './structures';
@@ -30,6 +30,13 @@ export type Held = Tool | Gun | Good;
 export const POUCH = 24;
 /** A gun is fired from the chest. */
 const MUZZLE = 1.3;
+/** The captain's health on foot. Only bandits' shots hurt; beasts don't bite. */
+export const HEALTH_MAX = 10;
+/** Wounds start to mend once no bandit has fired for this long, a point every HEAL_EVERY seconds. */
+const HEAL_AFTER = 15;
+const HEAL_EVERY = 6;
+/** Brought down, the captain loses this share of their gold, as a guardian takes. */
+const DOWNED_TOLL = 0.1;
 
 export { CLAIM_RADIUS } from './camps';
 /** A port's town and harbour: nobody digs, fells or builds within this of the berth. */
@@ -69,7 +76,9 @@ export type LandEvent =
   | { kind: 'razed'; structure: Structure; x: number; y: number; z: number }
   | { kind: 'made'; building: number; x: number; y: number; z: number }
   | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' }
-  | { kind: 'shot'; gun: Gun | 'musket'; from: Point3; to: Point3; hit: 'creature' | 'bandit' | 'captain' | null };
+  | { kind: 'shot'; gun: Gun | 'musket'; from: Point3; to: Point3; hit: 'creature' | 'bandit' | 'captain' | null }
+  | { kind: 'hurt'; x: number; y: number; z: number }
+  | { kind: 'downed'; toll: number; pack: boolean };
 
 export type Action = 'fell' | 'chop' | 'mine' | 'break' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
 
@@ -121,7 +130,7 @@ export interface LandSnapshot {
   settlers?: Settler[];
   fallow?: Fallow[];
   saplings?: Sapling[];
-  drops?: Array<{ good: Good; amount: number; x: number; y: number; z: number; age: number }>;
+  drops?: Array<{ good: Good; amount: number; x: number; y: number; z: number; age: number; life?: number }>;
   /** Worked-out outcrops (version 5). */
   deposits?: DepositsSnapshot;
 }
@@ -196,6 +205,11 @@ export class Land {
   private readonly blows = new Map<string, number>();
   /** Seconds each gun has left to load (not saved: loaded again by the time a save is loaded). */
   private readonly loading: Partial<Record<Gun, number>> = {};
+  /** The captain's health on foot (full again aboard; not saved). */
+  health = HEALTH_MAX;
+  /** Seconds since a bandit last fired. */
+  private quiet = 0;
+  private healIn = HEAL_EVERY;
 
   constructor(
     readonly world: VoxelWorld,
@@ -218,7 +232,7 @@ export class Land {
       settlers: structuredClone(this.settlers),
       fallow: structuredClone(this.fallow),
       saplings: structuredClone(this.saplings),
-      drops: this.drops.map(({ good, amount, x, y, z, age }) => ({ good, amount, x, y, z, age })),
+      drops: this.drops.map(({ good, amount, x, y, z, age, life }) => ({ good, amount, x, y, z, age, life })),
       deposits: this.deposits.snapshot(),
     };
   }
@@ -232,7 +246,7 @@ export class Land {
     this.settlers = structuredClone(s.settlers ?? []);
     this.fallow = structuredClone(s.fallow ?? []);
     this.saplings = structuredClone(s.saplings ?? []);
-    this.drops = (s.drops ?? []).map((d) => ({ ...d, id: this.nextDrop++, vx: 0, vy: 0, vz: 0, prev: { x: d.x, y: d.y, z: d.z }, still: false }));
+    this.drops = (s.drops ?? []).map((d) => ({ ...d, id: this.nextDrop++, vx: 0, vy: 0, vz: 0, prev: { x: d.x, y: d.y, z: d.z }, life: d.life ?? DROP_SECONDS, still: false }));
     this.growIn = 0;
     this.fedOn = this.sea.clock.day;
     this.surveys.clear();
@@ -278,6 +292,13 @@ export class Land {
     }
     this.work(dt);
     for (const gun of GUN_LIST) if (this.loading[gun]) this.loading[gun] = Math.max(0, this.loading[gun]! - dt);
+    if (this.walker && this.health < HEALTH_MAX) {
+      this.quiet += dt;
+      if (this.quiet >= HEAL_AFTER && (this.healIn -= dt) <= 0) {
+        this.health += 1;
+        this.healIn = HEAL_EVERY;
+      }
+    } else this.healIn = HEAL_EVERY;
     stepDrops(this, dt);
     if (watched) stepCreatures(this, dt, this.random);
     else this.creatures.length = 0;
@@ -549,12 +570,47 @@ export class Land {
     const hold = this.sea.player.cargo;
     const moved = loadCargo(hold, { ...this.pack }, this.sea.player.cls.type.hold - cargoCount(hold));
     for (const [good, n] of Object.entries(moved) as Array<[Good, number]>) unload(this.pack, good, n);
+    this.health = HEALTH_MAX;
+    this.quiet = 0;
     this.walker = null;
     if (this.sea.docked) this.sea.undock();
     else this.sea.ashore = false;
     const stowed = cargoCount(moved);
     this.events.push({ kind: 'aboard', stowed, left: cargoCount(this.pack) });
     return done(stowed > 0 ? `Back aboard; ${stowed} goods stowed in the hold.` : 'Back aboard.');
+  }
+
+  // ---- The captain's health ----
+
+  /** A bandit fired: wounds don't mend while they're under fire. */
+  underFire(): void {
+    this.quiet = 0;
+  }
+
+  /** The captain is hit. At no health left, they're brought down. */
+  hurt(amount: number): void {
+    const w = this.walker;
+    if (!w) return;
+    this.health = Math.max(0, this.health - amount);
+    this.events.push({ kind: 'hurt', x: w.x, y: w.y + 1.2, z: w.z });
+    if (this.health <= 0) this.bringDown();
+  }
+
+  /**
+   * Brought down by bandits: they take a share of the gold, the pack's goods lie where the
+   * captain fell (a full day, not the usual ten minutes), and the crew carry them back
+   * aboard. The ship is where she lay at anchor.
+   */
+  private bringDown(): void {
+    const w = this.walker!;
+    const captain = this.sea.captain;
+    const toll = Math.round(captain.gold * DOWNED_TOLL);
+    captain.gold -= toll;
+    const goods = Object.entries(this.pack) as Array<[Good, number]>;
+    for (const [good, n] of goods) this.drop(good, w.x, w.y + 0.5, w.z, n, this.sea.clock.length);
+    for (const [good] of goods) delete this.pack[good];
+    this.goAboard();
+    this.events.push({ kind: 'downed', toll, pack: goods.length > 0 });
   }
 
   /** With a gun, the captain takes a pouch of cartridges ashore from the hold. */
@@ -777,8 +833,8 @@ export class Land {
   }
 
   /** Something comes loose here, to be picked up. */
-  drop(good: Good, x: number, y: number, z: number, amount = 1): void {
-    dropItem(this, good, amount, x, y, z, this.random);
+  drop(good: Good, x: number, y: number, z: number, amount = 1, life = DROP_SECONDS): void {
+    dropItem(this, good, amount, x, y, z, this.random, life);
   }
 
   /** Puts what's picked up in the pack, as much as there's room for; returns how much went in. */

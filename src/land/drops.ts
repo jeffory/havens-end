@@ -22,8 +22,10 @@ export interface Drop {
   vz: number;
   /** Where it was at the last step, to draw it between steps. */
   prev: { x: number; y: number; z: number };
-  /** Seconds since it fell: it's gone after `DROP_SECONDS`. */
+  /** Seconds since it fell: it's gone after `life`. */
   age: number;
+  /** Seconds it lies before it's gone (usually DROP_SECONDS). */
+  life: number;
   /** Lying still on the ground (or bobbing in the shallows). */
   still: boolean;
 }
@@ -54,7 +56,7 @@ const topAt = (world: VoxelReader, x: number, y: number, z: number) =>
   Math.floor(y) + topIn(world.getVoxel(Math.floor(x), Math.floor(y), Math.floor(z)), x - Math.floor(x), z - Math.floor(z));
 
 /** Something breaks off at (x, y, z) and pops out a little way. */
-export function dropItem(land: Land, good: Good, amount: number, x: number, y: number, z: number, random: () => number): void {
+export function dropItem(land: Land, good: Good, amount: number, x: number, y: number, z: number, random: () => number, life = DROP_SECONDS): void {
   const angle = random() * Math.PI * 2;
   const speed = 0.8 + random() * 1.8;
   land.drops.push({
@@ -69,6 +71,7 @@ export function dropItem(land: Land, good: Good, amount: number, x: number, y: n
     vz: Math.cos(angle) * speed,
     prev: { x, y, z },
     age: 0,
+    life,
     still: false,
   });
 }
@@ -87,7 +90,7 @@ export function stepDrops(land: Land, dt: number): void {
     d.prev.y = d.y;
     d.prev.z = d.z;
     d.age += dt;
-    if (d.age > DROP_SECONDS) {
+    if (d.age > d.life) {
       list.splice(i, 1);
       continue;
     }
@@ -174,5 +177,6 @@ function settle(land: Land, d: Drop): void {
   if (!pile) return;
   pile.amount += d.amount;
   pile.age = Math.min(pile.age, d.age);
+  pile.life = Math.max(pile.life, d.life);
   land.drops.splice(land.drops.indexOf(d), 1);
 }

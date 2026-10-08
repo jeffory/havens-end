@@ -19,7 +19,7 @@ import { GUNS, type Gun } from './firearms';
 import { palmTree } from '../worldgen/island';
 import { createWalker } from './walker';
 import { type Deposit, type DepositKind, DEPOSITS, Deposits, REGROW_DAYS } from './deposits';
-import { CLAIM_RADIUS, Land, POUCH, TOOL_LIST } from './Land';
+import { CLAIM_RADIUS, HEALTH_MAX, Land, POUCH, TOOL_LIST } from './Land';
 
 function box(length: number, beam: number): Float32Array {
   const cells: Array<[number, number]> = [];
@@ -669,5 +669,76 @@ describe('guns', () => {
     expect(shot).toMatchObject({ kind: 'shot', gun: 'rifle', hit: null });
     expect(land.creatures.find((c) => c.kind === 'boar')!.hp).toBe(3);
     expect(land.walker!.facing).toBeCloseTo(Math.PI / 2, 1);
+  });
+});
+
+describe('the captain’s health', () => {
+  it('bandits’ shots wear it down, and it mends once they’ve stopped firing a while', () => {
+    const { land } = setup();
+    land.goAshore();
+    land.underFire();
+    land.hurt(2);
+    land.hurt(2);
+    expect(land.health).toBe(HEALTH_MAX - 4);
+    for (let t = 0; t < 14; t += 1 / 20) land.step(1 / 20);
+    expect(land.health).toBe(HEALTH_MAX - 4);
+    for (let t = 0; t < 7; t += 1 / 20) land.step(1 / 20);
+    expect(land.health).toBe(HEALTH_MAX - 3);
+    for (let t = 0; t < 30; t += 1 / 20) land.step(1 / 20);
+    expect(land.health).toBe(HEALTH_MAX);
+  });
+
+  it('is whole again aboard', () => {
+    const { land } = setup();
+    land.goAshore();
+    land.hurt(6);
+    land.goAboard();
+    expect(land.health).toBe(HEALTH_MAX);
+  });
+
+  it('brought down: the bandits take a tenth of the gold, the pack lies where they fell, and they come to aboard', () => {
+    const { land, sea } = setup();
+    land.goAshore();
+    walkTo(land, 0.5, 0.5);
+    sea.captain.gold = 450;
+    Object.assign(land.pack, { stone: 5, fish: 3 });
+    const ship = { x: sea.player.ship.x, z: sea.player.ship.z };
+    land.takeEvents();
+    land.hurt(HEALTH_MAX);
+    expect(land.walker).toBeNull();
+    expect(sea.ashore).toBe(false);
+    expect(sea.player.ship).toMatchObject(ship);
+    expect(sea.captain.gold).toBe(405);
+    expect(land.pack).toEqual({});
+    expect(land.health).toBe(HEALTH_MAX);
+    const lying = (good: string) => land.drops.filter((d) => d.good === good).reduce((n, d) => n + d.amount, 0);
+    expect(lying('stone')).toBe(5);
+    expect(lying('fish')).toBe(3);
+    for (const d of land.drops) expect(Math.hypot(d.x - 0.5, d.z - 0.5)).toBeLessThan(4);
+    expect(land.takeEvents().find((e) => e.kind === 'downed')).toEqual({ kind: 'downed', toll: 45, pack: true });
+  });
+
+  it('brought down with a full hold, the pack still lies where they fell', () => {
+    const { land, sea } = setup();
+    land.goAshore();
+    sea.player.cargo = { timber: sea.player.cls.type.hold };
+    land.pack.stone = 5;
+    land.hurt(HEALTH_MAX);
+    expect(sea.player.cargo).toEqual({ timber: sea.player.cls.type.hold });
+    expect(land.drops.filter((d) => d.good === 'stone').reduce((n, d) => n + d.amount, 0)).toBe(5);
+  });
+
+  it('the pile lies a full day, where anything else is gone in ten minutes, and a save keeps that', () => {
+    const { land, sea } = setup();
+    land.goAshore();
+    land.pack.stone = 5;
+    land.hurt(HEALTH_MAX);
+    land.drop('timber', 0.5, SEA_LEVEL + 2, 0.5);
+    for (let t = 0; t < DROP_SECONDS + 5; t += 1) land.step(1);
+    expect(land.drops.some((d) => d.good === 'timber')).toBe(false);
+    expect(land.drops.some((d) => d.good === 'stone')).toBe(true);
+    const saved = JSON.parse(JSON.stringify(land.snapshot()));
+    land.restore(saved);
+    expect(land.drops.find((d) => d.good === 'stone')!.life).toBe(sea.clock.length);
   });
 });

@@ -6,7 +6,7 @@ import { PACK_SIZE } from './economy/captain';
 import { cargoCount, GOOD_INFO, type Good } from './economy/goods';
 import type { Port, PortPlace } from './economy/ports';
 import { GUN_LIST, GUNS, isGun, type Point3 } from './land/firearms';
-import { type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
+import { HEALTH_MAX, type Held, type Interaction, type Land, type Target, TOOL_LIST, type Tool, TOWN_RADIUS } from './land/Land';
 import { hasRelic, LODESTONE_RANGE } from './treasure/relics';
 import type { Treasure } from './treasure/Treasure';
 import { PLANTABLE } from './land/crops';
@@ -367,6 +367,7 @@ export class Shore {
       prompt: promptFor(this.land.interaction(), this.land.sea.clock.phase, this.land.sea.docked),
       north: this.north(),
       lodestone: this.lodestone(),
+      health: this.land.health < HEALTH_MAX ? { now: this.land.health, most: HEALTH_MAX } : null,
       hint,
       hintOk,
       placing,
