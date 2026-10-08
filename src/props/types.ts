@@ -13,10 +13,15 @@ export type PropKind =
   | 'porchRail'
   | 'hullOnStocks'
   | 'barrel'
-  | 'crate';
+  | 'crate'
+  | 'stallProduceRed'
+  | 'stallClothRed'
+  | 'stallProduceBlue'
+  | 'stallClothBlue'
+  | 'handCart';
 
 /** Every prop kind, in one list. */
-export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate'];
+export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate', 'stallProduceRed', 'stallClothRed', 'stallProduceBlue', 'stallClothBlue', 'handCart'];
 
 /** A point in the world or a model's own voxels. */
 export interface Point {

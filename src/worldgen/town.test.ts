@@ -4,6 +4,8 @@ import type { Port } from '../economy/ports';
 import { findPath } from '../land/paths';
 import { guardPosts } from '../land/townsfolk';
 import { collides, createWalker, groundBelow, stepWalker } from '../land/walker';
+import { PROP_SHAPES, shapeCells } from '../props/shapes';
+import type { PropKind } from '../props/types';
 import { baseOf, Block, blocksWalker, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
@@ -250,19 +252,58 @@ describe('towns', () => {
     const got = blocksIn(world, around, SEA_LEVEL - 2, SEA_LEVEL + 40);
     return ids.reduce((n, id) => n + (got.get(id) ?? 0), 0);
   };
-  const AWNINGS = [Block.Canvas, Block.AwningRed, Block.AwningBlue];
-  const GOODS = [Block.Fruit, Block.Greens, Block.Cloth, Block.Sack];
-
-  it('set out stalls under striped awnings by the market, with goods on their counters', () => {
-    for (const { name, world, harbour } of PORTS) {
-      const { square, props } = harbour.town;
-      expect(props.length, `${name} props`).toBeGreaterThanOrEqual(3);
-      const onSquare = blocksIn(world, { x0: square.x0 + 1, z0: square.z0 + 1, w: square.w - 2, d: square.d - 2 }, SEA_LEVEL, SEA_LEVEL + 30);
-      expect(AWNINGS.reduce((n, id) => n + (onSquare.get(id) ?? 0), 0), `${name} awnings`).toBeGreaterThanOrEqual(12);
-      expect(GOODS.reduce((n, id) => n + (onSquare.get(id) ?? 0), 0), `${name} goods`).toBeGreaterThanOrEqual(4);
+  it('set out two stalls by the market, under awnings in the port’s colour, and a hand cart by the shipyard', () => {
+    for (const { name, faction, home, world, harbour } of PORTS) {
+      const { square } = harbour.town;
+      const stalls = harbour.decor.filter((d) => d.kind.startsWith('stall'));
+      expect(stalls.length, `${name} stalls`).toBe(2);
+      expect(new Set(stalls.map((s) => s.kind)).size, `${name} two kinds of stall`).toBe(2);
+      const blue = !home && faction === 'merchant';
+      for (const s of stalls) {
+        expect(s.kind.endsWith(blue ? 'Blue' : 'Red'), `${name} ${s.kind}`).toBe(true);
+        expect(inside(square, Math.floor(s.x), Math.floor(s.z)), `${name} ${s.kind} on the square`).toBe(true);
+        expect(world.getVoxel(Math.floor(s.x), s.y, Math.floor(s.z)), `${name} ${s.kind} keeps people out`).toBe(Block.Blocker);
+      }
+      expect(harbour.decor.filter((d) => d.kind === 'handCart').length, `${name} cart`).toBe(faction === 'pirate' ? 0 : 1);
       // Townsfolk shop at them.
       expect(harbour.spots.filter((p) => p.kind === 'stall' && inside(square, Math.floor(p.x), Math.floor(p.z))).length, `${name} stall spots`).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it('keep the stalls and the cart two clear of every door’s step, and out of the market’s front', () => {
+    for (const { name, harbour } of PORTS) {
+      const steps = [...harbour.places, ...harbour.spots.filter((s) => s.kind === 'door')].map((p) => ({ x: Math.floor(p.x), z: Math.floor(p.z) }));
+      const market = harbour.places.find((p) => p.kind === 'market')!;
+      const hall = harbour.town.houses.find((h) => outside(h, Math.floor(market.x), Math.floor(market.z)) <= 1);
+      for (const d of harbour.decor.filter((p) => p.kind.startsWith('stall') || p.kind === 'handCart')) {
+        for (const c of shapeCells(d, PROP_SHAPES[d.kind]!)) {
+          for (const s of steps) expect(Math.max(Math.abs(c.x - s.x), Math.abs(c.z - s.z)), `${name} ${d.kind} at ${c.x},${c.z} by the step at ${s.x},${s.z}`).toBeGreaterThanOrEqual(3);
+          if (hall) expect(outside(hall, c.x, c.z), `${name} ${d.kind} at ${c.x},${c.z} in the market’s front`).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
+  });
+
+  it('keep everyone out of the stalls and the cart: nobody walks in or scrambles up on top', () => {
+    let tried = 0;
+    for (const { name, world, harbour } of PORTS) {
+      for (const d of harbour.decor.filter((p) => p.kind.startsWith('stall') || p.kind === 'handCart')) {
+        const cells = shapeCells(d, PROP_SHAPES[d.kind]!);
+        const inProp = (x: number, z: number) => cells.some((c) => c.x === Math.floor(x) && c.z === Math.floor(z));
+        for (const c of cells) {
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const [bx, bz] = [c.x + dx, c.z + dz];
+            if (inProp(bx, bz) || collides(world, bx + 0.5, d.y, bz + 0.5) || groundBelow(world, bx + 0.5, bz + 0.5, d.y + 0.5) !== d.y) continue;
+            tried++;
+            const w = createWalker(bx + 0.5, d.y, bz + 0.5);
+            for (let t = 0; t < 1.5; t += 1 / 60) stepWalker(w, -dx, -dz, world, 1 / 60);
+            expect(inProp(w.x, w.z), `${name} ${d.kind}: walked in from ${bx},${bz}`).toBe(false);
+            expect(w.y, `${name} ${d.kind}: climbed from ${bx},${bz}`).toBe(d.y);
+          }
+        }
+      }
+    }
+    expect(tried).toBeGreaterThan(0);
   });
 
   it('mark the doors you can go in: a timber frame, a stone step, a lantern, and the sign by the door', () => {
@@ -370,9 +411,10 @@ describe('towns', () => {
   });
 
   it('stand every prop that stands on the ground on something solid: lanterns on their posts, porch posts and rails on the deck, signposts', () => {
-    const standing = new Set(['lantern', 'porchPost', 'porchRail', 'signpostMarket', 'signpostShipyard']);
+    const kinds = new Set<string>(['lantern', 'porchPost', 'porchRail', 'signpostMarket', 'signpostShipyard']);
+    const standing = (kind: PropKind) => kinds.has(kind) || PROP_SHAPES[kind] !== undefined;
     for (const { name, world, harbour } of PORTS) {
-      const props = harbour.decor.filter((d) => standing.has(d.kind));
+      const props = harbour.decor.filter((d) => standing(d.kind));
       expect(props.length, name).toBeGreaterThan(0);
       // Looking down from under its foot (a signpost's own cells are the blocker), the top of what's there is where it stands.
       for (const d of props) expect(groundBelow(world, d.x, d.z, d.y - 0.5), `${name} ${d.kind} at ${d.x},${d.y},${d.z}`).toBe(d.y);

@@ -2,6 +2,7 @@ import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropKind, PropPlacement } from '../props/types';
 import { Block } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
+import type { Footprint } from './buildings';
 
 /** A block of grid cells, from (x0, z0) to (x1, z1), both included. */
 export interface Cells {
@@ -13,6 +14,9 @@ export interface Cells {
 
 /** How high a prop that keeps people out takes its cells: the walker scrambles up two, never three. */
 export const KEEP_OUT = 3;
+
+/** A plot's cells, as standProp takes them. */
+export const plotCells = (fp: Footprint): Cells => ({ x0: fp.x0, z0: fp.z0, x1: fp.x0 + fp.w - 1, z1: fp.z0 + fp.d - 1 });
 
 /**
  * Stands a prop drawn finer than a block on the floor at `y`, over these cells, its front

@@ -2,6 +2,7 @@ import type { ShipModel } from '../sailing/shipModel';
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
 import { paletteFromRgba } from '../voxel/palette';
 import { barrel, crate } from './furniture';
+import { handCart, stall } from './market';
 import { clock, lantern, porchPost, porchRail, signboard, signpost, wallLantern } from './models';
 import type { Point, PropKind, PropModel } from './types';
 
@@ -50,5 +51,10 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     hullOnStocks: hullOnStocks(sloop),
     barrel: barrel(),
     crate: crate(),
+    stallProduceRed: stall('red', 'produce'),
+    stallClothRed: stall('red', 'cloth'),
+    stallProduceBlue: stall('blue', 'produce'),
+    stallClothBlue: stall('blue', 'cloth'),
+    handCart: handCart(),
   };
 }

@@ -18,6 +18,11 @@ export interface PropShape {
 export const PROP_SHAPES: Partial<Record<PropKind, PropShape>> = {
   barrel: { w: 1, d: 1, h: 1, blocks: true },
   crate: { w: 1, d: 1, h: 0.75, blocks: true },
+  stallProduceRed: { w: 3, d: 2, h: 2.875, blocks: true },
+  stallClothRed: { w: 3, d: 2, h: 2.875, blocks: true },
+  stallProduceBlue: { w: 3, d: 2, h: 2.875, blocks: true },
+  stallClothBlue: { w: 3, d: 2, h: 2.875, blocks: true },
+  handCart: { w: 2, d: 3, h: 1.625, blocks: true },
 };
 
 /** The grid cells a placed prop of this shape stands in: round its origin, turned with it. */

@@ -6,6 +6,7 @@ import { pointBlocked, topIn } from '../voxel/shapes';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
+import { plotCells, standProp } from './furnish';
 
 /** How a port's town is built: its walls and roofs, how many buildings, and whether the Crown's tower stands over it. */
 export interface TownStyle {
@@ -110,6 +111,11 @@ const CLEARING = 7;
 const TREE_MOST = 4000;
 /** Street lamps stand this far apart along the main street. */
 const LAMP_EVERY = 6;
+/**
+ * The row of the square the market's stalls back onto: the market's step is three further on
+ * (its front is at 9, the step at 8), so two clear rows lie between.
+ */
+const STALL_BACK = 5;
 /** The ship on the stocks is the sloop's own model (props/catalog.ts): this long, stern to stem. */
 export const HULL_ON_STOCKS_LENGTH = 18;
 
@@ -355,21 +361,24 @@ export function buildTown(
   }
   const yardSign = { x: yardAt.x + 0.5 + f.sx * ys * 0.6, y: low + 2.9, z: yardAt.z + 0.5 + f.sz * ys * 0.6 };
 
-  // The square, dressed. Stalls either side of the way to the market's door, under
-  // awnings; benches at its top; a cart of timber by the shipyard (the Brethren hang a
-  // gallows there instead); and the port's own: guns at the seaward edge for the Crown
-  // and the Brethren, net racks at Haven, bales at the free port.
+  // The square, dressed. Two stalls by the market, set back from its front so the way in
+  // stays open; benches at its top; a hand cart of timber by the shipyard (the Brethren
+  // hang a gallows there instead); and the port's own: guns at the seaward edge for the
+  // Crown and the Brethren, net racks at Haven, bales at the free port.
   const props: Rect[] = [];
   const stallSpots: Array<[number, number]> = [];
   // (Where there was no room for the market by the square, they stand either side of its middle.)
   const marketU = doors.market ? local(f, doors.market.x, doors.market.z).u : Infinity;
   const doorU = marketU <= q + SQUARE_DEEP ? marketU : q + 4;
-  const awning = style.dress === 'free' ? Block.AwningBlue : Block.AwningRed;
-  for (const [u0, i] of [[doorU - 3, 0], [doorU + 1, 1]]) {
-    const r: Rect = { u0: clamp(u0, q + 1, q + 6), u1: clamp(u0, q + 1, q + 6) + 2, ...side(4, 6, ms) };
-    buildStall(world, f, r, low, ms, awning, STALL_GOODS[(i + (style.mirror ? 1 : 0)) % STALL_GOODS.length]);
+  const stalls: PropKind[] = style.dress === 'free' ? ['stallProduceBlue', 'stallClothBlue'] : ['stallProduceRed', 'stallClothRed'];
+  if (style.mirror) stalls.reverse();
+  // Either side of the column of the market's door, their fronts to the square's middle and
+  // two clear rows between their backs and the market's step.
+  for (const [u0, kind] of [[clamp(doorU - 4, q + 1, q + 7), stalls[0]], [clamp(doorU + 2, q + 1, q + 7), stalls[1]]] as const) {
+    const r: Rect = { u0, u1: u0 + 2, ...side(STALL_BACK - 1, STALL_BACK, ms) };
+    standProp(world, decor, kind, plotCells(footprint(f, r)), low, facingOf(-ms * f.sx, -ms * f.sz));
     props.push(r);
-    stallSpots.push([r.u0 + 1, ms * 4]);
+    stallSpots.push([u0 + 1, ms * (STALL_BACK - 2)]);
   }
   for (const s of [-1, 1]) {
     const r: Rect = { u0: q + SQUARE_DEEP - 1, u1: q + SQUARE_DEEP - 1, ...side(2, 3, s) };
@@ -378,7 +387,7 @@ export function buildTown(
   }
   const corner: Rect = { u0: q + 6, u1: q + 8, ...side(6, 7, ys) };
   if (style.dress === 'brethren') buildGallows(world, f, corner, low, ys);
-  else buildCart(world, f, corner, low, ys);
+  else standProp(world, decor, 'handCart', plotCells(footprint(f, corner)), low, facingOf(f.ix, f.iz));
   props.push(corner);
   if (style.dress === 'crown' || style.dress === 'brethren') {
     for (const s of [-1, 1]) {
@@ -832,42 +841,6 @@ function bannerAt(flag: BlockId, out: number, up: number): BlockId {
 function place(world: VoxelWorld, f: Frame, u: number, v: number, y: number, id: BlockId): void {
   const { x, z } = at(f, u, v);
   world.setVoxel(x, y, z, id);
-}
-
-/** What each stall sells, laid along its counter: greengrocer, fruiterer, draper. */
-const STALL_GOODS: ReadonlyArray<readonly BlockId[]> = [
-  [Block.Greens, Block.Fruit, Block.Greens],
-  [Block.Cloth, Block.Sack, Block.Cloth],
-  [Block.Fruit, Block.Fruit, Block.Sack],
-];
-
-/**
- * A market stall on the square: a counter of crates with `goods` on it, a post at each
- * corner, and a striped awning over the lot. `r` is three long and three deep; the
- * counter runs down its middle, the customers' side toward the square's middle (away
- * from `side`), the stallholder's behind.
- */
-function buildStall(world: VoxelWorld, f: Frame, r: Rect, base: number, side: number, awning: BlockId, goods: readonly BlockId[]): void {
-  const front = side > 0 ? r.v0 : r.v1;
-  const back = side > 0 ? r.v1 : r.v0;
-  const middle = (r.v0 + r.v1) / 2;
-  for (let u = r.u0; u <= r.u1; u++) {
-    place(world, f, u, middle, base, u === r.u0 || u === r.u1 ? Block.Crate : Block.Planks);
-    place(world, f, u, middle, base + 1, goods[(u - r.u0) % goods.length]);
-    for (let v = r.v0; v <= r.v1; v++) place(world, f, u, v, base + 3, (u - r.u0) % 2 === 0 ? awning : Block.Canvas);
-  }
-  for (const u of [r.u0, r.u1]) for (const v of [front, back]) for (let y = base; y < base + 3; y++) place(world, f, u, v, y, Block.Wood);
-}
-
-/** A cart of timber: its bed on two wheels, planks and logs aboard, its shafts to the ground. */
-function buildCart(world: VoxelWorld, f: Frame, r: Rect, base: number, side: number): void {
-  const mid = Math.floor((r.u0 + r.u1) / 2);
-  for (const [u, v] of cells(r)) {
-    if (u === mid) place(world, f, u, v, base, Block.Wood); // the wheels
-    place(world, f, u, v, base + 1, Block.Planks);
-    if (v === (side > 0 ? r.v1 : r.v0) && u !== r.u1) place(world, f, u, v, base + 2, Block.Wood); // logs
-  }
-  place(world, f, r.u1, side > 0 ? r.v1 : r.v0, base + 2, Block.Sack);
 }
 
 /** The Brethren's gallows: two posts, a beam across, a noose hanging. */
