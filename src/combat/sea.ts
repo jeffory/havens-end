@@ -36,7 +36,7 @@ export type SeaEvent =
   | { kind: 'jailed'; fine: number; goods: number; port: string }
   | { kind: 'spawned'; vessel: number; name: string }
   | { kind: 'overrun' }
-  | { kind: 'respawn'; goods: number; port: string }
+  | { kind: 'respawn'; goods: number; port: string; ship: string }
   | { kind: 'standing'; faction: PortFaction; from: number; to: number }
   | { kind: 'bounty'; contract: number; target: PortFaction; progress: number; count: number }
   | { kind: 'docked'; port: number }
@@ -598,8 +598,9 @@ export class Sea {
   /** Her cargo went down with her; the captain's purse didn't. */
   private respawn(): void {
     const goods = cargoCount(this.player.cargo);
+    const ship = this.player.cls.design.name;
     this.newShip();
-    this.emit({ kind: 'respawn', goods, port: this.captain.lastPort.name });
+    this.emit({ kind: 'respawn', goods, port: this.captain.lastPort.name, ship });
   }
 
   /**

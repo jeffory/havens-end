@@ -63,6 +63,8 @@ import { BuildMenu } from './ui/BuildMenu';
 import { CampScreen } from './ui/CampScreen';
 import { loadSettings, saveSettings, type Settings } from './ui/settings';
 import { ChartScreen } from './ui/ChartScreen';
+import { comeToCard, type Card, type ComeTo } from './ui/comeTo';
+import { Fade } from './ui/Fade';
 import { FootHud } from './ui/FootHud';
 import { StoreScreen } from './ui/StoreScreen';
 import { WorldLabels } from './ui/WorldLabels';
@@ -107,6 +109,8 @@ const TOWN_LIFT_UNDER = 60;
 const PIN_BEYOND = 55;
 /** Seconds of sim time per step while the night is slept through. */
 const SLEEP_STEP = 1;
+/** A card for going down holds this long (a key or a click skips it). */
+const CARD_SECONDS = 3;
 /** Light given off by what's built, by kind. */
 const BUILDING_LIGHT: Partial<Record<Building['kind'], { strength: number; height: number }>> = {
   campfire: { strength: 1, height: 2 },
@@ -184,9 +188,8 @@ export class Game {
   private readonly nightLights = new NightLights();
   private readonly nightLife: NightLife;
   private readonly settings: Settings = loadSettings();
-  /** The black screen while the captain sleeps; the sim waits while it's up. */
-  private readonly sleepFade = document.createElement('div');
-  private sleeping = false;
+  /** The black screen while the captain sleeps, or comes to after going down; the sim waits while it's up. */
+  private readonly fade: Fade;
   private readonly footHud: FootHud;
   private readonly signs: WorldLabels;
   private readonly shore: Shore;
@@ -293,8 +296,7 @@ export class Game {
     this.overlay = new Overlay(container);
     this.landView = new LandView(captains.get('player')!);
     this.nightLife = new NightLife(this.islands);
-    this.sleepFade.className = 'sleep-fade';
-    container.append(this.sleepFade);
+    this.fade = new Fade(container);
     this.shore = new Shore(this.land, this.treasure, this.landView, this.footHud, this.rig, this.input, {
       openPort: (place) => this.openPort(place),
       openStore: (building) => this.openStore(building),
@@ -430,29 +432,48 @@ export class Game {
 
   /**
    * Sleeps until morning (or until dusk, waiting for the dark): the screen goes black,
-   * time passes in big steps while the sea waits, and the game saves on waking.
+   * time passes in big steps while the sea waits, and the game saves on waking. With a
+   * `card` (a guardian's won), that card shows while the night passes.
    */
-  private sleep(until: 'morning' | 'dusk'): void {
+  private sleep(until: 'morning' | 'dusk', card: Card | null = null): void {
     if (this.overlay.kind) this.closeMenu();
     const seconds = secondsUntil(this.sea.clock, WAKE_AT[until]);
-    this.sleeping = true;
-    this.sleepFade.textContent = until === 'morning' ? 'You sleep through the night…' : 'You doze until dusk…';
-    this.sleepFade.classList.add('shown');
-    window.setTimeout(() => {
-      for (let t = 0; t < seconds; t += SLEEP_STEP) {
-        const dt = Math.min(SLEEP_STEP, seconds - t);
-        this.sea.pass(dt);
-        this.economy.step(dt);
-        this.land.step(dt, false);
-      }
-      this.handleLand(this.sea.time);
-      this.notify(this.economy.takeNotices());
-      this.sleepFade.classList.remove('shown');
-      this.sleeping = false;
-      this.autosave();
-      const clock = this.sea.clock;
-      this.hud.toast(until === 'morning' ? `Morning, day ${clock.day}. The game is saved.` : `Dusk falls (${clockText(clock.phase)}). The game is saved.`, 'good');
-    }, 700);
+    const line = until === 'morning' ? 'You sleep through the night…' : 'You doze until dusk…';
+    this.fade.run(
+      card ?? { line },
+      () => {
+        for (let t = 0; t < seconds; t += SLEEP_STEP) {
+          const dt = Math.min(SLEEP_STEP, seconds - t);
+          this.sea.pass(dt);
+          this.economy.step(dt);
+          this.land.step(dt, false);
+        }
+        this.handleLand(this.sea.time);
+        this.notify(this.economy.takeNotices());
+      },
+      card ? CARD_SECONDS : 0,
+      () => {
+        this.autosave();
+        this.controls.setMode(this.land.walker ? 'foot' : 'sea');
+        if (card) return;
+        const clock = this.sea.clock;
+        this.hud.toast(until === 'morning' ? `Morning, day ${clock.day}. The game is saved.` : `Dusk falls (${clockText(clock.phase)}). The game is saved.`, 'good');
+      },
+    );
+  }
+
+  /** Going down: black, a card of what happened, and the view comes up wherever the captain came to. */
+  private comeTo(c: ComeTo): void {
+    if (this.overlay.kind) this.closeMenu();
+    this.fade.run(
+      comeToCard(c),
+      () => {
+        const w = this.land.walker;
+        this.rig.snapTo(this.cameraTarget.set(w?.x ?? this.ship.x, w ? w.y + 1.2 : WATER_LEVEL, w?.z ?? this.ship.z));
+      },
+      CARD_SECONDS,
+      () => this.controls.setMode(this.land.walker ? 'foot' : 'sea'),
+    );
   }
 
   private applySettings(settings: Settings): void {
@@ -495,8 +516,8 @@ export class Game {
       this.duel.step(dt, this.duelIntent());
       return;
     }
-    // In a menu, poring over the chart, or asleep: the sea waits.
-    if (this.overlay.kind || this.sleeping) return;
+    // In a menu, poring over the chart, or faded out: the sea waits.
+    if (this.overlay.kind || this.fade.active) return;
     this.story.step();
     this.autosaveIn -= dt;
     if (this.autosaveIn <= 0) this.autosave();
@@ -564,7 +585,7 @@ export class Game {
 
     // The rendered moment trails the latest sim step by (1 - alpha) of a step. While a
     // duel or a menu pauses the sea, the waves keep going on their own clock.
-    const paused = this.duel !== null || this.overlay.kind !== null || this.sleeping;
+    const paused = this.duel !== null || this.overlay.kind !== null || this.fade.active;
     if (paused) this.pausedTime += frameSeconds;
     const behind = paused ? 0 : (1 - alpha) * this.loop.step;
     const time = sea.time - behind + this.pausedTime;
@@ -614,7 +635,7 @@ export class Game {
       focus = this.duel.focus;
       if (verdict) this.endDuel(verdict === 'won');
     } else {
-      rig.update(this.cameraTarget, frameSeconds);
+      if (!this.fade.fadingIn) rig.update(this.cameraTarget, frameSeconds);
     }
 
     // The time of day lights the scene; squalls darken it. At night you see less far.
@@ -637,7 +658,7 @@ export class Game {
     this.hud.setClock(sea.clock.day, clockText(phase), isNight(phase));
     // The music: quiet asleep or while the tab is hidden; Broadsides in a fight or a duel,
     // hushing the shanties; Ashore on foot.
-    const where = this.sleeping || document.hidden ? null : walker ? 'land' : player.status === 'afloat' ? 'sea' : null;
+    const where = this.fade.active || document.hidden ? null : walker ? 'land' : player.status === 'afloat' ? 'sea' : null;
     const fighting = this.duel !== null || (where === 'sea' && this.sea.inBattle());
     this.music.update({ where, fighting, singing: this.settings.shanties }, frameSeconds);
 
@@ -740,18 +761,13 @@ export class Game {
           this.startDuel(e.vessel);
           break;
         case 'jailed':
-          this.hud.toast(
-            `Thrown in irons! Your freedom costs ${e.fine} gold${e.goods > 0 ? `, and your ${e.goods} goods are seized` : ''}. You are released at ${e.port}.`,
-            'bad',
-          );
-          this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
+          this.comeTo({ kind: 'jailed', fine: e.fine, goods: e.goods, port: e.port });
           break;
         case 'overrun':
           this.hud.toast('Your last hands have fallen and the enemy swarms aboard!', 'bad');
           break;
         case 'respawn':
-          this.hud.toast(`You wash ashore at ${e.port}${e.goods > 0 ? `; your ${e.goods} goods went down with her` : ''}. A new sloop is found for you.`, 'info');
-          this.rig.snapTo(this.cameraTarget.set(this.ship.x, WATER_LEVEL, this.ship.z));
+          this.comeTo({ kind: 'sunk', ship: e.ship, goods: e.goods, port: e.port });
           break;
         case 'standing':
           for (const news of standingNews(e)) this.hud.toast(news, e.to > e.from ? 'good' : 'bad');
@@ -980,6 +996,11 @@ export class Game {
         this.effects.emit(e.hit ? 'wound' : 'dust', e.to.x, e.to.y, e.to.z, 0, 0, e.hit ? 0.6 : 0.35);
       }
       if (e.kind === 'notice') this.hud.toast(e.text, e.tone);
+      if (e.kind === 'downed') {
+        this.toSea('');
+        this.comeTo({ kind: 'bandits', toll: e.toll, pack: e.pack });
+      }
+      if (e.kind === 'hurt') this.effects.emit('wound', e.x, e.y, e.z, 0, 0, 0.5);
     }
   }
 
@@ -1083,8 +1104,7 @@ export class Game {
         this.treasure.guardianBeaten(guardian.map, guardian.x, guardian.y, guardian.z);
       } else {
         const toll = this.treasure.guardianWon();
-        this.hud.toast(`You come to at dawn beside the hole, ${toll} gold lighter. The hoard is still there, and so is its guardian.`, 'bad');
-        this.sleep('morning');
+        this.sleep('morning', comeToCard({ kind: 'guardian', toll }));
       }
       return;
     }

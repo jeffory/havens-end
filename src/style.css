@@ -473,8 +473,12 @@ canvas {
   position: absolute;
   inset: 0;
   z-index: 5;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
   background: #05070d;
   color: #dfe6ff;
   font: 600 20px var(--ui-font);
@@ -485,6 +489,20 @@ canvas {
 
 .sleep-fade.shown {
   opacity: 1;
+}
+
+.sleep-fade h2 {
+  margin: 0;
+  font: 700 38px Georgia, serif;
+  letter-spacing: 0.02em;
+  color: #f1e3c0;
+}
+
+.sleep-fade p {
+  max-width: min(640px, 86vw);
+  margin: 0;
+  font: 500 19px/1.5 var(--ui-font);
+  color: #dfe6ff;
 }
 
 /* HUD panels sit above the floating ship labels. */
