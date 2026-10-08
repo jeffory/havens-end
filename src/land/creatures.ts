@@ -159,13 +159,23 @@ function spawnHerd(land: Land, w: Walker, random: () => number): void {
   }
 }
 
+/** Where feet would come to rest at this point, or null off any standable ground. */
+function footing(land: Land, x: number, z: number): number | null {
+  return standable(land.world, x, z, groundHeight(land.world, Math.floor(x), Math.floor(z)) + 1);
+}
+
+/** This point's footing, if it's at least `upland` above the sea; null off that ground, or too low off it. */
+function uplandFooting(land: Land, x: number, z: number, upland: number): number | null {
+  const y = footing(land, x, z);
+  return y !== null && y - 1 >= SEA_LEVEL + upland ? y : null;
+}
+
 /** Where a goat can graze: upland grass, off town and camp land, out of firelight. Its footing's height, or null. */
 function grazing(land: Land, x: number, z: number, lights: ReadonlyArray<{ x: number; z: number }>): number | null {
   if (land.inTown(x, z) || land.claimed(x, z)) return null;
   if (lights.some((l) => Math.hypot(l.x - x, l.z - z) < LIGHT_RADIUS * 3)) return null;
-  const y = standable(land.world, x, z, groundHeight(land.world, Math.floor(x), Math.floor(z)) + 1);
-  if (y === null || y - 1 < SEA_LEVEL + CREATURES.goat.upland!) return null;
-  return land.world.getVoxel(Math.floor(x), y - 1, Math.floor(z)) === Block.Grass ? y : null;
+  const y = uplandFooting(land, x, z, CREATURES.goat.upland!);
+  return y !== null && land.world.getVoxel(Math.floor(x), y - 1, Math.floor(z)) === Block.Grass ? y : null;
 }
 
 function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, lights: ReadonlyArray<{ x: number; z: number }>, random: () => number): void {
@@ -178,7 +188,8 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     const dx = w.x - c.flee.x;
     const dz = w.z - c.flee.z;
     const d = Math.hypot(dx, dz) || 1;
-    stepWalker(w, dx / d, dz / d, reader, dt, spec.speed * 1.4, CLIMB);
+    const [fx, fz] = uplandFlee(land, w, dx / d, dz / d, spec.upland);
+    stepWalker(w, fx, fz, reader, dt, spec.speed * 1.4, CLIMB);
     return;
   }
   if (c.think <= 0) {
@@ -238,13 +249,29 @@ function wanderFrom(w: Walker, random: () => number): { x: number; z: number } {
   return { x: w.x + Math.sin(angle) * 6, z: w.z + Math.cos(angle) * 6 };
 }
 
-/** Somewhere to wander to: anywhere, or — for upland game — somewhere that keeps it grazing on its own ground. */
+/** Somewhere to wander to: anywhere, or — for upland game — somewhere grazeable it can actually climb to. */
 function wander(land: Land, w: Walker, upland: number | undefined, lights: ReadonlyArray<{ x: number; z: number }>, random: () => number): { x: number; z: number } {
+  if (upland === undefined) return wanderFrom(w, random);
+  const here = footing(land, w.x, w.z) ?? w.y;
   for (let i = 0; i < SPAWN_TRIES; i++) {
     const p = wanderFrom(w, random);
-    if (upland === undefined || grazing(land, p.x, p.z, lights) !== null) return p;
+    const there = grazing(land, p.x, p.z, lights);
+    if (there !== null && there - here <= CLIMB) return p;
   }
   return { x: w.x, z: w.z };
+}
+
+/**
+ * A fleeing direction that doesn't carry upland game off the edge: it veers along the
+ * brow if the way ahead drops away, or stands its ground at the drop if neither side does.
+ */
+function uplandFlee(land: Land, w: Walker, dx: number, dz: number, upland: number | undefined): readonly [number, number] {
+  if (upland === undefined) return [dx, dz];
+  const ahead = 1.5;
+  for (const [fx, fz] of [[dx, dz], [-dz, dx], [dz, -dx]] as const) {
+    if (uplandFooting(land, w.x + fx * ahead, w.z + fz * ahead, upland) !== null) return [fx, fz];
+  }
+  return [0, 0];
 }
 
 export function scare(c: Creature, fromX: number, fromZ: number, seconds: number): void {

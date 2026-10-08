@@ -131,11 +131,22 @@ describe('night creatures', () => {
 describe('wild goats', () => {
   it('graze by day in herds of two to four, on upland grass', () => {
     const { land } = upland();
-    for (let t = 0; t < 60; t += 1 / 20) land.step(1 / 20);
+    const footed = () => {
+      for (const g of goats(land)) expect(g.walker.y).toBeGreaterThanOrEqual(SEA_LEVEL + 5);
+    };
+    for (let t = 0; t < 40; t += 1 / 20) {
+      land.step(1 / 20);
+      footed();
+    }
     const herd = goats(land);
     expect(herd.length).toBeGreaterThanOrEqual(2);
     expect(herd.length).toBeLessThanOrEqual(4);
-    for (const g of herd) expect(g.walker.y).toBeGreaterThanOrEqual(SEA_LEVEL + 5);
+    // The captain walks in among them: the whole herd bolts, and still mustn't leave the upland.
+    Object.assign(land.walker!, { x: herd[0].walker.x + 2, z: herd[0].walker.z });
+    for (let t = 0; t < 80; t += 1 / 20) {
+      land.step(1 / 20);
+      footed();
+    }
     expect(land.creatures.filter((c) => c.kind !== 'goat')).toHaveLength(0);
   });
 
