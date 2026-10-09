@@ -186,12 +186,11 @@ describe('towns', () => {
         const p = place(kind);
         return harbour.town.houses.find((h) => outside(h, Math.floor(p.x), Math.floor(p.z)) <= 1)!;
       };
-      // The market: stalls under an open hall.
+      // The market: counters of goods under an open hall, and lanterns at its front.
       const market = plotOf('market');
-      const hall = blocksIn(world, market, place('market').y, place('market').y + 3);
-      expect(hall.get(Block.Barrel) ?? 0, `${name} market stalls`).toBeGreaterThanOrEqual(2);
-      expect([Block.Fruit, Block.Greens, Block.Cloth].reduce((n, id) => n + (hall.get(id) ?? 0), 0), `${name} market goods`).toBeGreaterThanOrEqual(2);
-      expect(hall.get(Block.Lantern) ?? 0, `${name} market lanterns`).toBeGreaterThanOrEqual(2);
+      const counters = harbour.decor.filter((d) => d.kind.startsWith('counter') && inside(market, Math.floor(d.x), Math.floor(d.z)));
+      expect(counters.length, `${name} market counters`).toBeGreaterThanOrEqual(2);
+      expect(blocksIn(world, market, place('market').y, place('market').y + 3).get(Block.Lantern) ?? 0, `${name} market lanterns`).toBeGreaterThanOrEqual(2);
       // The tavern: barrels by its door.
       const tavern = place('tavern');
       let barrels = 0;
@@ -243,15 +242,6 @@ describe('towns', () => {
     }
   });
 
-  /** The height a building's rooms stand at: the first air up from below, at its lowest inside its walls. */
-  const floorOf = (world: VoxelWorld, f: Footprint) =>
-    Math.min(
-      ...cells({ x0: f.x0 + 1, z0: f.z0 + 1, w: f.w - 2, d: f.d - 2 }).map(([x, z]) => {
-        let y = SEA_LEVEL;
-        while (world.getVoxel(x, y, z) !== Block.Air) y++;
-        return y;
-      }),
-    );
   /** Blocks of the given kinds anywhere near the square (and the quay below it). */
   const nearSquare = (world: VoxelWorld, square: Footprint, ids: number[]) => {
     const around = { x0: square.x0 - 10, z0: square.z0 - 10, w: square.w + 20, d: square.d + 20 };
@@ -627,25 +617,32 @@ describe('towns', () => {
     }
   });
 
-  it('furnish the rooms: beds and hearths in the houses, tables and a bar in the tavern, books in the office', () => {
-    for (const { name, world, harbour } of PORTS) {
+  it('furnish the rooms: a bed and a hearth in every house, the tavern’s bar, the office’s desk, and counters in the market', () => {
+    const NEEDS: Record<string, readonly PropKind[]> = {
+      house: ['bed', 'hearth', 'table', 'chest'],
+      tavern: ['bar', 'barCask', 'barrel', 'shelfBottles', 'table', 'stool'],
+      office: ['desk', 'shelfBooks', 'chest'],
+      market: ['counterProduce', 'counterCloth'],
+    };
+    for (const { name, harbour } of PORTS) {
       const placeAt = (f: Footprint) => harbour.places.find((p) => p.kind !== 'shipyard' && outside(f, Math.floor(p.x), Math.floor(p.z)) <= 1)?.kind;
       for (const house of harbour.town.houses) {
         const kind = placeAt(house) ?? 'house';
-        if (kind === 'market') continue;
-        const floor = floorOf(world, house);
-        // Inside its walls (blocksIn takes a block round what it's given).
-        const inside = blocksIn(world, { x0: house.x0 + 2, z0: house.z0 + 2, w: house.w - 4, d: house.d - 4 }, floor, floor + 3);
-        const label = `${name} ${kind} at ${house.x0},${house.z0}`;
-        if (kind === 'house') {
-          expect(inside.get(Block.Canvas) ?? 0, `${label} bed`).toBeGreaterThanOrEqual(1);
-          expect(inside.get(Block.Embers) ?? 0, `${label} hearth`).toBeGreaterThanOrEqual(1);
-        } else if (kind === 'tavern') {
-          expect(inside.get(Block.Barrel) ?? 0, `${label} barrels`).toBeGreaterThanOrEqual(2);
-          expect(inside.get(Block.Planks) ?? 0, `${label} tables and bar`).toBeGreaterThanOrEqual(4);
-        } else if (kind === 'office') {
-          expect(inside.get(Block.Books) ?? 0, `${label} books`).toBeGreaterThanOrEqual(3);
-        }
+        const room = { x0: house.x0 + 1, z0: house.z0 + 1, w: house.w - 2, d: house.d - 2 };
+        const kinds = new Set(harbour.decor.filter((d) => inside(room, Math.floor(d.x), Math.floor(d.z))).map((d) => d.kind));
+        for (const k of NEEDS[kind]) expect(kinds.has(k), `${name} ${kind} at ${house.x0},${house.z0}: ${k}`).toBe(true);
+      }
+    }
+  });
+
+  it('leave every door and the way into each room clear: the captain can walk in from the step to the middle', () => {
+    for (const { name, world, harbour } of PORTS) {
+      const steps = [...harbour.places.filter((p) => p.kind !== 'shipyard'), ...harbour.spots.filter((s) => s.kind === 'door')];
+      for (const house of harbour.town.houses) {
+        const step = steps.find((s) => outside(house, Math.floor(s.x), Math.floor(s.z)) === 1);
+        if (!step) continue;
+        const middle = { x: house.x0 + house.w / 2, z: house.z0 + house.d / 2 };
+        expect(findPath(world, { x: step.x, y: step.y, z: step.z }, middle, 1.5), `${name} into the room at ${house.x0},${house.z0}`).not.toBeNull();
       }
     }
   });

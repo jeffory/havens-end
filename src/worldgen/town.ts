@@ -6,7 +6,7 @@ import { pointBlocked, topIn } from '../voxel/shapes';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
-import { plotCells, standProp } from './furnish';
+import { furnish, plotCells, standProp } from './furnish';
 
 /** How a port's town is built: its walls and roofs, how many buildings, and whether the Crown's tower stands over it. */
 export interface TownStyle {
@@ -305,7 +305,7 @@ export function buildTown(
 
   // Buildings, doors to the street: the market an open hall of stalls, the tavern and
   // the guildhall two storeys (the guildhall flying its owners' flag), houses of one
-  // storey or two, every floor boarded.
+  // storey or two, every floor boarded and every room furnished.
   const doors: Town['doors'] = {};
   const signs: Town['signs'] = {};
   const houses: Footprint[] = [];
@@ -315,14 +315,17 @@ export function buildTown(
     const base = padOf(lot)!;
     clearSite(world, fp, base, 1);
     const face = at(f, lot.faceU, lot.faceV);
+    // Its rooms, furnished when the roof lifts: how they're set out varies a little by plot.
+    const look = Math.floor(hash2(fp.x0, fp.z0, 53) * 1000);
     let door: Door;
     if (lot.role === 'market') {
       door = buildMarketHall(world, fp, base, style, face.x + 0.5, face.z + 0.5);
+      furnish(world, fp, door, 'market', decor, look);
     } else {
       const storeys = lot.role === 'house' ? (hash2(fp.x0, fp.z0, 71) < 0.4 ? 2 : 1) : lot.role === 'office' ? (style.officeStoreys ?? 2) : 2;
       door = buildHouse(world, fp, base, style, face.x + 0.5, face.z + 0.5, storeys);
       boardFloor(world, fp, base);
-      furnish(world, fp, door, lot.role);
+      furnish(world, fp, door, lot.role, decor, look);
       if (lot.role === 'tavern') barrelsBy(world, door);
       if (lot.role === 'office') flagOver(world, fp, style.flag);
     }
@@ -746,7 +749,7 @@ function buildWell(world: VoxelWorld, fp: Footprint, base: number): void {
   }
 }
 
-/** The market: an open hall on posts under a gable roof, a wall at the back, stalls of barrels and counters within. Returns its way in (the middle of its open front). */
+/** The market: an open hall on posts under a gable roof, a wall at the back; its counters are set out by `furnish`. Returns its way in (the middle of its open front). */
 function buildMarketHall(world: VoxelWorld, fp: Footprint, base: number, style: TownStyle, towardX: number, towardZ: number): Door {
   const { x0, z0, w, d } = fp;
   const x1 = x0 + w - 1;
@@ -764,20 +767,6 @@ function buildMarketHall(world: VoxelWorld, fp: Footprint, base: number, style: 
       const edge = x === x0 || x === x1 || z === z0 || z === z1;
       if (isBack(x, z)) for (let y = base; y < base + 3; y++) world.setVoxel(x, y, z, style.walls);
       else if (corner || (edge && !isFront(x, z) && ((alongX ? z : x) - (alongX ? z0 : x0)) % 2 === 0)) for (let y = base; y < base + 3; y++) world.setVoxel(x, y, z, Block.Wood);
-    }
-  }
-  // Stalls: counters and barrels down both sides, clear down the middle to the front.
-  for (let x = x0 + 1; x < x1; x++) {
-    for (let z = z0 + 1; z < z1; z++) {
-      const across = alongX ? z : x;
-      const lo = alongX ? z0 + 1 : x0 + 1;
-      const hi = alongX ? z1 - 1 : x1 - 1;
-      if ((across === lo || across === hi) && !isBack(x, z) && !isFront(x + (alongX ? (frontHigh ? 1 : -1) : 0), z + (alongX ? 0 : frontHigh ? 1 : -1))) {
-        const barrel = (x + z) % 2 === 0;
-        world.setVoxel(x, base, z, barrel ? Block.Barrel : Block.Planks);
-        // Goods laid out on the counters.
-        if (!barrel) world.setVoxel(x, base + 1, z, [Block.Fruit, Block.Greens, Block.Cloth][(((x * 7 + z * 3) % 3) + 3) % 3]);
-      }
     }
   }
   // Lanterns hung at the front corners.
@@ -1016,59 +1005,6 @@ function markDoor(world: VoxelWorld, door: Door, decor: PropPlacement[]): { x: n
   world.setVoxel(door.outX, door.y - 1, door.outZ, Block.Stone);
   decor.push(onWall('wallLantern', door.x + ax, door.y + 2, door.z + az, ox, oz));
   return { x: door.x + ax + 0.5 + ox * 0.9, y: door.y + 2.5, z: door.z + az + 0.5 + oz * 0.9 };
-}
-
-/**
- * Furnishes a building's ground floor, seen when its roof lifts: in a house a bed and a
- * hearth against the back wall and a table and stool; in the tavern a bar across the
- * back with barrels behind it, and tables; in the office shelves of books along the back
- * and a desk. The way in from the door is left clear.
- */
-function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: 'tavern' | 'office' | 'house'): void {
-  const ix = Math.sign(door.x - door.outX);
-  const iz = Math.sign(door.z - door.outZ);
-  const deep = ix !== 0 ? fp.w - 2 : fp.d - 2;
-  const wide = ix !== 0 ? fp.d - 2 : fp.w - 2;
-  /** The cell `k` in from the door's wall and `a` across the room. */
-  const cell = (a: number, k: number) =>
-    ix !== 0
-      ? { x: ix > 0 ? fp.x0 + 1 + k : fp.x0 + fp.w - 2 - k, z: fp.z0 + 1 + a }
-      : { x: fp.x0 + 1 + a, z: iz > 0 ? fp.z0 + 1 + k : fp.z0 + fp.d - 2 - k };
-  const doorA = ix !== 0 ? door.z - (fp.z0 + 1) : door.x - (fp.x0 + 1);
-  const put = (a: number, k: number, dy: number, id: BlockId) => {
-    if (a < 0 || a >= wide || k < 0 || k >= deep || (a === doorA && k <= 1)) return;
-    const { x, z } = cell(a, k);
-    world.setVoxel(x, door.y + dy, z, id);
-  };
-  const back = deep - 1;
-  // The far side of the room from the door, and the near.
-  const far = doorA < wide / 2 ? wide - 1 : 0;
-  const near = wide - 1 - far;
-  const toward = Math.sign(near - far) || 1;
-  if (role === 'house') {
-    put(far, back, 0, Block.Canvas); // the bed: a pillow and a blanket
-    put(far + toward, back, 0, Block.AwningRed);
-    put(near, back, 0, Block.Embers); // the hearth, and its chimney breast
-    put(near, back, 1, Block.Stone);
-    const t = Math.floor(wide / 2) === doorA ? Math.floor(wide / 2) + toward : Math.floor(wide / 2);
-    put(t, Math.max(1, back - 1), 0, Block.Planks); // a table, and a stool
-    put(t - toward, Math.max(1, back - 1), 0, Block.Wood);
-  } else if (role === 'tavern') {
-    for (let a = 0; a < wide; a++) {
-      if (a > 0 && a < wide - 1) put(a, back - 1, 0, Block.Planks); // the bar
-      if (a % 2 === 0) put(a, back, 0, Block.Barrel);
-    }
-    for (const a of [0, wide - 1]) {
-      put(a, 1, 0, Block.Planks); // tables, with a stool at each
-      put(a, 0, 0, Block.Wood);
-    }
-  } else {
-    for (let a = 0; a < wide; a++) for (let y = 0; y < 2; y++) put(a, back, y, Block.Books);
-    const d = Math.floor(wide / 2) === doorA ? Math.floor(wide / 2) + toward : Math.floor(wide / 2);
-    put(d, back - 2, 0, Block.Planks); // the desk, a book open on it, and a chair
-    put(d, back - 2, 1, Block.Books);
-    put(d, back - 1, 0, Block.Wood);
-  }
 }
 
 /** A street lamp: a post two high with a lantern standing on top. Returns where the light is. */
