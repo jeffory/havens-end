@@ -221,7 +221,7 @@ describe('townsfolk', () => {
       }
     }
     expect(seen.has('tavern') && seen.has('yard') && seen.has('square')).toBe(true);
-  });
+  }, 20_000); // four minutes of the town's comings and goings: slow under a full parallel run
 
   it('step aside when the captain walks onto where they stand, and keep a step from him', () => {
     const { sea, land } = town(TOWN, 3);

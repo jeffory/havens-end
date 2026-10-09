@@ -24,7 +24,8 @@ export interface TownStyle {
   mirror?: boolean;
   /**
    * How the square's dressed: Haven's nets and fish, the free port's bales, the Crown's
-   * guns, the Brethren's guns and gallows. Its awnings are blue at the free port, red elsewhere.
+   * guns, the Brethren's guns and gallows. Its awnings are blue at the free port, red
+   * elsewhere. Its rooms are dressed to match (`layRoom`): their rugs, the office's banner.
    */
   dress: TownDress;
   /** Storeys to the seat of power (the guildhall or the governor's). */
@@ -455,8 +456,9 @@ export function buildTown(
     lamps.push(lampPost(world, x, height, z, decor));
   }
 
-  // Where townsfolk go: about the square, down the market's aisle, at the shipyard, by
-  // the tavern door and the well, along the street, and in and out of the houses.
+  // Where townsfolk go: about the square, down the market's aisle, at the head of the
+  // slipway, out before the tavern, by the well, along the street, and in and out of the
+  // houses. Only a doorstep's own spot is on a doorway (they linger off it, `standAt`).
   const townSpots: TownSpot[] = [];
   const spotAt = (u: number, v: number, y: number, kind: SpotKind) => {
     const { x, z } = at(f, u, v);

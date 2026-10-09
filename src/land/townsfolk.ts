@@ -86,9 +86,9 @@ const KEEPER_CLEAR = 0.8;
  * Nobody lingers, nor a guard stands, this close to a doorway: where the captain stands to go
  * in at a shop, or a house's step. A crowd there merged with the captain as they went in.
  */
-export const DOOR_CLEAR = 1.2;
+const DOOR_CLEAR = 1.2;
 /** Nobody lingers this close to the captain: one he walks onto steps aside. */
-export const CAPTAIN_CLEAR = 1;
+const CAPTAIN_CLEAR = 1;
 
 /** Somewhere nobody lingers, and how far from it they keep. */
 export interface Clear {
@@ -101,7 +101,7 @@ export interface Clear {
  * Where nobody in this port lingers: a step from every doorway (the places you go in at, and
  * the houses' doors), off every keeper's post, present or not, and clear of the captain.
  */
-export function offLimits(port: Port, captain: { x: number; z: number } | null): Clear[] {
+function offLimits(port: Port, captain: { x: number; z: number } | null): Clear[] {
   const doorways = [...port.places, ...(port.spots ?? []).filter((s) => s.kind === 'door')];
   return [
     ...doorways.map(({ x, z }) => ({ x, z, by: DOOR_CLEAR })),
