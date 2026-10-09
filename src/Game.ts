@@ -314,7 +314,7 @@ export class Game {
     this.props = new PropsView(decor, catalog, this.terrain.lifts);
     this.lifter = new RoofLifter(this.world);
     this.ocean = new OceanRenderer(seabed, this.wakes);
-    this.streaks = new WindStreaks(this.weather);
+    this.streaks = new WindStreaks(this.weather, this.world);
     this.fleet = new FleetView(models, this.wakes, this.effects, this.arcs);
     this.hud = new Hud(container);
     this.labels = new ShipLabels(container);

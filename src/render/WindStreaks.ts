@@ -1,6 +1,8 @@
 import { BoxGeometry, InstancedMesh, Matrix4, MeshBasicMaterial, Quaternion, Vector3 } from 'three';
 import { WATER_LEVEL } from '../ocean/waves';
 import type { Weather } from '../sailing/weather';
+import { Block } from '../voxel/blocks';
+import type { VoxelReader } from '../voxel/raycast';
 
 const COUNT = 90;
 /** Drift speed in u/s per unit of wind strength. */
@@ -17,6 +19,8 @@ interface Streak {
 /**
  * Short white dashes that drift with the local wind: many and quick in a squall,
  * few and lazy in a calm. The quickest way to read the regional weather at a glance.
+ * Over the sea only: they float just above the water, so over a beach or a quay they'd
+ * lie on the ground as white lines.
  */
 export class WindStreaks {
   readonly mesh: InstancedMesh;
@@ -27,7 +31,10 @@ export class WindStreaks {
   private readonly scale = new Vector3();
   private readonly up = new Vector3(0, 1, 0);
 
-  constructor(private readonly weather: Weather) {
+  constructor(
+    private readonly weather: Weather,
+    private readonly world: VoxelReader,
+  ) {
     this.mesh = new InstancedMesh(
       new BoxGeometry(0.12, 0.05, 1),
       new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }),
@@ -63,6 +70,13 @@ export class WindStreaks {
       streak.x += wind.dirX * wind.strength * DRIFT * frameSeconds;
       streak.z += wind.dirZ * wind.strength * DRIFT * frameSeconds;
       streak.age += frameSeconds;
+      // Blown ashore (or born there): gone, to be born again over the water.
+      if (!this.overSea(streak.x, streak.z)) {
+        streak.age = streak.life;
+        this.scale.set(0, 0, 0);
+        this.mesh.setMatrixAt(i, this.matrix.compose(this.position, this.rotation, this.scale));
+        continue;
+      }
 
       // Grow in, then shrink out; longer in stronger wind.
       const envelope = Math.sin((Math.PI * streak.age) / streak.life);
@@ -73,5 +87,10 @@ export class WindStreaks {
       this.mesh.setMatrixAt(i, this.matrix.compose(this.position, this.rotation, this.scale));
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Is there open water at (x, z): nothing standing at the water's surface, or above it? */
+  private overSea(x: number, z: number): boolean {
+    return this.world.getVoxel(Math.floor(x), Math.floor(WATER_LEVEL), Math.floor(z)) === Block.Air;
   }
 }
