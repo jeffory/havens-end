@@ -1,9 +1,9 @@
 import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropKind, PropPlacement } from '../props/types';
-import { Block, FACING_DIRS } from '../voxel/blocks';
+import { Block, FACING_DIRS, isSolid } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
 import type { Door, Footprint } from './buildings';
-import { layRoom, type RoomRole, type Toward } from './rooms';
+import { layRoom, type RoomRole, type Toward, type TownDress } from './rooms';
 
 /** A block of grid cells, from (x0, z0) to (x1, z1), both included. */
 export interface Cells {
@@ -53,15 +53,21 @@ export interface Post {
 
 const facingOf = (dx: number, dz: number): number => FACING_DIRS.findIndex(([fx, fz]) => fx === dx && fz === dz);
 
+/** The banner over a seat of power, by the port: the Guild's (at Haven and the free port), the Crown's, the Brethren's. */
+const BANNERS: Record<TownDress, PropKind> = { haven: 'bannerGuild', free: 'bannerGuild', crown: 'bannerCrown', brethren: 'bannerBrethren' };
+
 /**
  * Furnishes a building's ground floor with props, seen when its roof lifts, laid out by what
- * it's for and its size (`layRoom`), keeping the doorway and the way in clear. Each piece keeps
- * people out of its cells, and is anchored at the floor: the lifter cuts a room as low as half
- * a block over it (where a line of sight meets a wall at the captain's chest), and a hearth, a
- * shelf, the bar or a counter hung by its top would go with the walls. Returns where the keeper
- * stands: behind the counter against the back wall, looking toward the door's wall (none in a house).
+ * it's for, its size and the port's dress (`layRoom`), keeping the doorway and the way in
+ * clear. Each piece keeps people out of its cells, and is anchored at the floor: the lifter
+ * cuts a room as low as half a block over it (where a line of sight meets a wall at the
+ * captain's chest), and a hearth, a shelf, the bar or a counter hung by its top would go with
+ * the walls. In an office the port's banner hangs on the back wall over the clerk's head,
+ * anchored to that wall's second course, so it goes when that wall is cut low (it faces the
+ * camera) and shows when it stands to head height. Returns where the keeper stands: behind
+ * the counter against the back wall, looking toward the door's wall (none in a house).
  */
-export function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: RoomRole, decor: PropPlacement[], look = 0): Post | null {
+export function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: RoomRole, decor: PropPlacement[], look = 0, dress: TownDress = 'haven'): Post | null {
   const ix = Math.sign(door.x - door.outX);
   const iz = Math.sign(door.z - door.outZ);
   const deep = ix !== 0 ? fp.w - 2 : fp.d - 2;
@@ -75,7 +81,7 @@ export function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: Room
   // Across the room (+a), and the four ways a piece can look, in the world.
   const [ax, az] = ix !== 0 ? [0, 1] : [1, 0];
   const ways: Record<Toward, readonly [number, number]> = { in: [ix, iz], out: [-ix, -iz], right: [ax, az], left: [-ax, -az] };
-  const { pieces, keeper } = layRoom({ wide, deep, door: doorA }, role, look);
+  const { pieces, keeper } = layRoom({ wide, deep, door: doorA }, role, look, dress);
   for (const p of pieces) {
     const c0 = cell(p.a, p.k);
     const c1 = cell(p.a + p.wa - 1, p.k + p.dk - 1);
@@ -85,5 +91,10 @@ export function furnish(world: VoxelWorld, fp: Footprint, door: Door, role: Room
   }
   if (!keeper) return null;
   const c = cell(keeper.a, keeper.k);
+  const wall = cell(keeper.a, deep);
+  if (role === 'office' && isSolid(world.getVoxel(wall.x, door.y + 1, wall.z))) {
+    const [ox, oz] = ways.out;
+    decor.push({ kind: BANNERS[dress], x: wall.x + 0.5 + ox * 0.5, y: door.y + 1, z: wall.z + 0.5 + oz * 0.5, facing: facingOf(ox, oz), anchor: { x: wall.x, y: door.y + 1, z: wall.z } });
+  }
   return { x: c.x + 0.5, y: door.y, z: c.z + 0.5, facing: Math.atan2(-ix, -iz) };
 }

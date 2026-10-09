@@ -13,6 +13,9 @@ export interface Room {
 /** What the room is for. */
 export type RoomRole = 'house' | 'tavern' | 'office' | 'market';
 
+/** How a port's town is dressed: Haven's, the free port's, the Crown's or the Brethren's. Its rooms are dressed to match. */
+export type TownDress = 'haven' | 'free' | 'crown' | 'brethren';
+
 /** Which way a piece's front looks: into the room (away from the door's wall), out toward it, or across to lower or higher `a`. */
 export type Toward = 'in' | 'out' | 'left' | 'right';
 
@@ -32,10 +35,22 @@ export interface Furnished {
   keeper: { a: number; k: number } | null;
 }
 
+/** Each port's rug and runner, in its colours: Haven's sea green, the Guild's blue, the Crown's crimson, the Brethren's tar. */
+const RUGS: Record<TownDress, { rug: PropKind; runner: PropKind }> = {
+  haven: { rug: 'rugSea', runner: 'runnerSea' },
+  free: { rug: 'rugGuild', runner: 'runnerGuild' },
+  crown: { rug: 'rug', runner: 'runner' },
+  brethren: { rug: 'rugBrethren', runner: 'runnerBrethren' },
+};
+/** The office's chest, beside the desk: the Guild's ledgers, the Governor's strongbox, the Pirate Lord's plunder. */
+const CHESTS: Record<TownDress, PropKind> = { haven: 'ledgerChest', free: 'ledgerChest', crown: 'strongbox', brethren: 'treasureChest' };
+
 /** What lies flat on the floor: walked over, and laid under a table. */
-const FLAT: ReadonlySet<PropKind> = new Set<PropKind>(['rug', 'runner']);
+const FLAT: ReadonlySet<PropKind> = new Set<PropKind>(Object.values(RUGS).flatMap(({ rug, runner }) => [rug, runner]));
+/** Does this lie flat on the floor (a rug or a runner)? */
+export const isFlat = (kind: PropKind): boolean => FLAT.has(kind);
 /** What a rug may lie under. */
-const OVER_RUG: ReadonlySet<PropKind> = new Set<PropKind>(['table', 'stool', 'chair']);
+const OVER_RUG: ReadonlySet<PropKind> = new Set<PropKind>(['table', 'stool', 'chair', 'mapTable']);
 
 const cellsOf = (p: Piece): Array<[number, number]> => {
   const out: Array<[number, number]> = [];
@@ -132,18 +147,19 @@ function tableAt(f: Floor, seat: PropKind, seats: number, near: ReadonlyArray<[n
   }
 }
 
-/** A rug in the middle (under the table, if that's where it is), or a runner where there's no room for one. */
-function rugAt(f: Floor): void {
+/** A rug in the port's colours in the middle (under the table, if that's where it is), or a runner where there's no room for one. */
+function rugAt(f: Floor, dress: TownDress): void {
   const { wide, deep } = f.room;
+  const { rug, runner } = RUGS[dress];
   const options: Piece[] = [];
-  for (let a = 0; a + 1 < wide; a++) for (let k = 0; k + 1 < deep; k++) options.push({ kind: 'rug', a, k, wa: 2, dk: 2, toward: 'in' });
-  for (let a = 0; a < wide; a++) for (let k = 0; k + 1 < deep; k++) options.push({ kind: 'runner', a, k, wa: 1, dk: 2, toward: 'in' });
+  for (let a = 0; a + 1 < wide; a++) for (let k = 0; k + 1 < deep; k++) options.push({ kind: rug, a, k, wa: 2, dk: 2, toward: 'in' });
+  for (let a = 0; a < wide; a++) for (let k = 0; k + 1 < deep; k++) options.push({ kind: runner, a, k, wa: 1, dk: 2, toward: 'in' });
   const off = (p: Piece) => Math.hypot(p.a + (p.wa - 1) / 2 - (wide - 1) / 2, p.k + (p.dk - 1) / 2 - (deep - 1) / 2);
-  f.first(...options.sort((p, q) => (p.kind === q.kind ? off(p) - off(q) : p.kind === 'rug' ? -1 : 1)));
+  f.first(...options.sort((p, q) => (p.kind === q.kind ? off(p) - off(q) : p.kind === rug ? -1 : 1)));
 }
 
-/** A house: a bed in a back corner, the hearth on the end wall across from it, a shelf, a chest, a table with stools (or chairs) and a rug. */
-function house(room: Room, look: number): Furnished {
+/** A house: a bed in a back corner, the hearth on the end wall across from it, a shelf, a chest, a table with stools (or chairs) and a rug in the port's colours. */
+function house(room: Room, look: number, dress: TownDress): Furnished {
   const back = room.deep - 1;
   const { far, near } = sides(room);
   const f = new Floor(room);
@@ -158,12 +174,16 @@ function house(room: Room, look: number): Furnished {
   f.first(one(shelf, near, back - 1, offWall(near)), ...onBack, one(shelf, far, 0, offWall(far)), one(shelf, near, 0, offWall(near)));
   f.first(one('chest', far, back - 2, 'out'), one('chest', far, 0, offWall(far)), one('chest', near, 0, offWall(near)));
   tableAt(f, look % 3 === 0 ? 'chair' : 'stool', 2);
-  rugAt(f);
+  rugAt(f, dress);
   return { pieces: f.pieces, keeper: null };
 }
 
-/** The tavern: the bar across the back with the keeper behind it, bottles and barrels at the back wall, tables with stools either side of the way in. */
-function tavern(room: Room): Furnished {
+/**
+ * The tavern: the bar across the back with the keeper behind it, bottles and barrels at the
+ * back wall, tables either side of the way in (with chairs in the Crown's and the free port's,
+ * stools at Haven and the Brethren's), and a runner in the port's colours inside the door.
+ */
+function tavern(room: Room, dress: TownDress): Furnished {
   const { wide } = room;
   const back = room.deep - 1;
   const keeper = { a: Math.floor((wide - 1) / 2), k: back };
@@ -178,13 +198,21 @@ function tavern(room: Room): Furnished {
     f.put(one(bottles ? 'shelfBottles' : 'barrel', a, back, 'out'));
   }
   const { far, near } = sides(room);
-  tableAt(f, 'stool', 2, [[near, 1], [near, 0], [near, 2]]);
-  tableAt(f, 'stool', 2, [[far, 1], [far, 0], [far, 2]]);
+  const seat: PropKind = dress === 'crown' || dress === 'free' ? 'chair' : 'stool';
+  tableAt(f, seat, 2, [[near, 1], [near, 0], [near, 2]]);
+  tableAt(f, seat, 2, [[far, 1], [far, 0], [far, 2]]);
+  f.put({ kind: RUGS[dress].runner, a: room.door, k: 0, wa: 1, dk: 2, toward: 'in' });
   return { pieces: f.pieces, keeper };
 }
 
-/** The office: the desk facing the door with the clerk behind it, ledgers on shelves along the back and side walls, a chest, a chair for callers and a rug. */
-function office(room: Room): Furnished {
+/**
+ * The office: the desk facing the door with the clerk behind it (the Governor's grander), the
+ * port's chest beside it (never against the wall by the door, where it read as a stray block),
+ * ledgers on shelves along the back wall (a tall shelf against a side wall showed its back
+ * over that wall cut low, another stray block), a chair for callers before the desk, a chart
+ * spread on a table by a side wall, and a rug in the port's colours.
+ */
+function office(room: Room, dress: TownDress): Furnished {
   const { wide, door } = room;
   const back = room.deep - 1;
   let a = Math.floor((wide - 1) / 2);
@@ -192,13 +220,13 @@ function office(room: Room): Furnished {
   if (back - 1 <= 1 && a === door) a = door + 1 < wide ? door + 1 : door - 1;
   const keeper = { a, k: back };
   const f = new Floor(room, [keeper]);
-  f.put(one('desk', a, back - 1, 'out'));
+  f.put(one(dress === 'crown' ? 'deskGrand' : 'desk', a, back - 1, 'out'));
+  f.first(one(CHESTS[dress], a + 1, back - 1, 'out'), one(CHESTS[dress], a - 1, back - 1, 'out'));
   for (let s = 0; s < wide; s++) if (s !== a) f.put(one('shelfBooks', s, back, 'out'));
-  for (const s of [0, wide - 1]) f.put(one('shelfBooks', s, back - 1, offWall(s)));
+  f.first(...[a, a + 1, a - 1].map((s) => one('chair', s, back - 2, 'in')));
   const { far, near } = sides(room);
-  f.first(one('chest', far, 0, offWall(far)), one('chest', near, 0, offWall(near)));
-  f.put(one('chair', a, back - 2, 'in'));
-  rugAt(f);
+  f.first(...[1, 2, 0].flatMap((k) => [far, near].map((s) => one('mapTable', s, k, offWall(s)))));
+  rugAt(f, dress);
   return { pieces: f.pieces, keeper };
 }
 
@@ -218,16 +246,18 @@ function market(room: Room): Furnished {
 /**
  * Lays out a room's furniture by what it's for and its size, keeping the doorway's two cells
  * clear and a way from the door to beside the room's middle. `look` (from the plot) varies a
- * house a little: crockery or bottles on its shelf, stools or chairs at its table.
+ * house a little: crockery or bottles on its shelf, stools or chairs at its table. `dress` (the
+ * port's) dresses it to match the town: its rugs' colours, the tavern's seats, the office's
+ * desk and chest.
  */
-export function layRoom(room: Room, role: RoomRole, look = 0): Furnished {
+export function layRoom(room: Room, role: RoomRole, look = 0, dress: TownDress = 'haven'): Furnished {
   switch (role) {
     case 'house':
-      return house(room, look);
+      return house(room, look, dress);
     case 'tavern':
-      return tavern(room);
+      return tavern(room, dress);
     case 'office':
-      return office(room);
+      return office(room, dress);
     case 'market':
       return market(room);
   }

@@ -660,13 +660,20 @@ describe('towns', () => {
   });
 
   it('furnish the rooms: a bed and a hearth in every house, the tavern’s bar, the office’s desk, and counters in the market', () => {
-    const NEEDS: Record<string, readonly PropKind[]> = {
-      house: ['bed', 'hearth', 'table', 'chest'],
-      tavern: ['bar', 'barCask', 'barrel', 'shelfBottles', 'table', 'stool'],
-      office: ['desk', 'shelfBooks', 'chest'],
-      market: ['counterProduce', 'counterCloth'],
+    /** The office's own: the Governor's grander desk and strongbox, the Guild's ledgers, the Pirate Lord's treasure. */
+    const OFFICE: Record<string, readonly PropKind[]> = {
+      haven: ['desk', 'ledgerChest'],
+      merchant: ['desk', 'ledgerChest'],
+      imperial: ['deskGrand', 'strongbox'],
+      pirate: ['desk', 'treasureChest'],
     };
-    for (const { name, harbour } of PORTS) {
+    for (const { name, faction, home, harbour } of PORTS) {
+      const NEEDS: Record<string, readonly PropKind[]> = {
+        house: ['bed', 'hearth', 'table', 'chest'],
+        tavern: ['bar', 'barCask', 'barrel', 'shelfBottles', 'table'],
+        office: [...OFFICE[home ? 'haven' : faction], 'shelfBooks', 'chair', 'mapTable'],
+        market: ['counterProduce', 'counterCloth'],
+      };
       const placeAt = (f: Footprint) => harbour.places.find((p) => p.kind !== 'shipyard' && outside(f, Math.floor(p.x), Math.floor(p.z)) <= 1)?.kind;
       for (const house of harbour.town.houses) {
         const kind = placeAt(house) ?? 'house';
@@ -674,6 +681,26 @@ describe('towns', () => {
         const kinds = new Set(harbour.decor.filter((d) => inside(room, Math.floor(d.x), Math.floor(d.z))).map((d) => d.kind));
         for (const k of NEEDS[kind]) expect(kinds.has(k), `${name} ${kind} at ${house.x0},${house.z0}: ${k}`).toBe(true);
       }
+    }
+  });
+
+  it('dress each port’s rooms in its own colours: its rugs, and its owners’ banner in the office', () => {
+    const DRESS: Record<string, { rugs: readonly PropKind[]; banner: PropKind }> = {
+      haven: { rugs: ['rugSea', 'runnerSea'], banner: 'bannerGuild' },
+      merchant: { rugs: ['rugGuild', 'runnerGuild'], banner: 'bannerGuild' },
+      imperial: { rugs: ['rug', 'runner'], banner: 'bannerCrown' },
+      pirate: { rugs: ['rugBrethren', 'runnerBrethren'], banner: 'bannerBrethren' },
+    };
+    const RUGS = new Set<PropKind>(Object.values(DRESS).flatMap((d) => d.rugs));
+    for (const { name, faction, home, harbour } of PORTS) {
+      const own = DRESS[home ? 'haven' : faction];
+      const rugs = harbour.decor.filter((d) => RUGS.has(d.kind)).map((d) => d.kind);
+      expect(rugs.length, `${name} rugs`).toBeGreaterThan(0);
+      for (const k of rugs) expect(own.rugs, `${name} rug`).toContain(k);
+      const office = harbour.places.find((p) => p.kind === 'office')!;
+      const banners = harbour.decor.filter((d) => d.kind.startsWith('banner'));
+      expect(banners.map((d) => d.kind), `${name} banner`).toEqual([own.banner]);
+      expect(Math.hypot(banners[0].x - office.x, banners[0].z - office.z), `${name} banner in the office`).toBeLessThan(8);
     }
   });
 
@@ -763,7 +790,7 @@ describe('towns', () => {
   });
 
   it('post a keeper in each shop with a building of its own: behind its counter, facing the room’s front, clear of every door', () => {
-    const COUNTERS = ['bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'];
+    const COUNTERS = ['bar', 'barCask', 'desk', 'deskGrand', 'counterProduce', 'counterCloth'];
     for (const { name, world, harbour } of PORTS) {
       const yard = harbour.places.find((p) => p.kind === 'shipyard')!;
       const own = harbour.places.filter((p) => p.kind === 'shipyard' || p.x !== yard.x || p.z !== yard.z);

@@ -434,9 +434,20 @@ Each port island gets a harbour:
     - *A house:* a bed in a back corner, the hearth on the end wall across from it, a shelf
       of crockery or bottles, a chest, a table with stools or chairs, and a rug.
     - *The tavern:* the bar across the back with a cask on one end, bottles and barrels at
-      the back wall, and tables with stools either side of the way in.
-    - *The office:* the desk facing the door, ledgers on shelves along the back and side
-      walls, a chest, a chair for callers, and a rug.
+      the back wall, tables either side of the way in (with chairs in the Crown's and the
+      free port's, stools elsewhere), and a runner inside the door.
+    - *The office:* the desk facing the door with the port's chest beside it, ledgers on
+      shelves along the back wall, a chair for callers, a chart spread on a table by a side
+      wall, a rug, and the owners' banner on the back wall over the clerk's head. The banner
+      is anchored to that wall's second course, so it goes with the wall when it's cut low
+      (it faces the camera) and shows when it stands to head height. Nothing tall stands
+      against the door's wall or a side wall: cut low, such a wall showed a chest or a
+      shelf's back over it as a stray block.
+    - *Dressed by the port* (`TownStyle.dress`, passed to `layRoom`): rugs and runners in its
+      colours (Haven's sea green and sand, the Guild's blue, the Crown's crimson and gold,
+      the Brethren's tar and bone), and its banner (the Guild's, the Crown's, the
+      Brethren's). The Governor's House has a grander desk (gilt, crimson leather) and a
+      strongbox, a Guildhall a chest of ledgers, the Pirate Lord's Hall a chest of plunder.
     - *The market hall:* counters of produce and cloth across the back and down the sides,
       with crates and barrels.
     - Each layout says where its keeper stands: against the back wall, behind the counter.

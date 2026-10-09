@@ -32,6 +32,9 @@ function bounds(m: PropModel) {
   return b;
 }
 
+/** Every port's rugs and runners. */
+const RUGS = ['rug', 'runner', 'rugGuild', 'runnerGuild', 'rugSea', 'runnerSea', 'rugBrethren', 'runnerBrethren'] as const;
+
 describe('prop models', () => {
   it('build every kind, each voxel in a colour of its own palette', () => {
     const catalog = propCatalog(loadSloop());
@@ -133,7 +136,11 @@ describe('prop models', () => {
   });
 
   /** What furnishes a room or stands in the market hall: under its walls when the roof's lifted. */
-  const ROOM_KINDS: readonly PropKind[] = ['bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'rug', 'runner', 'barrel', 'crate', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'];
+  const ROOM_KINDS: readonly PropKind[] = [
+    ...['bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'barrel', 'crate', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'] as const,
+    ...['deskGrand', 'strongbox', 'ledgerChest', 'treasureChest', 'mapTable'] as const,
+    ...RUGS,
+  ];
 
   it('shape every piece of furniture', () => {
     for (const kind of ROOM_KINDS) expect(PROP_SHAPES[kind], kind).toBeDefined();
@@ -143,14 +150,14 @@ describe('prop models', () => {
     for (const kind of ROOM_KINDS) expect(PROP_SHAPES[kind]!.h, kind).toBeLessThanOrEqual(2);
   });
 
-  it('light only the hearth’s fire and the desk’s candle after dark, of all that’s drawn finer', () => {
+  it('light only the hearth’s fire and the desks’ candles after dark, of all that’s drawn finer', () => {
     const catalog = propCatalog(loadSloop());
     const glows = (kind: PropKind) => {
       const m = catalog[kind];
       for (let i = 3; i < m.cells.length; i += 4) if (m.palette.flags![m.cells[i]] & FLAG_GLOW) return true;
       return false;
     };
-    expect((Object.keys(PROP_SHAPES) as PropKind[]).filter(glows).sort()).toEqual(['desk', 'hearth']);
+    expect((Object.keys(PROP_SHAPES) as PropKind[]).filter(glows).sort()).toEqual(['desk', 'deskGrand', 'hearth']);
   });
 
   /** The top voxel of each column of a model, as seen from straight above: its colour index. */
@@ -175,6 +182,23 @@ describe('prop models', () => {
   });
 
   it('lay rugs flat on the floor, a voxel thick, keeping nobody out', () => {
-    for (const kind of ['rug', 'runner'] as const) expect(PROP_SHAPES[kind], kind).toMatchObject({ h: 1 / 8, blocks: false });
+    for (const kind of RUGS) expect(PROP_SHAPES[kind], kind).toMatchObject({ h: 1 / 8, blocks: false });
+  });
+
+  it('hang each port’s banner on a wall: flat against it, in its owners’ colours, and below head height', () => {
+    const catalog = propCatalog(loadSloop());
+    const colours = new Set<string>();
+    for (const kind of ['bannerCrown', 'bannerGuild', 'bannerBrethren'] as const) {
+      const m = catalog[kind];
+      const b = bounds(m);
+      expect(b.minZ, kind).toBeGreaterThanOrEqual(m.origin.z); // out from the wall, not into it
+      expect(b.maxZ - b.minZ, kind).toBe(0);
+      // Hung from the second course: its top under the first-storey wall's top, two blocks up.
+      expect(1 + (b.maxY + 1 - m.origin.y) * m.scale, kind).toBeLessThanOrEqual(2);
+      const own = new Set<string>();
+      for (let i = 3; i < m.cells.length; i += 4) own.add([0, 1, 2].map((j) => m.palette.colors[m.cells[i] * 3 + j].toFixed(3)).join());
+      colours.add([...own].sort().join('|'));
+    }
+    expect(colours.size).toBe(3);
   });
 });

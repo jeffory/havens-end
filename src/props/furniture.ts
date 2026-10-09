@@ -1,4 +1,4 @@
-import { barrelAt, crateAt, EIGHTH, kit } from './kit';
+import { barrelAt, type Colour, crateAt, EIGHTH, kit } from './kit';
 import type { Sketch } from './sketch';
 import type { PropModel } from './types';
 
@@ -76,11 +76,15 @@ export function chair(): PropModel {
 /** What's on a set of shelves. */
 export type Wares = 'crockery' | 'bottles' | 'books';
 
-/** Shelves against a wall, half a block deep: three boards and a top in a timber frame, and their wares on them. */
+/**
+ * Shelves against a wall, half a block deep: three boards and a top in a timber frame, and their
+ * wares on them. The back is panelled, rails in line with the boards: over a wall cut low, a
+ * plain back read as a stray block.
+ */
 export function shelf(wares: Wares): PropModel {
   const s = kit('timber', 'plank', 'plankDark', 'crockery', 'blueWare', 'clay', 'pewter', 'bottleGreen', 'bottleBrown', 'stave', 'hoop', 'bookRed', 'bookGreen', 'bookBlue', 'bookTan');
   for (const x of [0, 7]) s.box(x, 0, 0, x, 13, 3, 'timber');
-  s.box(1, 0, 0, 6, 13, 0, 'plankDark');
+  for (let y = 0; y <= 13; y++) s.box(1, y, 0, 6, y, 0, [0, 5, 9, 13].includes(y) ? 'timber' : 'plankDark');
   for (const y of [0, 5, 9]) s.box(1, y, 1, 6, y, 3, 'plank');
   s.box(0, 13, 0, 7, 13, 3, 'timber');
   // Its wares, on the shelves' three spaces: y 1–4, 6–8 and 10–12.
@@ -166,27 +170,34 @@ export function hearth(): PropModel {
   return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
 }
 
-/** A rug two blocks square, a voxel thick: a red field, a gold border and an inner line, a blue diamond. */
-export function rug(): PropModel {
-  const s = kit('rug', 'rugBorder', 'rugMotif');
+/** A rug's or a runner's colours: its field, its border and inner line, and the diamonds on it. */
+export interface RugColours {
+  field: Colour;
+  border: Colour;
+  motif: Colour;
+}
+
+/** A rug two blocks square, a voxel thick: a field, a border and an inner line, a diamond. */
+export function rug({ field, border, motif }: RugColours): PropModel {
+  const s = kit(field, border, motif);
   for (let x = 0; x < 16; x++) {
     for (let z = 0; z < 16; z++) {
       const edge = Math.min(x, z, 15 - x, 15 - z);
       const d = Math.abs(x - 7.5) + Math.abs(z - 7.5);
-      s.put(x, 0, z, edge === 0 || edge === 2 ? 'rugBorder' : d <= 2 || d === 6 ? 'rugMotif' : 'rug');
+      s.put(x, 0, z, edge === 0 || edge === 2 ? border : d <= 2 || d === 6 ? motif : field);
     }
   }
   return s.model({ x: 8, y: 0, z: 8 }, EIGHTH);
 }
 
 /** A runner a block wide and two long, a voxel thick, with three small diamonds down it. */
-export function runner(): PropModel {
-  const s = kit('rug', 'rugBorder', 'rugMotif');
+export function runner({ field, border, motif }: RugColours): PropModel {
+  const s = kit(field, border, motif);
   for (let x = 0; x < 8; x++) {
     for (let z = 0; z < 16; z++) {
       const edge = Math.min(x, z, 7 - x, 15 - z);
-      const motif = [3.5, 7.5, 11.5].some((c) => Math.abs(x - 3.5) + Math.abs(z - c) <= 2);
-      s.put(x, 0, z, edge === 0 ? 'rugBorder' : motif ? 'rugMotif' : 'rug');
+      const diamond = [3.5, 7.5, 11.5].some((c) => Math.abs(x - 3.5) + Math.abs(z - c) <= 2);
+      s.put(x, 0, z, edge === 0 ? border : diamond ? motif : field);
     }
   }
   return s.model({ x: 4, y: 0, z: 8 }, EIGHTH);
@@ -244,4 +255,115 @@ export function desk(): PropModel {
   s.box(1, 7, 1, 1, 8, 1, 'wax');
   s.put(1, 9, 1, 'flame');
   return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/**
+ * The Governor's desk, its front (+z) to the room: as a clerk's, but walnut trimmed in gold on
+ * turned legs, a crimson leather top, and on it a silver inkstand, the Crown's seal, papers,
+ * and a gilt candlestick whose candle glows after dark.
+ */
+export function deskGrand(): PropModel {
+  const s = kit('walnut', 'timberDark', 'gold', 'crimson', 'paper', 'ink', 'linen', 'pewter', 'wax', 'flame');
+  for (const [x, z] of [[0, 0], [0, 7], [7, 0], [7, 7]]) {
+    s.put(x, 0, z, 'gold'); // the feet
+    s.box(x, 1, z, x, 4, z, 'walnut');
+  }
+  s.box(0, 1, 1, 0, 4, 6, 'walnut'); // the sides
+  s.box(7, 1, 1, 7, 4, 6, 'walnut');
+  s.box(1, 2, 7, 6, 4, 7, 'walnut'); // the front panel, framed in gold
+  for (const y of [2, 4]) s.box(1, y, 7, 6, y, 7, 'gold');
+  s.box(1, 2, 0, 6, 4, 0, 'timberDark'); // the drawers on the Governor's side
+  for (const x of [2, 5]) s.put(x, 3, 0, 'gold');
+  s.box(0, 5, 0, 7, 5, 7, 'walnut'); // the top
+  s.box(1, 5, 1, 6, 5, 6, 'crimson'); // its leather
+  s.box(2, 6, 3, 4, 6, 5, 'paper'); // papers
+  s.box(5, 6, 5, 6, 6, 6, 'pewter'); // the inkstand
+  s.put(5, 7, 5, 'ink');
+  s.put(6, 7, 6, 'linen'); // its quill
+  s.box(5, 6, 2, 5, 7, 2, 'gold'); // the seal
+  s.box(1, 6, 1, 1, 7, 1, 'gold'); // the candlestick
+  s.put(1, 8, 1, 'wax');
+  s.put(1, 9, 1, 'flame');
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/** A strongbox, its front (+z) to the room: dark oak bound in iron, studded, its lock in brass. */
+export function strongbox(): PropModel {
+  const s = kit('timberDark', 'iron', 'ironLight', 'gold');
+  s.box(1, 0, 1, 6, 4, 6, 'timberDark');
+  s.box(1, 5, 1, 6, 5, 6, 'iron'); // the lid, plated
+  for (const x of [1, 6]) s.box(x, 0, 1, x, 5, 6, 'iron'); // bands round its ends
+  for (const z of [1, 6]) s.box(1, 0, z, 6, 0, z, 'iron'); // and its foot
+  for (const x of [3, 4]) s.box(x, 0, 6, x, 5, 6, 'iron'); // a strap down its front and over the lid
+  for (const x of [3, 4]) s.box(x, 5, 1, x, 5, 6, 'ironLight');
+  for (const [x, z] of [[1, 1], [1, 6], [6, 1], [6, 6]]) s.put(x, 5, z, 'ironLight'); // studs
+  s.box(3, 2, 7, 4, 3, 7, 'gold'); // the lock
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/** A chest, its back to the wall, its lid thrown open against it, with what's in it heaped to the brim. */
+function openChest(s: Sketch, heap: (x: number, z: number) => string): void {
+  s.box(1, 0, 2, 6, 3, 6, 'chest');
+  for (const x of [2, 5]) s.box(x, 0, 6, x, 3, 6, 'ironLight'); // its bands
+  s.box(3, 2, 6, 4, 2, 6, 'gold'); // its lock
+  s.box(1, 4, 1, 6, 8, 1, 'walnut'); // the lid, open
+  for (let x = 2; x <= 5; x++) for (let z = 3; z <= 5; z++) s.put(x, 4, z, heap(x, z));
+}
+
+/** The Guild's chest of ledgers: open, its ledgers stood in it in rows. */
+export function ledgerChest(): PropModel {
+  const s = kit('chest', 'walnut', 'ironLight', 'gold', 'bookRed', 'bookGreen', 'bookBlue', 'bookTan');
+  const spines = ['bookRed', 'bookTan', 'bookGreen', 'bookBlue'];
+  openChest(s, (x, z) => spines[(x + z * 3) % 4]);
+  for (const x of [2, 4]) s.put(x, 5, 4, spines[x % 4]); // one or two stood taller
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/** The Pirate Lord's chest of plunder: open, heaped with gold, a jewel or two in it. */
+export function treasureChest(): PropModel {
+  const s = kit('chest', 'walnut', 'ironLight', 'gold', 'grain', 'apple', 'blueWare');
+  openChest(s, (x, z) => (x === 3 && z === 4 ? 'apple' : x === 5 && z === 3 ? 'blueWare' : (x + z) % 3 ? 'gold' : 'grain'));
+  for (const [x, z] of [[3, 4], [4, 4], [4, 3]]) s.put(x, 5, z, 'gold'); // heaped over the brim
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/** A table with a chart spread on it: a coast and its soundings, a pair of dividers, and a weight on the corner. */
+export function mapTable(): PropModel {
+  const s = kit('timber', 'plank', 'plankDark', 'canvas', 'sack', 'blueWare', 'bookRed', 'ironLight', 'pewter');
+  for (const [x, z] of [[1, 1], [1, 6], [6, 1], [6, 6]]) s.box(x, 0, z, x, 4, z, 'timber');
+  s.box(0, 5, 0, 7, 5, 7, 'plank');
+  for (const z of [0, 7]) s.box(0, 5, z, 7, 5, z, 'plankDark');
+  // The chart: sea and a coast running across it, soundings, and a course pricked out in red.
+  for (let x = 0; x <= 7; x++) for (let z = 1; z <= 6; z++) s.put(x, 6, z, z + (x % 3 === 0 ? 1 : 0) >= 5 ? 'sack' : 'canvas');
+  for (const [x, z] of [[1, 3], [3, 2], [6, 3]]) s.put(x, 6, z, 'blueWare');
+  for (const [x, z] of [[1, 1], [2, 2], [4, 3], [5, 4]]) s.put(x, 6, z, 'bookRed');
+  s.put(4, 7, 2, 'ironLight'); // the dividers
+  s.put(5, 7, 1, 'ironLight');
+  s.put(7, 7, 6, 'pewter'); // a weight
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}
+
+/** Whose banner: the Crown's, the Guild's or the Brethren's. */
+export type Banner = 'crown' | 'guild' | 'brethren';
+
+/** Each banner's cloth, six across and eleven down from the rod (top first), in its colours: a gold cross on crimson, a white band and a gold boss on blue, a skull over bones on black. */
+const BANNER_CLOTH: Record<Banner, { rows: readonly string[]; key: Readonly<Record<string, Colour>> }> = {
+  crown: { rows: ['CCGGCC', 'CCGGCC', 'CCGGCC', 'GGGGGG', 'GGGGGG', 'CCGGCC', 'CCGGCC', 'CCGGCC', 'CCGGCC', 'CCGGCC', 'GC..CG'], key: { C: 'crimson', G: 'gold' } },
+  guild: { rows: ['BBBBBB', 'BBBBBB', 'BBBBBB', 'BBBBBB', 'WWGGWW', 'WWGGWW', 'BBBBBB', 'BBBBBB', 'BBBBBB', 'BBBBBB', 'BB..BB'], key: { B: 'guildBlue', W: 'linen', G: 'gold' } },
+  brethren: { rows: ['KKKKKK', 'KWWWWK', 'KWKKWK', 'KWWWWK', 'KKWWKK', 'KKKKKK', 'WKKKKW', 'KWKKWK', 'KKWWKK', 'KWKKWK', 'WK..KW'], key: { K: 'ink', W: 'bone' } },
+};
+
+/**
+ * A banner hung on a wall over a seat of power, its owners' colours: a cloth six voxels across
+ * and eleven down, swallow-tailed, from an iron rod with gilt ends. Its origin is the middle of
+ * the wall's face at the foot of the block it hangs on: it hangs from near that block's top to
+ * below its foot.
+ */
+export function banner(whose: Banner): PropModel {
+  const { rows, key } = BANNER_CLOTH[whose];
+  const s = kit('iron', 'gold', ...new Set(Object.values(key)));
+  s.box(1, 6, 0, 6, 6, 0, 'iron'); // the rod
+  for (const x of [0, 7]) s.put(x, 6, 0, 'gold');
+  s.rows(1, -5, 0, rows, key);
+  return s.model({ x: 4, y: 0, z: 0 }, EIGHTH);
 }

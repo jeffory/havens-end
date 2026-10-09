@@ -1,7 +1,7 @@
 import type { ShipModel } from '../sailing/shipModel';
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
 import { paletteFromRgba } from '../voxel/palette';
-import { bar, barCask, barrel, bed, chair, chest, crate, desk, hearth, rug, runner, shelf, stool, table } from './furniture';
+import { banner, bar, barCask, barrel, bed, chair, chest, crate, desk, deskGrand, hearth, ledgerChest, mapTable, rug, type RugColours, runner, shelf, stool, strongbox, table, treasureChest } from './furniture';
 import { counter, handCart, stall } from './market';
 import { clock, lantern, porchPost, porchRail, signboard, signpost, wallLantern } from './models';
 import type { Point, PropKind, PropModel } from './types';
@@ -36,6 +36,14 @@ export function propFromVox(file: VoxFile, scale = 0.25): PropModel {
   return { cells: Int32Array.from(cells), palette: { ...paletteFromRgba(file.palette), flags: new Uint8Array(256) }, origin: { x, y, z }, scale };
 }
 
+/** Each port's rugs and runners: the Crown's crimson and gold, the Guild's blue, Haven's sea green and sand, the Brethren's tar and bone. */
+const RUGS = {
+  crown: { field: 'crimson', border: 'rugBorder', motif: 'gold' },
+  guild: { field: 'guildBlue', border: 'linen', motif: 'gold' },
+  sea: { field: 'seaGreen', border: 'sand', motif: 'blueWare' },
+  brethren: { field: 'tar', border: 'blanket', motif: 'bone' },
+} as const satisfies Record<string, RugColours>;
+
 /** Every prop the towns use, built once at startup. The sloop's model gives the ship on the stocks. */
 export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
   return {
@@ -65,12 +73,26 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     shelfBooks: shelf('books'),
     chest: chest(),
     hearth: hearth(),
-    rug: rug(),
-    runner: runner(),
+    rug: rug(RUGS.crown),
+    runner: runner(RUGS.crown),
+    rugGuild: rug(RUGS.guild),
+    rugSea: rug(RUGS.sea),
+    rugBrethren: rug(RUGS.brethren),
+    runnerGuild: runner(RUGS.guild),
+    runnerSea: runner(RUGS.sea),
+    runnerBrethren: runner(RUGS.brethren),
     bar: bar(),
     barCask: barCask(),
     desk: desk(),
     counterProduce: counter('produce'),
     counterCloth: counter('cloth'),
+    deskGrand: deskGrand(),
+    strongbox: strongbox(),
+    ledgerChest: ledgerChest(),
+    treasureChest: treasureChest(),
+    mapTable: mapTable(),
+    bannerCrown: banner('crown'),
+    bannerGuild: banner('guild'),
+    bannerBrethren: banner('brethren'),
   };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropPlacement } from '../props/types';
-import { Block } from '../voxel/blocks';
+import { Block, FACING_DIRS, isSolid } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildHouse, type Footprint } from './buildings';
 import { furnish, plotCells, standProp } from './furnish';
@@ -71,7 +71,29 @@ describe('furnishing a building', () => {
       const decor: PropPlacement[] = [];
       furnish(world, fp, door, role, decor);
       // The lifter cuts at half a block over the floor at the lowest; a hearth, a shelf, the bar or a counter hung by its top would go.
-      for (const p of decor) expect(p.anchor?.y, `${role} ${p.kind}`).toBe(BASE);
+      for (const p of decor) if (PROP_SHAPES[p.kind]) expect(p.anchor?.y, `${role} ${p.kind}`).toBe(BASE);
+    }
+  });
+
+  it('hangs the port’s banner on the office’s back wall behind the clerk, going with that wall when it’s cut; none in other rooms', () => {
+    for (const [dress, banner] of [['haven', 'bannerGuild'], ['free', 'bannerGuild'], ['crown', 'bannerCrown'], ['brethren', 'bannerBrethren']] as const) {
+      const { world, fp, door } = plot(3.5, -10); // the door in the north wall
+      const decor: PropPlacement[] = [];
+      const post = furnish(world, fp, door, 'office', decor, 0, dress)!;
+      const hung = decor.filter((d) => d.kind.startsWith('banner'));
+      expect(hung.map((d) => d.kind), dress).toEqual([banner]);
+      const [b] = hung;
+      const back = fp.z0 + fp.d - 1; // the south wall
+      // Hung on the wall's inside face over the clerk's head, looking into the room, by the wall's second course.
+      expect([b.x, b.z], dress).toEqual([post.x, back]);
+      expect(FACING_DIRS[b.facing], dress).toEqual([0, -1]);
+      expect(b.anchor, dress).toEqual({ x: Math.floor(post.x), y: BASE + 1, z: back });
+      expect(isSolid(world.getVoxel(b.anchor!.x, b.anchor!.y, b.anchor!.z)), `${dress}: a wall to hang on`).toBe(true);
+      for (const role of ['house', 'tavern', 'market'] as const) {
+        const other: PropPlacement[] = [];
+        furnish(world, fp, door, role, other, 0, dress);
+        expect(other.filter((d) => d.kind.startsWith('banner')), `${dress} ${role}`).toEqual([]);
+      }
     }
   });
 

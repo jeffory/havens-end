@@ -7,6 +7,7 @@ import type { VoxelWorld } from '../voxel/VoxelWorld';
 import { hash2 } from '../util/hash';
 import { buildHouse, buildTower, clearSite, type Door, type Footprint, groundHeight, TREE_BLOCKS } from './buildings';
 import { furnish, plotCells, standProp } from './furnish';
+import type { TownDress } from './rooms';
 
 /** How a port's town is built: its walls and roofs, how many buildings, and whether the Crown's tower stands over it. */
 export interface TownStyle {
@@ -25,7 +26,7 @@ export interface TownStyle {
    * How the square's dressed: Haven's nets and fish, the free port's bales, the Crown's
    * guns, the Brethren's guns and gallows. Its awnings are blue at the free port, red elsewhere.
    */
-  dress: 'haven' | 'free' | 'crown' | 'brethren';
+  dress: TownDress;
   /** Storeys to the seat of power (the guildhall or the governor's). */
   officeStoreys?: number;
 }
@@ -326,13 +327,13 @@ export function buildTown(
     let door: Door;
     if (lot.role === 'market') {
       door = buildMarketHall(world, fp, base, style, face.x + 0.5, face.z + 0.5);
-      const post = furnish(world, fp, door, 'market', decor, look);
+      const post = furnish(world, fp, door, 'market', decor, look, style.dress);
       if (post) keepers.push({ kind: 'market', ...post });
     } else {
       const storeys = lot.role === 'house' ? (hash2(fp.x0, fp.z0, 71) < 0.4 ? 2 : 1) : lot.role === 'office' ? (style.officeStoreys ?? 2) : 2;
       door = buildHouse(world, fp, base, style, face.x + 0.5, face.z + 0.5, storeys);
       boardFloor(world, fp, base);
-      const post = furnish(world, fp, door, lot.role, decor, look);
+      const post = furnish(world, fp, door, lot.role, decor, look, style.dress);
       if (post && lot.role !== 'house') keepers.push({ kind: lot.role, ...post });
       if (lot.role === 'tavern') barrelsBy(world, door);
       if (lot.role === 'office') flagOver(world, fp, style.flag);

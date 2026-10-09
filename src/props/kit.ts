@@ -42,6 +42,13 @@ export const COLOURS = {
   rug: 0x9a2f2a,
   rugBorder: 0xc9a24a,
   rugMotif: 0x2b3f6b,
+  // The ports' own: the Crown's crimson, the Guild's blue, Haven's sea green and sand, the Brethren's tar and bone.
+  crimson: 0xa51d24,
+  guildBlue: 0x2b5da8,
+  seaGreen: 0x3f7f73,
+  sand: 0xd8c290,
+  tar: 0x2e2624,
+  bone: 0xe6dfcb,
   awningRed: 0xb8422e,
   awningBlue: 0x356aa3,
   clothPurple: 0x7d4a93,
