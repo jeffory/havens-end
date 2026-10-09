@@ -213,6 +213,29 @@ describe('RoofLifter', () => {
       expect(lifts.length, 'lifts spent on it').toBeLessThanOrEqual(3);
     });
 
+    it('names the room of the house lifted for being near that the captain is at the door of, or in, for the camera to frame', () => {
+      const { world, beside } = street();
+      const lifter = new RoofLifter(world);
+      const overhead = (x: number, z: number) => ({ x, y: BASE + 40, z: z + 0.01 });
+      // A step out from the village house's front wall: both houses are lifted, this one framed.
+      lifter.update(captain(3.5, -1.5), BASE, overhead(3.5, -1.5), 1 / 60, 12);
+      expect(lifter.roomNear(3.5, -1.5, 1.5)).toMatchObject({ x0: HOUSE.x0, z0: HOUSE.z0, x1: HOUSE.x0 + HOUSE.w, z1: HOUSE.z0 + HOUSE.d });
+      // Out in the street, at neither's door: both lifted, but no room to frame.
+      lifter.update(captain(8.5, -10.5), BASE, overhead(8.5, -10.5), 1 / 60, 12);
+      expect(lifter.roomNear(8.5, -10.5, 1.5)).toBeNull();
+      // Inside the house beside.
+      const [x, z] = [beside.x0 + 2.5, beside.z0 + 2.5];
+      lifter.update(captain(x, z), BASE, overhead(x, z), 1, 12);
+      expect(lifter.roomNear(x, z, 1.5)).toMatchObject({ x0: beside.x0, z0: beside.z0, x1: beside.x0 + beside.w, z1: beside.z0 + beside.d });
+    });
+
+    it('frames no room for what’s only in the way, out of town', () => {
+      const world = village();
+      const lifter = new RoofLifter(world);
+      expect(lifter.update({ x: 3.5, y: BASE + 1.2, z: -1.5 }, BASE, { x: BEHIND.x, y: BASE + 8, z: BEHIND.z }, 1 / 60).length).toBeGreaterThan(0);
+      expect(lifter.roomNear(3.5, -1.5, 1.5)).toBeNull();
+    });
+
     it('lifts nothing for nearness out of town', () => {
       const { world, beside } = street();
       const camera = { x: 3.5, y: BASE + 40, z: -4.5 };

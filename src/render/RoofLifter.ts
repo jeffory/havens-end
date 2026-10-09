@@ -52,11 +52,14 @@ const NEIGHBOURS: ReadonlyArray<readonly [number, number, number]> = (() => {
   return out;
 })();
 
+/** A box across the ground, on the grid: from (x0, z0) up to (x1, z1). */
+type Box = Pick<Lift, 'x0' | 'z0' | 'x1' | 'z1'>;
+
 const key = (l: Lift) => `${l.x0},${l.z0},${l.x1},${l.z1}`;
 const box = ({ x0, z0, x1, z1, from, room }: Lift): Lift => ({ x0, z0, x1, z1, from, ...(room ? { room } : {}) });
 
-/** How far (x, z) is from a lift's box, across the ground (0 inside it). */
-function distance(l: Lift, x: number, z: number): number {
+/** How far (x, z) is from a lift's box, or a room, across the ground (0 inside it). */
+function distance(l: Box, x: number, z: number): number {
   return Math.hypot(Math.max(l.x0 - x, 0, x - l.x1), Math.max(l.z0 - z, 0, z - l.z1));
 }
 
@@ -163,6 +166,21 @@ export class RoofLifter {
     return out;
   }
 
+  /**
+   * The room of a building lifted for being near the captain that (x, z) is in, or within
+   * `reach` of (at its door), the nearest, for the camera to frame; null if there's none (out
+   * of town, or out in the street).
+   */
+  roomNear(x: number, z: number, reach: number): NonNullable<Lift['room']> | null {
+    let best: NonNullable<Lift['room']> | null = null;
+    let nearest = reach;
+    for (const { room } of this.near) {
+      const d = room ? distance(room, x, z) : Infinity;
+      if (d <= nearest) [best, nearest] = [room!, d];
+    }
+    return best;
+  }
+
   /** Nothing lifted (the captain's gone aboard, or into a menu). */
   clear(): void {
     this.held = [];
@@ -180,7 +198,7 @@ export class RoofLifter {
     const found = new Map<string, Lift>();
     for (let cx = Math.floor(x - radius); cx <= x + radius; cx++) {
       for (let cz = Math.floor(z - radius); cz <= z + radius; cz++) {
-        if (distance({ x0: cx, z0: cz, x1: cx + 1, z1: cz + 1, from: 0 }, x, z) > radius) continue;
+        if (distance({ x0: cx, z0: cz, x1: cx + 1, z1: cz + 1 }, x, z) > radius) continue;
         for (let cy = floor; cy < floor + NEAR_HEIGHT; cy++) {
           const id = this.structures.getVoxel(cx, cy, cz);
           if (id === Block.Air || TREES.has(id) || seen.has(`${cx},${cy},${cz}`)) continue;

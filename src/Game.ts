@@ -25,6 +25,7 @@ import { WATER_LEVEL } from './ocean/waves';
 import { BarrelsView } from './render/BarrelsView';
 import { CameraRig } from './render/CameraRig';
 import { fightDistance, fightShift } from './render/fightFrame';
+import { roomDistance, roomShift, roomZoom } from './render/roomFrame';
 import { ChunkRenderer } from './render/ChunkRenderer';
 import { RoofLifter } from './render/RoofLifter';
 import { Effects } from './render/Effects';
@@ -131,6 +132,12 @@ const FRAME_SHARE = 0.4;
 const FRAME_MAX_SHIFT = 22;
 /** On foot, how quickly the camera eases over to frame a fight with bandits, and back once it's over (1/s). */
 const FIGHT_EASE = 2;
+/**
+ * On foot in town, the camera frames the room of a building lifted for being near when the
+ * captain is this close to its walls (at its door, or in it), easing in and back out this quickly (1/s).
+ */
+const ROOM_REACH = 1.5;
+const ROOM_EASE = 2;
 /** Captain models, by faction (the player's own is 'player'). */
 const CAPTAINS = ['player', 'imperial', 'merchant', 'pirate'] as const;
 const COMPASS_POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -220,6 +227,11 @@ export class Game {
   /** On foot, how far the camera's focus is shifted off the captain to frame a fight, and how far into framing one it is (0 to 1): both eased. */
   private readonly fightOffset = new Vector3();
   private fightFraming = 0;
+  /** On foot in town, how far the camera's focus is shifted off the captain to frame a room, and how much of the zoom it stands back (render/roomFrame.ts): both eased. */
+  private readonly roomOffset = new Vector3();
+  private roomZoom = 1;
+  /** The two together. */
+  private readonly frameOffset = new Vector3();
   /** Lifts roofs and canopies out of the way on foot. */
   private readonly lifter: RoofLifter;
   /** Whether the player has asked for the controls legend (H), or null to show it only on the first days. */
@@ -635,8 +647,8 @@ export class Game {
     const signs = walker ? [...this.shore.render(paused ? 1 : alpha, frameSeconds, time, rig.camera), ...this.people.labels(this.land, walker)] : [];
     // Pulled right back, the captain's a speck: a pin over them says where they are.
     if (walker && rig.distance > PIN_BEYOND) signs.push({ id: 'captain', x: walker.x, y: walker.y + 2.6, z: walker.z, text: '', kind: 'pin' });
-    if (walker) this.cameraTarget.copy(this.shore.focus).add(this.frameFight(walker, frameSeconds));
-    else this.leaveFight();
+    if (walker) this.cameraTarget.copy(this.shore.focus).add(this.frameOnFoot(walker, frameSeconds));
+    else this.leaveFoot();
     // Ashore, cut away what's between the camera and the captain (and in port, every roof
     // round them), and fade your own ship beside you.
     if (walker) {
@@ -653,7 +665,7 @@ export class Game {
       focus = this.duel.focus;
       if (verdict) this.endDuel(verdict === 'won');
     } else {
-      if (!this.fade.fadingIn) rig.update(this.cameraTarget, frameSeconds, walker ? fightDistance(rig.zoomed, this.fightFraming) : 0);
+      if (!this.fade.fadingIn) rig.update(this.cameraTarget, frameSeconds, walker ? fightDistance(roomDistance(rig.zoomed, this.roomZoom), this.fightFraming) : undefined);
     }
 
     // The time of day lights the scene; squalls darken it. At night you see less far.
@@ -1142,23 +1154,34 @@ export class Game {
 
   /**
    * On foot, a fight with bandits is framed with the captain and the nearest bandit fighting
-   * both in view, the camera standing back a little (render/fightFrame.ts): eased into as the
-   * fight starts, and back out once it's over. Returns the shift off the captain.
+   * both in view, the camera standing back a little (render/fightFrame.ts); and in town, at a
+   * building's door or in it while its roof is lifted for being near, its room is framed, the
+   * camera closer in (render/roomFrame.ts). A fight's framing wins: no room's framed while one's
+   * on. Each eased into, and back out once it's over. Returns the shift off the captain.
    */
-  private frameFight(captain: { x: number; z: number }, dt: number): Vector3 {
+  private frameOnFoot(captain: { x: number; z: number }, dt: number): Vector3 {
     const foes = this.land.bandits.live.filter((b) => b.mode === 'fight').map((b) => b.walker);
     const want = fightShift(captain, foes);
     const k = 1 - Math.exp(-FIGHT_EASE * dt);
     this.fightOffset.x += (want.x - this.fightOffset.x) * k;
     this.fightOffset.z += (want.z - this.fightOffset.z) * k;
     this.fightFraming += ((foes.length > 0 ? 1 : 0) - this.fightFraming) * k;
-    return this.fightOffset;
+    const room = foes.length > 0 ? null : this.lifter.roomNear(captain.x, captain.z, ROOM_REACH);
+    const shift = roomShift(captain, room);
+    const r = 1 - Math.exp(-ROOM_EASE * dt);
+    this.roomOffset.x += (shift.x - this.roomOffset.x) * r;
+    this.roomOffset.y += (shift.y - this.roomOffset.y) * r;
+    this.roomOffset.z += (shift.z - this.roomOffset.z) * r;
+    this.roomZoom += (roomZoom(room) - this.roomZoom) * r;
+    return this.frameOffset.copy(this.fightOffset).add(this.roomOffset);
   }
 
-  /** Off foot, the fight's framing is dropped: coming ashore again starts from none. */
-  private leaveFight(): void {
+  /** Off foot, the fight's and the room's framing are dropped: coming ashore again starts from none. */
+  private leaveFoot(): void {
     this.fightOffset.set(0, 0, 0);
     this.fightFraming = 0;
+    this.roomOffset.set(0, 0, 0);
+    this.roomZoom = 1;
   }
 
   /** The closest other ship still in the fight, if one is near enough to frame. */
