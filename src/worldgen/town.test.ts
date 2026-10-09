@@ -1,14 +1,20 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import type { Port } from '../economy/ports';
 import { findPath } from '../land/paths';
 import { guardPosts } from '../land/townsfolk';
 import { collides, createWalker, groundBelow, STEP_UP, stepWalker } from '../land/walker';
+import { propCatalog } from '../props/catalog';
+import { reserveProps } from '../props/reserve';
 import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropKind } from '../props/types';
+import { buildShipModel } from '../sailing/shipModel';
+import { SLOOP } from '../sailing/ships';
 import { baseOf, Block, blocksWalker, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
+import { parseVox } from '../vox/parseVox';
 import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
 import { buildHarbour } from './harbour';
@@ -333,14 +339,15 @@ describe('towns', () => {
               for (const [dx, dz] of DIRS) {
                 tried++;
                 const w = createWalker(x + 0.5, hh, z + 0.5);
-                // Landed, at any point along the walk, not only where it ends up: someone
-                // might cross the top and carry on, but they stood on it all the same.
-                let landed = false;
-                for (let t = 0; t < 3 && !landed; t += 1 / 60) {
+                // Over the footprint at or above its top, at any point along the walk,
+                // whether or not they're on the ground: standing on it is one way up,
+                // hovering there (refused, never settling) would be just as wrong.
+                let over = false;
+                for (let t = 0; t < 3 && !over; t += 1 / 60) {
                   stepWalker(w, dx, dz, world, 1 / 60);
-                  if (w.onGround && inProp(w.x, w.z) && Math.abs(w.y - top) < 1e-6) landed = true;
+                  if (inProp(w.x, w.z) && w.y >= top - 1e-6) over = true;
                 }
-                expect(landed, `${name} ${d.kind}: from ${x},${z} (stands ${hh}) going ${dx},${dz} -> ${w.x.toFixed(2)},${w.y},${w.z.toFixed(2)}`).toBe(false);
+                expect(over, `${name} ${d.kind}: from ${x},${z} (stands ${hh}) going ${dx},${dz} -> ${w.x.toFixed(2)},${w.y},${w.z.toFixed(2)}`).toBe(false);
               }
             }
           }
@@ -349,6 +356,72 @@ describe('towns', () => {
       expect(tried).toBeGreaterThan(0);
     },
     20_000, // sweeps every port's stalls and cart from every direction: slow under a full parallel run
+  );
+
+  it(
+    'keeps everyone off the hull on the stocks too, once reserveProps has blocked her in at runtime',
+    () => {
+      const bytes = readFileSync(`public/${SLOOP.model}`);
+      const sloop = buildShipModel(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), SLOOP.draft);
+      const catalog = propCatalog(sloop);
+      let tried = 0;
+      const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+      const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+      // Built fresh, never shared with the other tests: reserveProps marks the world up.
+      const plans = planArchipelago(1717).filter((plan) => plan.port);
+      for (const [i, plan] of plans.entries()) {
+        const name = plan.port!.name;
+        const world = new VoxelWorld();
+        generateIsland(world, plan);
+        const harbour = buildHarbour(world, plan, plan.port!.faction, i === 0);
+        const hull = harbour.decor.find((d) => d.kind === 'hullOnStocks');
+        if (!hull) continue;
+        reserveProps(world, harbour.decor, catalog); // as Game.ts does, straight after the world's built
+        // Every column near her reserved to a blocker, and the height it stands to: her
+        // own shape, not the town's — a world away from an unrelated flagpole or roof
+        // that happens to sit within some fixed distance of her long hull.
+        const [hx, hz] = [Math.floor(hull.x), Math.floor(hull.z)];
+        const tops = new Map<string, number>();
+        for (let x = hx - 15; x <= hx + 15; x++) {
+          for (let z = hz - 15; z <= hz + 15; z++) {
+            for (let y = 40; y >= 0; y--) {
+              const id = world.getVoxel(x, y, z);
+              if (id === Block.Air) continue;
+              if (id === Block.Blocker) tops.set(`${x},${z}`, y + 1);
+              break;
+            }
+          }
+        }
+        expect(tops.size, `${name} hull reserved`).toBeGreaterThan(0);
+        const topOf = (x: number, z: number) => tops.get(`${Math.floor(x)},${Math.floor(z)}`);
+        // From each cell of hers, its own immediate, reachable neighbours: a climb of up
+        // to STEP_UP from right beside her, or a few cells above (a nearby roof's edge),
+        // whatever her own shape is there — never a town-wide sweep that could reach some
+        // unrelated flagpole or roof far across the square instead.
+        for (const [key, top] of tops) {
+          const [cx, cz] = key.split(',').map(Number);
+          for (const [dx, dz] of D4) {
+            const [nx, nz] = [cx + dx, cz + dz];
+            if (topOf(nx, nz) !== undefined) continue;
+            const nh = groundBelow(world, nx + 0.5, nz + 0.5, top + 6);
+            if (nh < top - STEP_UP || collides(world, nx + 0.5, nh, nz + 0.5)) continue;
+            for (const [wx, wz] of DIRS) {
+              tried++;
+              const w = createWalker(nx + 0.5, nh, nz + 0.5);
+              let over = false;
+              for (let t = 0; t < 3 && !over; t += 1 / 60) {
+                stepWalker(w, wx, wz, world, 1 / 60);
+                const atTop = topOf(w.x, w.z);
+                if (atTop !== undefined && w.y >= atTop - 1e-6) over = true;
+              }
+              expect(over, `${name} hull: from ${nx},${nz} (stands ${nh}) toward ${cx},${cz} (top ${top}) going ${wx},${wz}`).toBe(false);
+            }
+          }
+        }
+      }
+      expect(tried).toBeGreaterThan(0);
+    },
+    20_000, // sweeps every port's hull from every neighbouring cell: slow under a full parallel run
   );
 
   it('mark the doors you can go in: a timber frame, a stone step, a lantern, and the sign by the door', () => {

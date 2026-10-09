@@ -52,10 +52,6 @@ export function createWalker(x: number, y: number, z: number, facing = 0): Walke
  * and a lower climb.
  */
 export function stepWalker(w: Walker, moveX: number, moveZ: number, world: VoxelReader, dt: number, speed = WALK_SPEED, stepUp = STEP_UP): void {
-  // Nobody stands on a prop's blocker: if that's where this step would leave someone
-  // resting, the whole step's refused, as if it had met a wall, whatever ledge, corner
-  // climb or fall got them there.
-  const before = { x: w.x, y: w.y, z: w.z, vx: w.vx, vz: w.vz, vy: w.vy, onGround: w.onGround };
   w.prev.x = w.x;
   w.prev.y = w.y;
   w.prev.z = w.z;
@@ -87,16 +83,6 @@ export function stepWalker(w: Walker, moveX: number, moveZ: number, world: Voxel
   }
   // Something appeared around us (a block placed, a wall built): climb out, half a block at a time.
   for (let i = 0; i < 8 && collides(world, w.x, w.y, w.z); i++) w.y = nextHalf(w.y);
-
-  if (w.onGround && blockerGround(world, w.x, w.y, w.z)) {
-    w.x = before.x;
-    w.y = before.y;
-    w.z = before.z;
-    w.vx = before.vx;
-    w.vz = before.vz;
-    w.vy = before.vy;
-    w.onGround = before.onGround;
-  }
 }
 
 /** Where the walker comes to rest falling into something at `y`: the lowest half-block height above it that's clear. */
@@ -110,7 +96,7 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp:
   if (dx === 0 && dz === 0) return;
   const x = w.x + dx;
   const z = w.z + dz;
-  if (!collides(world, x, w.y, z)) {
+  if (!collides(world, x, w.y, z) && !blockerColumn(world, x, w.y, z)) {
     if (tooDeep(world, x, w.y, z)) return stop(w, dx);
     w.x = x;
     w.z = z;
@@ -121,7 +107,7 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp:
   if (w.onGround) {
     for (let up = nextHalf(w.y); up <= w.y + stepUp + EPSILON; up += HALF_STEP) {
       if (collides(world, w.x, up, w.z)) break; // no headroom to climb higher
-      if (!collides(world, x, up, z)) {
+      if (!collides(world, x, up, z) && !blockerColumn(world, x, up, z)) {
         w.x = x;
         w.z = z;
         w.y = up;
@@ -158,12 +144,36 @@ export function groundBelow(world: VoxelReader, x: number, z: number, fromY: num
  * stall's post or a cart's bed is no floor, whatever ledge, corner or roof's edge got
  * someone up beside it. Checked across the walker's own width, not just its centre, so
  * resting half on a blocker's edge (a corner, a lamp post right beside one) counts too.
+ * For `standable` and pathfinding's `stepTo`: where a cell's ground is, were someone to
+ * stand there outright.
  */
 export function blockerGround(world: VoxelReader, x: number, y: number, z: number): boolean {
   const cy = Math.floor(y - EPSILON);
   for (let cz = Math.floor(z - HALF_WIDTH + EPSILON); cz <= Math.floor(z + HALF_WIDTH - EPSILON); cz++) {
     for (let cx = Math.floor(x - HALF_WIDTH + EPSILON); cx <= Math.floor(x + HALF_WIDTH - EPSILON); cx++) {
       if (world.getVoxel(cx, cy, cz) === Block.Blocker) return true;
+    }
+  }
+  return false;
+}
+
+/** How far below the walker's feet a column's blocker is still walled off: well past any prop. */
+const BLOCKER_REACH = 8;
+
+/**
+ * Does the column at (x, z) hold a prop's blocker anywhere from `y` down `BLOCKER_REACH`
+ * cells? Checked across the walker's own width, not just its centre. Moving into such a
+ * column is refused in `moveAxis`, exactly as if it met a wall: nobody walks, steps or
+ * drops onto a prop — from a roof's edge, a bank behind the square or a corner off a
+ * bench alike — they stop at the column's edge, or fall beside it, instead.
+ */
+function blockerColumn(world: VoxelReader, x: number, y: number, z: number): boolean {
+  const top = Math.floor(y + EPSILON);
+  for (let cz = Math.floor(z - HALF_WIDTH + EPSILON); cz <= Math.floor(z + HALF_WIDTH - EPSILON); cz++) {
+    for (let cx = Math.floor(x - HALF_WIDTH + EPSILON); cx <= Math.floor(x + HALF_WIDTH - EPSILON); cx++) {
+      for (let cy = top; cy > top - BLOCKER_REACH && cy >= 0; cy--) {
+        if (world.getVoxel(cx, cy, cz) === Block.Blocker) return true;
+      }
     }
   }
   return false;

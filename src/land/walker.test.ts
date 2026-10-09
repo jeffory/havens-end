@@ -89,15 +89,21 @@ describe('stepWalker', () => {
     expect(w.onGround).toBe(true);
   });
 
-  it('refuses to come to rest on a prop’s blocker falling off a ledge: the whole step’s undone', () => {
+  it('refuses to walk off a ledge onto a prop’s blocker: stopped at the edge, on real ground, never frozen above it', () => {
     const world = beach();
     for (let x = -20; x < 0; x++) for (let z = -20; z < 20; z++) for (let y = SEA_LEVEL; y < SEA_LEVEL + 3; y++) world.setVoxel(x, y, z, Block.Stone);
     // A prop's blocker right where stepping off the ledge would otherwise land.
     for (let x = 0; x < 5; x++) for (let z = -2; z <= 2; z++) world.setVoxel(x, SEA_LEVEL, z, Block.Blocker);
     const w = walk(createWalker(-2, SEA_LEVEL + 3, 0), world, 1, 0, 3);
-    // Never settles on the blocker's top: the step that would have is refused every time it's tried.
-    expect(blockerGround(world, w.x, w.y, w.z) && w.onGround).toBe(false);
-    expect(w.y).toBeGreaterThan(SEA_LEVEL + 1);
+    // Stopped at the ledge's own edge, on its own real ground: never crossed into the
+    // blocker's column, so never above it and never resting on it either.
+    expect(w.onGround).toBe(true);
+    expect(w.x).toBeLessThan(0);
+    expect(blockerGround(world, w.x, w.y, w.z)).toBe(false);
+    // Not frozen: holding the opposite way moves them straight back, unlike a hover stuck in place.
+    const stopped = w.x;
+    walk(w, world, -1, 0, 0.5);
+    expect(w.x).toBeLessThan(stopped);
   });
 
   it('walks up a stair a half-step at a time, with no scramble', () => {
