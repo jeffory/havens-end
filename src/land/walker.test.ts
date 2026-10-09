@@ -106,6 +106,42 @@ describe('stepWalker', () => {
     expect(w.x).toBeLessThan(stopped);
   });
 
+  it('walks over a floor or a roof with a prop under it: only the first thing below the feet counts', () => {
+    const world = beach();
+    // Furniture on the ground floor, its blocker three high, and the floor above laid right over it.
+    for (let z = -2; z <= 2; z++) for (let x = 3; x <= 4; x++) for (const y of [SEA_LEVEL, SEA_LEVEL + 1, SEA_LEVEL + 2]) world.setVoxel(x, y, z, Block.Blocker);
+    for (let x = -5; x <= 15; x++) for (let z = -5; z <= 5; z++) world.setVoxel(x, SEA_LEVEL + 3, z, Block.Planks);
+    const w = walk(createWalker(-2.5, SEA_LEVEL + 4, 0.5), world, 1, 0, 2.5);
+    expect(w.x).toBeGreaterThan(7); // straight across the floor over it
+    expect(w.y).toBe(SEA_LEVEL + 4);
+    // No floor over it now, but a roof two above its blocker, air between: scrambled up onto, and walked across.
+    for (let x = 3; x <= 4; x++) {
+      for (let z = -5; z <= 5; z++) {
+        world.setVoxel(x, SEA_LEVEL + 3, z, Block.Air);
+        world.setVoxel(x, SEA_LEVEL + 5, z, Block.Thatch);
+      }
+    }
+    walk(w, world, -1, 0, 3);
+    expect(w.x).toBeLessThan(0);
+    expect(w.y).toBe(SEA_LEVEL + 4);
+  });
+
+  it('lets someone already over a prop’s blocker walk off it, but not on across the rest of it', () => {
+    const world = beach();
+    // A prop two cells across, standing where someone was when the game was saved.
+    for (const x of [3, 4]) for (const y of [SEA_LEVEL, SEA_LEVEL + 1, SEA_LEVEL + 2]) world.setVoxel(x, y, 0, Block.Blocker);
+    const w = createWalker(3.5, SEA_LEVEL, 0.5);
+    stepWalker(w, 0, 0, world, 1 / 60); // climbed out of it, onto its top
+    expect(w.y).toBe(SEA_LEVEL + 3);
+    walk(w, world, 1, 0, 1);
+    expect(w.x).toBeLessThan(4 - 0.29); // not on into the next cell of it
+    walk(w, world, -1, 0, 1);
+    expect(w.x).toBeLessThan(3 - 0.3); // off it altogether
+    walk(w, world, 0, 0, 1);
+    expect(w.y).toBe(SEA_LEVEL);
+    expect(w.onGround).toBe(true);
+  });
+
   it('walks up a stair a half-step at a time, with no scramble', () => {
     const world = beach();
     // A stair climbing east onto a step a block up.

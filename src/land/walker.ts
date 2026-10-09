@@ -96,7 +96,7 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp:
   if (dx === 0 && dz === 0) return;
   const x = w.x + dx;
   const z = w.z + dz;
-  if (!collides(world, x, w.y, z) && !blockerColumn(world, x, w.y, z)) {
+  if (!collides(world, x, w.y, z) && !blockerColumn(world, w, x, w.y, z)) {
     if (tooDeep(world, x, w.y, z)) return stop(w, dx);
     w.x = x;
     w.z = z;
@@ -107,7 +107,7 @@ function moveAxis(w: Walker, world: VoxelReader, dx: number, dz: number, stepUp:
   if (w.onGround) {
     for (let up = nextHalf(w.y); up <= w.y + stepUp + EPSILON; up += HALF_STEP) {
       if (collides(world, w.x, up, w.z)) break; // no headroom to climb higher
-      if (!collides(world, x, up, z) && !blockerColumn(world, x, up, z)) {
+      if (!collides(world, x, up, z) && !blockerColumn(world, w, x, up, z)) {
         w.x = x;
         w.z = z;
         w.y = up;
@@ -160,19 +160,33 @@ export function blockerGround(world: VoxelReader, x: number, y: number, z: numbe
 /** How far below the walker's feet a column's blocker is still walled off: well past any prop. */
 const BLOCKER_REACH = 8;
 
+/** The cells the walker's box spans along one axis, centred at `c`. */
+const spanOf = (c: number): readonly [number, number] => [Math.floor(c - HALF_WIDTH + EPSILON), Math.floor(c + HALF_WIDTH - EPSILON)];
+
 /**
- * Does the column at (x, z) hold a prop's blocker anywhere from `y` down `BLOCKER_REACH`
- * cells? Checked across the walker's own width, not just its centre. Moving into such a
- * column is refused in `moveAxis`, exactly as if it met a wall: nobody walks, steps or
- * drops onto a prop — from a roof's edge, a bank behind the square or a corner off a
- * bench alike — they stop at the column's edge, or fall beside it, instead.
+ * Would the walker's box at (x, y, z) reach into a column whose ground is a prop's blocker:
+ * the first thing below the feet that stops a walker, within `BLOCKER_REACH`, being one?
+ * Checked across the walker's own width, not just its centre. Moving into such a column is
+ * refused in `moveAxis`, exactly as if it met a wall: nobody walks, steps or drops onto a
+ * prop — from a roof's edge, a bank behind the square or a corner off a bench alike — they
+ * stop at the column's edge, or fall beside it, instead. A floor or a roof over a prop is
+ * ground of its own, so the air above it is open. Columns the box at `from` already reaches
+ * into don't count, so whoever's over a prop already (loaded from a save made where one
+ * now stands) can walk off it.
  */
-function blockerColumn(world: VoxelReader, x: number, y: number, z: number): boolean {
+function blockerColumn(world: VoxelReader, from: { x: number; z: number }, x: number, y: number, z: number): boolean {
   const top = Math.floor(y + EPSILON);
-  for (let cz = Math.floor(z - HALF_WIDTH + EPSILON); cz <= Math.floor(z + HALF_WIDTH - EPSILON); cz++) {
-    for (let cx = Math.floor(x - HALF_WIDTH + EPSILON); cx <= Math.floor(x + HALF_WIDTH - EPSILON); cx++) {
+  const [fx0, fx1] = spanOf(from.x);
+  const [fz0, fz1] = spanOf(from.z);
+  const [x0, x1] = spanOf(x);
+  const [z0, z1] = spanOf(z);
+  for (let cz = z0; cz <= z1; cz++) {
+    for (let cx = x0; cx <= x1; cx++) {
+      if (cx >= fx0 && cx <= fx1 && cz >= fz0 && cz <= fz1) continue; // already in it
       for (let cy = top; cy > top - BLOCKER_REACH && cy >= 0; cy--) {
-        if (world.getVoxel(cx, cy, cz) === Block.Blocker) return true;
+        const id = world.getVoxel(cx, cy, cz);
+        if (id === Block.Blocker) return true;
+        if (blocksWalker(id)) break; // real ground, or a floor, first
       }
     }
   }
