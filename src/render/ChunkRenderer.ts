@@ -50,7 +50,10 @@ export class ChunkRenderer {
   readonly group = new Group();
   private readonly meshes = new Map<Chunk, Mesh>();
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
-  /** The terrain as the sun sees it, for shadows: what's lifted away casts none. */
+  /**
+   * The terrain as the sun sees it, for shadows: what's lifted away casts none. Only chunks a
+   * lift reaches are drawn with it (its discard costs the shadow pass its early depth test).
+   */
   private readonly depthMaterial = new MeshDepthMaterial();
   private readonly scratch = new Uint8Array(PADDED ** 3);
   /** What's lifted away on foot: shared with the props hung on buildings. */
@@ -161,6 +164,11 @@ if (under > 0.0) {
    */
   setLifts(lifts: ReadonlyArray<Lift>, eye: Eye): void {
     this.lifts.set(lifts, eye);
+    for (const [chunk, mesh] of this.meshes) {
+      const [x0, z0] = [chunk.cx * CHUNK_SIZE, chunk.cz * CHUNK_SIZE];
+      const reached = lifts.some((l) => l.x0 < x0 + CHUNK_SIZE && l.x1 > x0 && l.z0 < z0 + CHUNK_SIZE && l.z1 > z0);
+      mesh.customDepthMaterial = reached ? this.depthMaterial : undefined;
+    }
   }
 
   /** Is this voxel lifted away, so the mouse should pick through it? The shader's test, at the voxel's centre. */
@@ -208,7 +216,6 @@ if (under > 0.0) {
       return;
     }
     const mesh = new Mesh(geometry, this.material);
-    mesh.customDepthMaterial = this.depthMaterial;
     mesh.position.set(cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
