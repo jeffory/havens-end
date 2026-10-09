@@ -766,8 +766,12 @@ export class Game {
     if (!walker && player.status === 'afloat' && !paused) sounds.sails(this.orders.sails, pose.x, pose.z);
     this.shoreAge += frameSeconds;
     if (walker) {
-      const ground = groundOf(this.world.getVoxel(Math.floor(walker.x), Math.floor(walker.y - 0.5), Math.floor(walker.z)));
-      sounds.footfall(this.landView.footfalls, ground, walker.x, walker.y, walker.z);
+      // Paused (a menu, the sleep fade), the walk cycle runs on in place: no steps. The count
+      // it reached is heard as a single step on unpausing, as the director plays one however far it jumped.
+      if (!paused) {
+        const ground = groundOf(this.world.getVoxel(Math.floor(walker.x), Math.floor(walker.y - 0.5), Math.floor(walker.z)));
+        sounds.footfall(this.landView.footfalls, ground, walker.x, walker.y, walker.z);
+      }
       if (this.shoreAge >= SHORE_EVERY) {
         this.shoreAge = 0;
         this.shoreNear = shoreDistance(this.world, walker.x, walker.z);
