@@ -99,6 +99,33 @@ describe('mesher options for models', () => {
     expect(faceCount(meshChunk(world, 0, 0, 0))).toBe(11);
   });
 
+  it('marks each vertex’s corner of its block, so a point a quarter in from it lies inside the block, edges and all', () => {
+    const world = new VoxelWorld();
+    const blocks: Array<[number, number, number, number]> = [
+      [5, 5, 5, Block.Plaster],
+      [9, 5, 5, Block.StoneSlab],
+      [13, 5, 5, Block.StoneStairE],
+      [17, 5, 5, Block.Thatch],
+      [17, 4, 5, Block.Plaster], // its top kept under the thatch
+    ];
+    for (const [x, y, z, id] of blocks) world.setVoxel(x, y, z, id);
+    const mesh = meshChunk(world, 0, 0, 0)!;
+    expect(mesh.corners).toBeDefined();
+    expect(mesh.corners!.length).toBe(mesh.positions.length / 3);
+    const cells = new Set(blocks.map(([x, y, z]) => `${x},${y},${z}`));
+    const faces = mesh.positions.length / 12;
+    for (let f = 0; f < faces; f++) {
+      const inside = new Set<string>();
+      for (let v = f * 4; v < f * 4 + 4; v++) {
+        const bits = mesh.corners![v];
+        const at = [0, 1, 2].map((a) => Math.floor(mesh.positions[v * 3 + a] + 0.25 - 0.5 * ((bits >> a) & 1)));
+        inside.add(at.join(','));
+      }
+      expect(inside.size, `face ${f}: its corners, moved in, in one block`).toBe(1);
+      expect(cells.has([...inside][0]), `face ${f}: in its own block, not ${[...inside][0]}`).toBe(true);
+    }
+  });
+
   it('keeps the ground’s face against a tree or building, so lifting it leaves no hole', () => {
     const world = new VoxelWorld();
     world.setVoxel(5, 5, 5, Block.Stone);

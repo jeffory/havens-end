@@ -20,6 +20,12 @@ export interface MeshData {
   indices: Uint32Array;
   /** Per vertex, the block's palette flags (cutaway, glow), when the palette has them. */
   flags?: Float32Array;
+  /**
+   * Per vertex, with the flags: which corner of its block's box it is, bits 1, 2 and 4 set on
+   * the high side in x, y and z. A quarter block in from there is inside its own block, so the
+   * terrain shader finds the block every fragment of a face belongs to, edges and all.
+   */
+  corners?: Uint8Array;
 }
 
 /**
@@ -156,6 +162,7 @@ export function meshPaddedVolume(
   /** Drawn and whole: it hides the face of whatever is against it. */
   const whole = (v: number) => solid[v] === 1 && !shapes?.[v] && !hidden?.[v];
   const marks: number[] = [];
+  const corners: number[] = [];
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -216,7 +223,10 @@ export function meshPaddedVolume(
               positions.push(x + at[0], y + at[1], z + at[2]);
               normals.push(face.normal[0], face.normal[1], face.normal[2]);
               colors.push(r * lit[c], g * lit[c], b * lit[c]);
-              if (flags) marks.push(flags[id]);
+              if (flags) {
+                marks.push(flags[id]);
+                corners.push(corner.x | (corner.y << 1) | (corner.z << 2));
+              }
             }
             // Split the quad along the diagonal with the brighter ends, so occlusion shades one
             // corner instead of smearing across the whole face. A cube ties this on the raw
@@ -241,6 +251,6 @@ export function meshPaddedVolume(
     normals: new Float32Array(normals),
     colors: new Float32Array(colors),
     indices: new Uint32Array(indices),
-    ...(flags ? { flags: new Float32Array(marks) } : {}),
+    ...(flags ? { flags: new Float32Array(marks), corners: new Uint8Array(corners) } : {}),
   };
 }

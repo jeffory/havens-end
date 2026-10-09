@@ -1,4 +1,4 @@
-import { Color, Group, Mesh, MeshLambertMaterial, Vector4 } from 'three';
+import { Color, Group, Mesh, MeshDepthMaterial, MeshLambertMaterial, type WebGLProgramParametersWithUniforms, Vector4 } from 'three';
 import { glslFloat, WATER_LEVEL } from '../ocean/waves';
 import { BLOCK_PALETTE, type BlockId } from '../voxel/blocks';
 import type { Chunk } from '../voxel/Chunk';
@@ -13,6 +13,36 @@ import { toGeometry } from './voxelGeometry';
 const ZONE_COLOR = 0xe0583a;
 
 /**
+ * GLSL, the vertex shader's part of cutting away what's lifted: the block a vertex's face
+ * belongs to, found a quarter block in from the vertex's corner of it (see the mesher's
+ * corners), so every fragment of the face finds its own block, its edges too, never the
+ * neighbour's; and whether the block may be cut away (flag 1).
+ */
+const CUT_VERTEX_PARS = 'attribute float flags;\nattribute float corner;\nvarying vec3 vCell;\nvarying float vCutaway;';
+const CUT_VERTEX = /* glsl */ `
+vec3 high = mod(floor(vec3(corner) / vec3(1.0, 2.0, 4.0)), 2.0);
+vCell = (modelMatrix * vec4(transformed + 0.25 - 0.5 * high, 1.0)).xyz;
+vCutaway = mod(flags, 2.0);`;
+/**
+ * GLSL, the fragment shader's part: roofs, upper storeys and canopies in the captain's way lift
+ * away whole, block by block; only trees and buildings (the ground is solid inside, and would
+ * show hollow).
+ */
+const CUT_FRAGMENT_PARS = `${LIFT_GLSL}\nvarying vec3 vCell;\nvarying float vCutaway;`;
+const CUT_FRAGMENT = 'if (vCutaway > 0.5 && lifted(floor(vCell) + 0.5)) discard;';
+
+/** Puts the cut into a terrain material's shaders, the lifts' uniforms shared. */
+function cutAway(shader: WebGLProgramParametersWithUniforms, lifts: Lifts): void {
+  Object.assign(shader.uniforms, lifts.uniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>\n${CUT_VERTEX_PARS}`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CUT_VERTEX}`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>\n${CUT_FRAGMENT_PARS}`)
+    .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CUT_FRAGMENT}`);
+}
+
+/**
  * Keeps one Three.js mesh per non-empty chunk in sync with the voxel data. It never
  * owns game state: it only reacts to chunks the world has marked dirty.
  */
@@ -20,6 +50,8 @@ export class ChunkRenderer {
   readonly group = new Group();
   private readonly meshes = new Map<Chunk, Mesh>();
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
+  /** The terrain as the sun sees it, for shadows: what's lifted away casts none. */
+  private readonly depthMaterial = new MeshDepthMaterial();
   private readonly scratch = new Uint8Array(PADDED ** 3);
   /** What's lifted away on foot: shared with the props hung on buildings. */
   readonly lifts = new Lifts();
@@ -34,30 +66,27 @@ export class ChunkRenderer {
   constructor(private readonly world: VoxelWorld) {
     this.group.name = 'terrain';
     this.material.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, this.lifts.uniforms);
+      cutAway(shader, this.lifts);
       shader.uniforms.uGlow = this.glow;
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
       shader.uniforms.uTime = this.time;
       // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying vec3 vCutWorld;\nvarying vec3 vFace;\nvarying float vCutaway;\nvarying float vGlow;\nvarying float vUp;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nvarying float vGlow;\nvarying float vUp;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvFace = normalize(mat3(modelMatrix) * objectNormal);\nvCutaway = mod(flags, 2.0);\nvGlow = step(1.5, flags);\nvUp = vFace.y;',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGlow = step(1.5, flags);\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
           /* glsl */ `#include <common>
-${LIFT_GLSL}
 uniform float uGlow;
 uniform vec4 uZone;
 uniform vec3 uZoneColor;
 uniform float uTime;
 varying vec3 vCutWorld;
-varying vec3 vFace;
-varying float vCutaway;
 varying float vGlow;
 varying float vUp;
 /** Light focused by the swell onto the seabed: a drifting web of bright lines, 0 to 1. */
@@ -100,19 +129,11 @@ if (under > 0.0) {
   reflectedLight.directDiffuse *= 1.0 + caustic * smoothstep(0.0, 0.5, under) * (1.0 - smoothstep(2.0, 8.0, under));
 }`,
         )
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow + uZoneColor * zoneEdge * 0.5;')
-        .replace(
-          '#include <clipping_planes_fragment>',
-          /* glsl */ `#include <clipping_planes_fragment>
-// Roofs, upper storeys and canopies in the captain's way lift away whole, block by
-// block: only trees and buildings (the ground is solid inside, and would show hollow).
-// The voxel a fragment belongs to: half a block back into it from its face. (Per
-// fragment: a face's corners sit in different cells, so a per-vertex cell would drift
-// across the face, and cut the last row under a lift away but for its top.)
-if (vCutaway > 0.5 && lifted(floor(vCutWorld - vFace * 0.5) + 0.5)) discard;`,
-        );
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow + uZoneColor * zoneEdge * 0.5;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
+    this.depthMaterial.onBeforeCompile = (shader) => cutAway(shader, this.lifts);
+    this.depthMaterial.customProgramCacheKey = () => 'havens-end-terrain-depth';
   }
 
   /** Marks out a circle of land on the ground (a town's), `amount` 0 to 1; null hides it. */
@@ -187,6 +208,7 @@ if (vCutaway > 0.5 && lifted(floor(vCutWorld - vFace * 0.5) + 0.5)) discard;`,
       return;
     }
     const mesh = new Mesh(geometry, this.material);
+    mesh.customDepthMaterial = this.depthMaterial;
     mesh.position.set(cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

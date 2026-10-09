@@ -10,6 +10,7 @@ export function toGeometry(data: MeshData): BufferGeometry {
   geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
   geometry.setAttribute('color', new BufferAttribute(data.colors, 3));
   if (data.flags) geometry.setAttribute('flags', new BufferAttribute(data.flags, 1));
+  if (data.corners) geometry.setAttribute('corner', new BufferAttribute(data.corners, 1));
   geometry.setIndex(new BufferAttribute(data.indices, 1));
   geometry.computeBoundingSphere();
   return geometry;
