@@ -166,6 +166,11 @@ export class CharacterView {
     if (item) this.swordMesh.geometry = meshCells(item.cells, paletteFromRgba(item.palette));
   }
 
+  /** How many times a foot has come down while walking: one per half turn of the stride. */
+  get footfalls(): number {
+    return Math.floor(this.stride / Math.PI);
+  }
+
   /** Poses the character walking, standing, or swinging a tool, easing from the last frame. */
   walk(stride: Stride, dt: number, time: number): void {
     const t = this.target;

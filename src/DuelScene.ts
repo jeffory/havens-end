@@ -9,6 +9,7 @@ import type { CameraRig } from './render/CameraRig';
 import { deckStage, type DuelStage, DuelView, groundStage } from './render/DuelView';
 import type { Effects } from './render/Effects';
 import type { ShipView } from './render/ShipView';
+import type { SoundDirector } from './render/SoundDirector';
 import { CUTLASS_POWER } from './treasure/relics';
 import type { DuelHud, PopTone } from './ui/DuelHud';
 
@@ -112,6 +113,7 @@ export class DuelScene {
     private readonly effects: Effects,
     private readonly rig: CameraRig,
     private readonly container: HTMLElement,
+    private readonly sounds: SoundDirector | null = null,
   ) {
     this.view = new DuelView(setup.parent, setup.stage, setup.cast.player, setup.cast.enemy, setup.ghost);
     this.duel = new Duel({
@@ -184,6 +186,7 @@ export class DuelScene {
   }
 
   private react(e: DuelEvent): void {
+    this.sounds?.duel(e);
     const { duel } = this;
     const who = (side: Side) => (side === 'player' ? duel.player : duel.enemy);
     const other = (side: Side) => (side === 'player' ? duel.enemy : duel.player);

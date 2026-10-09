@@ -66,6 +66,11 @@ export class LandView {
     this.captain.walk({ speed: Math.hypot(w.vx, w.vz), swing, aiming }, dt, time);
   }
 
+  /** The captain's footfalls so far (see CharacterView). */
+  get footfalls(): number {
+    return this.captain.footfalls;
+  }
+
   /** Sizes the ring at the captain's feet for the camera's distance, so it stays findable zoomed out. */
   setCameraDistance(distance: number): void {
     this.ring.scale.setScalar(Math.min(RING_MOST, Math.max(1, distance / RING_NEAR)));
