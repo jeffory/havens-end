@@ -686,6 +686,25 @@ describe('guns', () => {
     expect(land.available('cartridges')).toBe(28);
   });
 
+  it('a boar hurt by a shot bolts', () => {
+    const { land } = armed();
+    boar(land, 3.5, 0.5);
+    land.creatures[0].hp = 99;
+    land.takeEvents();
+    land.fire('pistol', { x: 3.5, y: SEA_LEVEL + 1.2, z: 0.5 });
+    const bolts = land.takeEvents().filter((e) => e.kind === 'bolt');
+    expect(land.creatures[0].fleeing).toBeGreaterThan(0);
+    expect(bolts).toEqual([expect.objectContaining({ kind: 'bolt', creature: 'boar' })]);
+  });
+
+  it('the gun’s loading done is an event', () => {
+    const { land } = armed();
+    land.fire('pistol');
+    land.takeEvents();
+    for (let t = 0; t < 2.5; t += 1 / 20) land.step(1 / 20);
+    expect(land.takeEvents().filter((e) => e.kind === 'loaded')).toEqual([{ kind: 'loaded', gun: 'pistol' }]);
+  });
+
   it('won’t fire while loading, and doesn’t spend a cartridge trying', () => {
     const { land } = armed();
     land.fire('pistol');

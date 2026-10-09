@@ -198,11 +198,14 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     const captain = land.walker;
     if (spec.shy && captain && Math.hypot(captain.x - w.x, captain.z - w.z) < spec.shy) {
       // One sees you, and the herd goes with it.
-      for (const o of land.creatures) if (o.kind === c.kind && Math.hypot(o.walker.x - w.x, o.walker.z - w.z) < 8) scare(o, captain.x, captain.z, 5);
+      for (const o of land.creatures) if (o.kind === c.kind && Math.hypot(o.walker.x - w.x, o.walker.z - w.z) < 8) if (scare(o, captain.x, captain.z, 5)) bolted(land, o);
       return;
     }
     const light = lights.find((l) => Math.hypot(l.x - w.x, l.z - w.z) < LIGHT_RADIUS);
-    if (light) return scare(c, light.x, light.z, 2.5);
+    if (light) {
+      if (scare(c, light.x, light.z, 2.5)) bolted(land, c);
+      return;
+    }
     const crop = nearestCrop(land, c, spec.smell, lights);
     c.target = crop ? { x: crop.x + 0.5, z: crop.z + 0.5 } : c.target && random() < 0.8 ? c.target : wander(land, w, spec.upland, lights, random);
   }
@@ -218,7 +221,7 @@ function stepCreature(land: Land, c: Creature, dt: number, reader: VoxelReader, 
     if (c.eating >= EAT_SECONDS) {
       c.eating = 0;
       land.spoilCrop(crop, c);
-      scare(c, t.x, t.z, 3); // off into the dark with it
+      if (scare(c, t.x, t.z, 3)) bolted(land, c); // off into the dark with it
     }
     return;
   }
@@ -287,11 +290,20 @@ function uplandFlee(land: Land, w: Walker, dx: number, dz: number, upland: numbe
   return [0, 0];
 }
 
-export function scare(c: Creature, fromX: number, fromZ: number, seconds: number): void {
+/** A beast that was calm starts to run: the sound hears it once, not every step of the flight. */
+export function bolted(land: Land, c: Creature): void {
+  const w = c.walker;
+  land.emit({ kind: 'bolt', creature: c.kind, x: w.x, y: w.y, z: w.z });
+}
+
+/** Frightens a creature into running from a point. True if it was calm (not already fleeing), so it has just bolted. */
+export function scare(c: Creature, fromX: number, fromZ: number, seconds: number): boolean {
+  const calm = c.fleeing <= 0;
   c.fleeing = seconds;
   c.flee = { x: fromX, z: fromZ };
   c.target = null;
   c.eating = 0;
+  return calm;
 }
 
 /**
