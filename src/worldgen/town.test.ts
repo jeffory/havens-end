@@ -229,6 +229,48 @@ describe('towns', () => {
     }
   });
 
+  it('keep everyone off the well: nobody climbs onto its ring or into it, and no path goes over it', () => {
+    let tried = 0;
+    for (const { name, world, harbour } of PORTS) {
+      const { well } = harbour.town;
+      const inWell = (x: number, z: number) => inside(well, Math.floor(x), Math.floor(z));
+      // The ring stands on the square: its foot is the square's floor.
+      const floor = groundBelow(world, well.x0 - 0.5, well.z0 + 1.5, SEA_LEVEL + 40);
+      for (const [cx, cz] of cells(well)) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const [bx, bz] = [cx + dx, cz + dz];
+          if (inWell(bx, bz)) continue;
+          const nh = groundBelow(world, bx + 0.5, bz + 0.5, floor + STEP_UP + 1);
+          if (nh !== floor || collides(world, bx + 0.5, nh, bz + 0.5)) continue;
+          tried++;
+          const w = createWalker(bx + 0.5, nh, bz + 0.5);
+          let onto = false;
+          for (let t = 0; t < 1.5 && !onto; t += 1 / 60) {
+            stepWalker(w, -dx, -dz, world, 1 / 60);
+            onto = inWell(w.x, w.z);
+          }
+          expect(onto, `${name}: walked onto the well from ${bx},${bz}`).toBe(false);
+        }
+      }
+      // Straight across it, either way: round it, never over.
+      const [mx, mz] = [well.x0 + 1, well.z0 + 1];
+      for (const [fx, fz, tx, tz] of [[well.x0 - 1, mz, well.x0 + well.w, mz], [mx, well.z0 - 1, mx, well.z0 + well.d]]) {
+        const path = findPath(world, { x: fx + 0.5, y: floor, z: fz + 0.5 }, { x: tx + 0.5, z: tz + 0.5 });
+        expect(path, `${name}: a way round the well`).not.toBeNull();
+        expect(path!.filter((p) => inWell(p.x, p.z)), `${name}: the way across the well`).toEqual([]);
+      }
+    }
+    expect(tried).toBeGreaterThan(0);
+  });
+
+  it('gather townsfolk off the doorways: no spot but a door’s own is where the captain stands to go in', () => {
+    for (const { name, harbour } of PORTS) {
+      for (const s of harbour.spots.filter((q) => q.kind !== 'door')) {
+        for (const p of harbour.places) expect(Math.hypot(s.x - p.x, s.z - p.z), `${name} ${s.kind} spot at ${s.x},${s.z}, by the ${p.kind}`).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
   it('hang every sign on its building, over the door', () => {
     for (const { name, harbour } of PORTS) {
       const { houses, shed } = harbour.town;

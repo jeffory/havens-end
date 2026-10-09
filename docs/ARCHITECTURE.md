@@ -395,7 +395,8 @@ Each port island gets a harbour:
 - **Town** (`worldgen/town.ts`, reworked before 10.2). Laid out on a grid square to
   the pier: u runs inland from the pier's foot, v across it.
   - **Streets.** A ramp climbs from the pier to a paved square (15 across, 10 deep,
-    with a well in it). A main street runs inland from the square, with a cross
+    with a well in it: a blocker over its ring and down to its water keeps everyone off
+    the rim, and paths go round it). A main street runs inland from the square, with a cross
     street 22 along. Streets are gravel. The main street is level across the
     crossing and climbs at most a block a cell. Where a paved cell stands a block
     above exactly one of its paved neighbours, its paving becomes a gravel stair
@@ -649,7 +650,7 @@ your pack is stowed in the hold.
   `isSolid`.
 - **A prop's blocker isn't ground, and the air over one is walled.** Nobody stands on
   a prop's blocker (`blockerGround`), however they got up beside it: a ledge, a
-  corner, a bench or a well ring, a roof's edge. A horizontal move is also refused
+  corner, a bench, a roof's edge. A horizontal move is also refused
   into any column whose first walker-blocking cell below the feet, within
   `BLOCKER_REACH` (64), is a blocker (`blockerColumn`): so nobody walks, steps or
   drops onto a stall, the cart or the sloop on the stocks from a roof, a bank or a
@@ -668,7 +669,7 @@ your pack is stowed in the hold.
 - **Townsfolk** (`land/townsfolk.ts`, not saved). While the captain is ashore in a
   docked port, up to 8 townsfolk (7 in the pirate haven, 3 at night) come out of the
   houses' doors. Each goes to a spot the town lists: the square, a stall, the well,
-  the tavern door, the shipyard, a street corner or a doorstep. They linger there
+  out before the tavern, the head of the slipway, a street corner or a doorstep. They linger there
   a while and move on, walking the settlers' paths. At night most go home to the
   nearest door. They're gone when you leave port. At the yard they swing a hammer.
   - **Dress** (`duel/dress.ts`). Clothes follow the port. Haven's fisherfolk wear
@@ -677,8 +678,9 @@ your pack is stowed in the hold.
     sash; the Crown's ports are soberer, with the odd soldier (red coat, white
     cross-belts, tricorn, musket). No one comes out dressed like the last one out.
     Hired settlers keep the looks they always had.
-  - **Guards.** Two Crown soldiers stand either side of the Governor's door, facing
-    out, day and night. They don't count toward the town's numbers.
+  - **Guards.** Two Crown soldiers stand either side of the Governor's door, two along
+    the wall from where the captain stands to go in, facing out, day and night. They
+    don't count toward the town's numbers.
   - **Keepers.** Each shop with a building of its own has a keeper at a post
     (`Port.keepers`, from the town builder): behind the tavern's bar, the office's desk and
     the market's back counter, facing the room's front, and the shipwright in the shed by
@@ -691,6 +693,11 @@ your pack is stowed in the hold.
     nobody ever lingers inside the shipwright or the tavern keeper's bar.
   - **Spread out.** Folk at the same spot stand in a ring round it, and a spot
     where two already are is less often picked.
+  - **Off the doorways** (`offLimits`). Nobody lingers within 1.2 (`DOOR_CLEAR`) of a
+    doorway, where the captain stands to go in at a shop or a house's step: a crowd
+    there merged with the captain as they went in. No spot but a doorstep's own is on
+    one. Nor within 1 of the captain (`CAPTAIN_CLEAR`): one he walks onto steps aside to
+    another place round the same spot, or moves on if there's none.
 
 **The view.** The camera closes in (36 units). A roof lifter (`render/RoofLifter.ts`)
 opens up whatever hides the captain, as in a doll's house.

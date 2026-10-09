@@ -82,6 +82,35 @@ const TURN = 3;
 const KEEPER_NEAR = 3;
 /** Nobody ever stands this close to a keeper's post: hard-clear of it, present or not, day or night. */
 const KEEPER_CLEAR = 0.8;
+/**
+ * Nobody lingers, nor a guard stands, this close to a doorway: where the captain stands to go
+ * in at a shop, or a house's step. A crowd there merged with the captain as they went in.
+ */
+export const DOOR_CLEAR = 1.2;
+/** Nobody lingers this close to the captain: one he walks onto steps aside. */
+export const CAPTAIN_CLEAR = 1;
+
+/** Somewhere nobody lingers, and how far from it they keep. */
+export interface Clear {
+  x: number;
+  z: number;
+  by: number;
+}
+
+/**
+ * Where nobody in this port lingers: a step from every doorway (the places you go in at, and
+ * the houses' doors), off every keeper's post, present or not, and clear of the captain.
+ */
+export function offLimits(port: Port, captain: { x: number; z: number } | null): Clear[] {
+  const doorways = [...port.places, ...(port.spots ?? []).filter((s) => s.kind === 'door')];
+  return [
+    ...doorways.map(({ x, z }) => ({ x, z, by: DOOR_CLEAR })),
+    ...(port.keepers ?? []).map(({ x, z }) => ({ x, z, by: KEEPER_CLEAR })),
+    ...(captain ? [{ x: captain.x, z: captain.z, by: CAPTAIN_CLEAR }] : []),
+  ];
+}
+
+const within = (clear: readonly Clear[], x: number, z: number): boolean => clear.some((c) => Math.hypot(c.x - x, c.z - z) < c.by);
 
 /** Who stands fixed at a post: the Crown's guards and the shops' keepers. They don't count toward the town's numbers. */
 const fixed = (f: Townsman): boolean => f.task.kind === 'guard' || f.task.kind === 'keep';
@@ -138,13 +167,15 @@ export function stepTownsfolk(land: Land, dt: number, random: () => number): voi
     const { look, dress } = keeperLook(port, post);
     land.townsfolk.push({ id: land.nextTownsman++, look, dress, walker: createWalker(post.x, post.y, post.z, post.facing), task: { kind: 'keep', post }, home: false });
   }
+  const clear = offLimits(port, w);
   // Arriving, the town's already about its business: its folk are out at its places, not
   // all still to come out of their doors.
   if (land.lastOut === null && !land.townsfolk.some((f) => !fixed(f))) {
     const places = spots.filter((s) => s.kind !== 'door');
     for (let i = 0; i < want && places.length > 0; i++) {
       const spot = pickSpot(places, (s) => standingAt(land.townsfolk, s).length, random)!;
-      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...postedBy(land.townsfolk, spot)], random, port.keepers);
+      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...postedBy(land.townsfolk, spot)], random, clear);
+      if (!at) continue; // no room there: they'll come out of a door instead
       const { look, dress } = freshLook(dressKind(port), land.townsfolk.filter((f) => f.task.kind !== 'keep').map((f) => f.dress), random, land.lastOut ?? undefined);
       land.lastOut = dress;
       const walker = createWalker(at.x, at.y, at.z, random() * Math.PI * 2);
@@ -168,7 +199,7 @@ export function stepTownsfolk(land: Land, dt: number, random: () => number): voi
     f.task = { kind: 'wait', left: 0 };
   }
 
-  for (const f of land.townsfolk) step(land, f, spots, doors, dt, random);
+  for (const f of land.townsfolk) step(land, f, spots, doors, clear, dt, random);
   for (let i = land.townsfolk.length - 1; i >= 0; i--) if (land.townsfolk[i].gone) land.townsfolk.splice(i, 1);
 }
 
@@ -196,7 +227,8 @@ export function freshLook(kind: DressKind, about: readonly Dress[], random: () =
   return fallback ?? fresh;
 }
 
-function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readonly TownSpot[], dt: number, random: () => number): void {
+/** One step of someone about town. `clear` is where nobody lingers (see `offLimits`). */
+function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readonly TownSpot[], clear: readonly Clear[], dt: number, random: () => number): void {
   const t = f.task;
   if (t.kind === 'guard' || t.kind === 'keep') {
     stepWalker(f.walker, 0, 0, land.world, dt); // stands at their post
@@ -209,21 +241,35 @@ function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readon
     return;
   }
   stepWalker(f.walker, 0, 0, land.world, dt); // stay on the ground
-  if (t.kind === 'linger') turnToward(f.walker, t.spot, dt);
+  const others = land.townsfolk.filter((o) => o !== f);
+  const captain = land.walker;
+  if (t.kind === 'linger') {
+    turnToward(f.walker, t.spot, dt);
+    // The captain's walked onto them: a step aside, to another place round the same spot (or off elsewhere if there's none).
+    if (captain && Math.hypot(captain.x - f.walker.x, captain.z - f.walker.z) < CAPTAIN_CLEAR) {
+      const at = standAt(land.world, t.spot, [...standingAt(others, t.spot), ...postedBy(others, t.spot)], random, clear);
+      const path = at && findPath(land.world, f.walker, at, 0.6, PATH_NODES);
+      if (at && path) {
+        path.push({ x: at.x, y: path[path.length - 1]?.y ?? f.walker.y, z: at.z });
+        f.task = { kind: 'walk', path, next: 0, stuck: 0, to: t.spot, at };
+        return;
+      }
+      t.left = 0;
+    }
+  }
   t.left -= dt;
   if (t.left > 0) return;
   // Off somewhere else: home to the nearest door, or a spot they like (not the one they're at, and not a crowded one, mostly).
   const here = t.kind === 'linger' ? t.spot : null;
-  const others = land.townsfolk.filter((o) => o !== f);
   const to = f.home ? nearest(f.walker, doors) : pickSpot(spots.filter((s) => s !== here), (s) => standingAt(others, s).length, random);
   if (!to) {
     f.gone = f.home;
     return;
   }
-  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...postedBy(others, to)], random, land.sea.docked?.keepers);
-  const path = findPath(land.world, f.walker, at, 0.6, PATH_NODES);
-  if (path && !f.home) path.push({ x: at.x, y: path[path.length - 1]?.y ?? f.walker.y, z: at.z });
-  f.task = path ? { kind: 'walk', path, next: 0, stuck: 0, to, at } : { kind: 'wait', left: 2 };
+  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...postedBy(others, to)], random, clear);
+  const path = at && findPath(land.world, f.walker, at, 0.6, PATH_NODES);
+  if (at && path && !f.home) path.push({ x: at.x, y: path[path.length - 1]?.y ?? f.walker.y, z: at.z });
+  f.task = at && path ? { kind: 'walk', path, next: 0, stuck: 0, to, at } : { kind: 'wait', left: 2 };
 }
 
 /** Where the others at a spot (or on their way to it) stand. */
@@ -240,11 +286,11 @@ function standingAt(others: readonly Townsman[], spot: TownSpot): Point[] {
  * Where to stand at a spot: one of a ring of places round it, as far as can be from
  * those already there or thereabouts (`taken`: the others at the spot, and any guards or
  * a keeper close by), on the spot's own level and clear of walls, stalls and the well. A
- * ring place within `KEEPER_CLEAR` of any of the port's keeper posts (`keepers`) is never
- * used, whether that keeper's there or not: nobody ever stands where one comes back to.
- * The spot itself if there's no room round it.
+ * ring place within reach of anything `clear` keeps them off (see `offLimits`: a doorway,
+ * a keeper's post whether that keeper's there or not, the captain) is never used. The spot
+ * itself if there's no room round it and it's clear; null if it isn't.
  */
-export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x: number; z: number }[], random: () => number, keepers: readonly KeeperPost[] = []): Point {
+export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x: number; z: number }[], random: () => number, clear: readonly Clear[] = []): Point | null {
   const turn = hash2(Math.floor(spot.x), Math.floor(spot.z), 7) * Math.PI * 2;
   const first = Math.floor(random() * RING_PLACES);
   let best: Point | null = null;
@@ -252,15 +298,14 @@ export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x:
   for (let i = 0; i < RING_PLACES; i++) {
     const a = turn + ((first + i) % RING_PLACES) * ((Math.PI * 2) / RING_PLACES);
     const p = { x: spot.x + Math.sin(a) * RING, y: spot.y, z: spot.z + Math.cos(a) * RING };
-    if (collides(world, p.x, p.y, p.z) || groundBelow(world, p.x, p.z, p.y + 0.5) !== p.y) continue;
-    if (keepers.some((k) => Math.hypot(k.x - p.x, k.z - p.z) < KEEPER_CLEAR)) continue;
-    const clear = taken.reduce((m, o) => Math.min(m, Math.hypot(o.x - p.x, o.z - p.z)), Infinity);
-    if (clear > room) {
+    if (collides(world, p.x, p.y, p.z) || groundBelow(world, p.x, p.z, p.y + 0.5) !== p.y || within(clear, p.x, p.z)) continue;
+    const apart = taken.reduce((m, o) => Math.min(m, Math.hypot(o.x - p.x, o.z - p.z)), Infinity);
+    if (apart > room) {
       best = p;
-      room = clear;
+      room = apart;
     }
   }
-  return best ?? { x: spot.x, y: spot.y, z: spot.z };
+  return best ?? (within(clear, spot.x, spot.z) ? null : { x: spot.x, y: spot.y, z: spot.z });
 }
 
 /** Walks the path a step; true on arrival. Anyone held up too long is helped on to the next point. */
@@ -322,8 +367,9 @@ export interface GuardPost extends Point {
 
 /**
  * Where the Crown's soldiers stand guard: either side of the Governor's door in an
- * Imperial port, just outside the wall, facing out (a step further along if something's
- * in the way). None anywhere else, nor where the office has no door of its own.
+ * Imperial port, just outside the wall, facing out, a step clear of where the captain
+ * stands to go in, or of any other doorway (a step further along if something's in the
+ * way). None anywhere else, nor where the office has no door of its own.
  */
 export function guardPosts(port: Port, world: VoxelReader): GuardPost[] {
   if (port.faction !== 'imperial') return [];
@@ -332,12 +378,13 @@ export function guardPosts(port: Port, world: VoxelReader): GuardPost[] {
   if (!office || (yard && yard.x === office.x && yard.z === office.z)) return [];
   const out = doorOut(office, world);
   if (!out) return [];
+  const clear = offLimits(port, null);
   const posts: GuardPost[] = [];
   for (const side of [-1, 1]) {
-    for (const reach of [1, 2]) {
+    for (const reach of [2, 3]) {
       const x = office.x + out.dz * side * reach;
       const z = office.z + out.dx * side * reach;
-      if (collides(world, x, office.y, z)) continue;
+      if (collides(world, x, office.y, z) || within(clear, x, z)) continue;
       posts.push({ x, y: office.y, z, facing: Math.atan2(out.dx, out.dz) });
       break;
     }

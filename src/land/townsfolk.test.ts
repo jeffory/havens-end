@@ -58,10 +58,10 @@ const TOWN: Port = {
 const FLOOR = SEA_LEVEL + 1;
 const SHIPYARD: PortPlace = { kind: 'shipyard', x: 15.5, y: FLOOR, z: -14.5 };
 const OFFICE: PortPlace = { kind: 'office', x: 23.5, y: FLOOR, z: -2.5, sign: { x: 27.5, y: FLOOR + 5, z: -2.5 } };
-/** Either side of the Governor's door, just outside the wall. */
+/** Either side of the Governor's door, just outside the wall, a step clear of where the captain stands to go in. */
 const POSTS = [
-  { x: 23.5, z: -3.5 },
-  { x: 23.5, z: -1.5 },
+  { x: 23.5, z: -4.5 },
+  { x: 23.5, z: -0.5 },
 ];
 
 /** The same town under another flag (the free port, the Crown's, the Brethren's), with its shipyard and office. */
@@ -195,12 +195,46 @@ describe('townsfolk', () => {
     const spot: TownSpot = { x: 22.5, y: FLOOR, z: -2.5, kind: 'square' }; // beside the office wall
     const taken: Array<{ x: number; z: number }> = [];
     for (let i = 0; i < 4; i++) {
-      const at = standAt(world, spot, taken, () => 0.3);
+      const at = standAt(world, spot, taken, () => 0.3)!;
       expect(Math.hypot(at.x - spot.x, at.z - spot.z)).toBeLessThan(1.6);
       expect(collides(world, at.x, at.y, at.z)).toBe(false);
       for (const t of taken) expect(Math.hypot(at.x - t.x, at.z - t.z)).toBeGreaterThan(1);
       taken.push(at);
     }
+  });
+
+  it('linger clear of every doorway: a step from each place you go in at and each house’s door, whatever spot they’re at', () => {
+    // The tavern's step one from where its drinkers gather, and a house's door two from the square's middle.
+    const step: PortPlace = { kind: 'tavern', x: -5.5, y: FLOOR, z: 14.5 };
+    const where: Port = { ...TOWN, places: [SHIPYARD, { ...OFFICE }, step], spots: [...TOWN.spots!, spot(2.5, 0.5, 'door')] };
+    const doorways = [...where.places, ...where.spots!.filter((s) => s.kind === 'door')];
+    const { sea, land } = town(where, 7);
+    const seen = new Set<SpotKind>();
+    for (let t = 0; t < 240; t += 1 / 20) {
+      sea.pass(1 / 20);
+      land.step(1 / 20);
+      for (const f of land.townsfolk) {
+        if (f.task.kind !== 'linger') continue;
+        seen.add(f.task.spot.kind);
+        const { at } = f.task;
+        for (const d of doorways) expect(Math.hypot(at.x - d.x, at.z - d.z), `lingerer#${f.id} at the ${f.task.spot.kind}, by the doorway at ${d.x},${d.z}`).toBeGreaterThanOrEqual(1.2);
+      }
+    }
+    expect(seen.has('tavern') && seen.has('yard') && seen.has('square')).toBe(true);
+  });
+
+  it('step aside when the captain walks onto where they stand, and keep a step from him', () => {
+    const { sea, land } = town(TOWN, 3);
+    run(sea, land, 5);
+    const f = folk(land).find((o) => o.task.kind === 'linger' && Math.hypot(o.walker.x - land.walker!.x, o.walker.z - land.walker!.z) > 3)!;
+    expect(f).toBeDefined();
+    if (f.task.kind === 'linger') f.task.left = 100; // in no hurry to move on
+    // The captain walks right up to them, and stands there.
+    Object.assign(land.walker!, { x: f.walker.x + 0.2, y: f.walker.y, z: f.walker.z, vx: 0, vz: 0 });
+    run(sea, land, 4);
+    const captain = land.walker!;
+    expect(Math.hypot(f.walker.x - captain.x, f.walker.z - captain.z)).toBeGreaterThanOrEqual(1);
+    for (const o of folk(land)) if (o.task.kind === 'linger') expect(Math.hypot(o.walker.x - captain.x, o.walker.z - captain.z), `lingerer#${o.id}`).toBeGreaterThanOrEqual(1);
   });
 
   it('are less likely to linger where two are already', () => {
@@ -216,11 +250,13 @@ describe('townsfolk', () => {
 });
 
 describe('the Crown’s guards', () => {
-  it('stand either side of the Governor’s door, facing out, day and night, and don’t count as townsfolk', () => {
+  it('stand either side of the Governor’s door, a step clear of it, facing out, day and night, and don’t count as townsfolk', () => {
     const { sea, land } = town(port(2, 'imperial'));
     run(sea, land, 5);
     const posted = guards(land);
     expect(posted).toHaveLength(2);
+    // Never shoulder to shoulder with the captain going in.
+    for (const g of posted) expect(Math.hypot(g.walker.x - OFFICE.x, g.walker.z - OFFICE.z)).toBeGreaterThanOrEqual(1.2);
     const where = () =>
       guards(land)
         .map((g) => ({ x: g.walker.x, z: g.walker.z }))

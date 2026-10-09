@@ -465,16 +465,18 @@ export function buildTown(
   for (const u of [q + 2, q + 5, q + 8]) for (const v of [-4, 0, 4]) if (!inWell(u, v) && !onProp(u, v)) spotAt(u, v, low, 'square');
   for (const [u, v] of stallSpots) spotAt(u, v, low, 'stall');
   for (const [u, v] of [[q + 5, ys * 2], [q + 3, ys * 4], [q + 7, ys * 4]]) spotAt(u, v, low, 'well');
-  spotAt(q + 3, ys * 8, low, 'yard');
-  spotAt(q + 3, ys * 11, low, 'yard');
+  // At the head of the slipway, either side of the ship's stern (in the shed, where there's no slipway):
+  // not before the shed, where the captain stands to go in.
+  for (const v of slip ? [9, 13] : [10]) spotAt(slip ? q : q + 1, ys * v, low, 'yard');
   for (let u = start + 2; u <= end; u += 7) spotAt(u, 0, mainH.get(u)!, 'street');
   const outside = (d: Door, steps: number, kind: SpotKind) => {
     const x = d.x + (d.outX - d.x) * steps;
     const z = d.z + (d.outZ - d.z) * steps;
     townSpots.push({ x: x + 0.5, y: decked.has(`${x},${z}`) ? d.y + 0.5 : d.y, z: z + 0.5, kind });
   };
-  if (doors.market) for (const steps of [-1, -2, 1]) outside(doors.market, steps, 'stall');
-  if (doors.tavern) for (const steps of [1, 2]) outside(doors.tavern, steps, 'tavern');
+  // Down the market's aisle and out before it, and out before the tavern: never on the step itself.
+  if (doors.market) for (const steps of [-1, -2, 2]) outside(doors.market, steps, 'stall');
+  if (doors.tavern) for (const steps of [2, 3]) outside(doors.tavern, steps, 'tavern');
   for (const d of everyDoor) if (d !== doors.market) outside(d, 1, 'door');
 
   return {
@@ -747,12 +749,17 @@ function buildShed(world: VoxelWorld, f: Frame, r: Rect, base: number, roof: Blo
   for (let u = r.u0 + 1; u < r.u1; u++) for (let y = base; y < base + 2; y++) put(u, stack, y, Block.Wood);
 }
 
-/** A stone well: a low ring round dark water. */
+/**
+ * A stone well: a low ring round dark water. Nobody stands on its ring or in its water (a
+ * townsman on the rim, or a path over it, looked wrong): the blocker over the ring and down
+ * to the water keeps everyone off, as a prop's does.
+ */
 function buildWell(world: VoxelWorld, fp: Footprint, base: number): void {
   for (let x = fp.x0; x < fp.x0 + fp.w; x++) {
     for (let z = fp.z0; z < fp.z0 + fp.d; z++) {
       const middle = x === fp.x0 + 1 && z === fp.z0 + 1;
-      world.setVoxel(x, base, z, middle ? Block.Air : Block.Stone);
+      world.setVoxel(x, base, z, middle ? Block.Blocker : Block.Stone);
+      world.setVoxel(x, base + 1, z, Block.Blocker);
       if (middle) world.setVoxel(x, base - 1, z, Block.WellWater);
     }
   }
