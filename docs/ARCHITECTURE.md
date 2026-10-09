@@ -703,9 +703,15 @@ opens up whatever hides the captain, as in a doll's house.
   their edges — except a prop's blocker, which only joins what it meets face to
   face, so a stall or the cart grazing a building's corner doesn't drag the whole
   building in with it. Everything from head height (two above its floor), or from
-  its eaves if those are lower, lifts, so a shop's room shows as a house's does. If
-  the line of sight passes through lower down (the captain just behind a tall
-  building's wall), it lifts from there. The line of sight then goes on through
+  its eaves if those are lower, lifts, so a shop's room shows as a house's does. A
+  roofed building's room is its walls' footprint (where it stands a second course
+  and a third over it, so a lamp post or a barrel against it isn't), and its walls
+  facing the camera, and whatever stands in front of them, lift from one course up
+  (never below their own first course): the room shows from the camera as a doll's
+  house does, the far walls at head height. A wall faces the camera when the camera
+  stands beyond its outer face, so the near walls follow the camera's quarter turns.
+  If the line of sight passes through lower down (the captain just behind a tall
+  building's wall) where it isn't cut anyway, it lifts from there. The line of sight then goes on through
   what it has lifted, through up to three trees or buildings, so a stall's post in
   front of a shop can't keep the shop's roof on. Lanterns go with the wall or post
   they hang from, a prop hung on a wall goes with its anchor, and a porch's posts go
@@ -716,12 +722,24 @@ opens up whatever hides the captain, as in a doll's house.
   as ruins.) The scan runs four times a second, and a building stays lifted until
   the captain is 4 away, so nothing flickers at the edge. Stalls, the cart, guns and
   flags lift only when they're in the way; a stall or the cart then goes whole.
-- **In the shader.** Up to twelve boxes lift at once, what's in the way first. The
-  terrain shader discards lifted voxels whole: each fragment finds its voxel half a
-  block back from its face and tests that voxel's middle, as `ChunkRenderer.hides`
-  does. Blocks opt in through a per-vertex `cutaway` flag. The ground never does,
-  since it would show hollow. The mesher draws the top of a cutaway block under
-  another, so a lifted wall has a clean top.
+- **In the shader.** Up to twelve boxes lift at once, what's in the way first, with
+  their rooms and the camera (`render/lifts.ts`: `liftedBy`, and the same test in
+  GLSL for the terrain and the props). The terrain shader discards lifted voxels
+  whole, testing the voxel's middle, as `ChunkRenderer.hides` does. Each fragment
+  finds its voxel a quarter block in from its vertex's corner of it (the mesher marks
+  each vertex's corner), so a fragment on a face's very edge never lands in the
+  voxel beside (flooring the fragment's own position did, and left a lifted box's
+  edges drawn as dotted lines). Blocks opt in through a per-vertex `cutaway` flag.
+  The ground never does, since it would show hollow. Shadows are cut the same way:
+  the chunks a lift reaches, and the props, cast theirs through a depth material that
+  discards what's lifted, so a lifted roof leaves no shade in its room (a discard
+  costs the shadow pass its early depth test, so other chunks use the plain one).
+- **The cut's top.** The mesher draws the top of a cutaway block under another, so a
+  lifted wall has a clean top, and marks it: it's only ever seen as the top of a cut,
+  and it's drawn in one dark timber colour, never glowing, on every building alike.
+  After dark, a face looking into a lifted room (its walls' insides, its floor) and a
+  prop standing in one get a warm lamplight, so the room reads as lit, not as navy
+  holes, and a lit window glows outward only.
 
 A light ring on a dark one marks the captain's feet, scaled with the camera's
 distance. Your own ship fades while you work beside her.
@@ -1115,8 +1133,10 @@ straight into the storehouses.
     mesh, alongside the cutaway flag.
   - Six point lights, a fixed pool so shaders never recompile, go to the nearest
     campfires, torches, forges, pier lamps, Imperial beacons, your ship, and the
-    lantern the captain carries ashore. Pier lamps and beacons get a halo, and every
-    light in the pool shines back off the water as a streak (§4).
+    lantern the captain carries ashore. They fall off gently (decay 1) rather than
+    in a hot spot, so a door's lantern doesn't burn out whoever stands beneath it.
+    Pier lamps and beacons get a small halo, and every light in the pool shines back
+    off the water as a streak (§4).
   - Every ship shows a stern lantern with a halo, which is how you spot her in the dark.
 - **At sea:**
   - Lookouts see 55% as far.
