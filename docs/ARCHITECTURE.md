@@ -102,7 +102,8 @@ per frame: ChunkRenderer.update(budget)
   `voxel/shapes.ts` (§9).
 - **The blocker** (75) is solid to walkers and ships, but never drawn, never picked
   (`isPickable`) and casts no shade. `surfaceHeight` skips it, so the sea under the ship
-  on the stocks is still drawn. It keeps people out of a prop (§8).
+  on the stocks is still drawn. It keeps people out of a prop (§8), and nobody stands
+  on one or walks onto it from above (§9, "The walker").
 
 ## 4. Ocean
 
@@ -417,15 +418,27 @@ Each port island gets a harbour:
     18 long and outruns every slipway, so past its end they carry on out over the
     water, standing on the seabed. A timber shed stands beside the slipway, and the
     berth is on the pier's other side.
-  - **Dressing.** Two stalls stand either side of the way to the market's door, each
-    with a counter of goods and a striped awning (blue at the free port, red
-    elsewhere). Benches stand at the square's top, and a cart of timber by the
-    shipyard. Each port adds its own: net racks and crates of fish at Haven, bales at
-    the free port, two guns run out at the seaward edge for the Crown, and guns and
-    a gallows (in the cart's place) for the Brethren. Rooms are furnished, since the
-    roof lifter shows them. A house has a bed, a hearth and a table; the tavern has
-    a bar with barrels behind it, and tables; the office has shelves of books and a
-    desk. The market hall has goods on its counters.
+  - **Dressing.** Two stalls stand on the square by the market, either side of the column of
+    its door, their fronts to the square's middle and two clear rows between their backs
+    and the market's step (`STALL_BACK`). One sells produce and one cloth, under a striped
+    awning (blue at the free port, red elsewhere). Benches stand at the square's top, and a
+    hand cart of timber by the shipyard. Each port adds its own: net racks and crates of
+    fish at Haven, bales at the free port, two guns run out at the seaward edge for the
+    Crown, and guns and a gallows (in the cart's place) for the Brethren. Stalls and the
+    cart keep two clear cells from every door's step.
+  - **Rooms** are furnished with props, since the roof lifter shows them
+    (`worldgen/rooms.ts` lays them out as cells; `worldgen/furnish.ts` stands them). The
+    layout goes by what the room is for and its size, and always leaves the doorway's two
+    cells clear and a way from the door to beside the room's middle.
+    - *A house:* a bed in a back corner, the hearth on the end wall across from it, a shelf
+      of crockery or bottles, a chest, a table with stools or chairs, and a rug.
+    - *The tavern:* the bar across the back with a cask on one end, bottles and barrels at
+      the back wall, and tables with stools either side of the way in.
+    - *The office:* the desk facing the door, ledgers on shelves along the back and side
+      walls, a chest, a chair for callers, and a rug.
+    - *The market hall:* counters of produce and cloth across the back and down the sides,
+      with crates and barrels.
+    - Each layout says where its keeper stands: against the back wall, behind the counter.
   - **Doors you can enter.** Each has a timber frame, a stone step and a lantern
     beside it. The market hall has lanterns at its front corners, and the shed at
     its front posts. Each sign hangs just out from its door.
@@ -461,20 +474,32 @@ Each port island gets a harbour:
     - *Models* are drawn in code with a `Sketch` (`props/models.ts`), a quarter of a
       block a voxel unless said otherwise, or read from a `.vox` file
       (`propFromVox`). The sloop's is her own ship file (`props/catalog.ts`). All are
-      meshed with `meshCells`, as ships are.
-    - *Drawing:* one `InstancedMesh` a kind for every town at once, lit like the
-      terrain and casting shadows. That's ten draw calls and about 39,000 triangles a
-      pass (the shadow map and the water's reflection draw them too), never culled,
-      since each mesh spans every town; at Haven at night the frame time stayed
-      within the noise of the build before them. A prop hung on a wall names that
-      block as its anchor, and the shader discards it while the anchor is lifted away
-      on foot (the lift test in `render/lifts.ts`, shared with the terrain). So a
-      sign, a door lantern or the clock goes with its wall, and street furniture,
-      with no anchor, never lifts.
-    - *Reserved cells:* a prop drawn a block a voxel can keep people out of the cells
-      it fills. `reserveProps` writes the blocker into the sloop's, once, straight
-      after worldgen and before `trackEdits`, so they're part of the generated world
-      and never of a save.
+      meshed with `meshCells`, as ships are. The town's finer furniture, the stalls, the
+      hand cart and the hall's counters are drawn an eighth of a block a voxel with the
+      colours in `props/kit.ts` (`furniture.ts`, `market.ts`).
+    - *Drawing:* one `InstancedMesh` a kind a town (props within 150 of a town's
+      first share it), so a town off screen isn't drawn. That's ten draw calls and
+      about 39,000 triangles a pass (the shadow map and the water's reflection draw
+      them too), never culled, since each mesh spans every town; at Haven at night
+      the frame time stayed within the noise of the build before them. A prop hung
+      on a wall names that block as its anchor, and the shader discards it while
+      the anchor is lifted away on foot (the lift test in `render/lifts.ts`, shared
+      with the terrain). So a sign, a door lantern or the clock goes with its wall,
+      and street furniture, with no anchor, never lifts.
+    - *Reserved cells:* a prop drawn a block a voxel (the ship on the stocks) keeps
+      people out of the cells it fills: `reserveProps` writes the blocker into
+      them, once, straight after worldgen and before `trackEdits`. A finer prop
+      has a shape in blocks (`props/shapes.ts`: across, along the way it faces, and
+      high). The town builder stands it with `standProp`, which writes the blocker
+      into its cells three high (the walker climbs two), except under stools,
+      chairs and rugs. It anchors the prop at the cell its top is in: a stall or
+      the cart goes whole when its anchor lifts away, since the lifter sees a
+      blocker as planks. Furniture is anchored at the floor instead
+      (`worldgen/furnish.ts`): a room's own cut can run as low as half a block
+      over the floor, and a top-cell anchor there would hide a hearth or a shelf
+      along with the wall behind it. Furniture is never above head height anyway,
+      so it stays with its room either way. All of it is part of the generated
+      world, never of a save.
   - **Banners.** Five by three, on a pole: the Brethren's black with a skull over two
     bones, the Crown's crimson with a gold cross, the Guild's blue with a white band
     and a gold boss.
@@ -488,7 +513,9 @@ Each port island gets a harbour:
     town, the slipway and the sloop on it, the market on the square, the roofs, flags
     and floors of each style, the porches, and signs, lanterns and the clock where
     they belong. The props' own tests (`props/*.test.ts`) check the models, the
-    placement maths and the reserved cells.
+    placement maths and the reserved cells. `rooms.test.ts` lays out every room
+    size and role. `shopLift.test.ts` (render) lifts every shop of the five ports
+    from its door and every floor cell inside.
 - **Berth.** Alongside the pier head, bow out to sea: where ships dock, leave and
   respawn.
 
@@ -619,6 +646,15 @@ your pack is stowed in the hold.
   slab or a stair's step.
 - Crops are drawn but walkable. A separate `blocksWalker` test sits alongside
   `isSolid`.
+- **A prop's blocker isn't ground, and the air over one is walled.** Nobody stands on
+  a prop's blocker (`blockerGround`), however they got up beside it: a ledge, a
+  corner, a bench or a well ring, a roof's edge. A horizontal move is also refused
+  into any column whose first walker-blocking cell below the feet, within
+  `BLOCKER_REACH` (64), is a blocker (`blockerColumn`): so nobody walks, steps or
+  drops onto a stall, the cart or the sloop on the stocks from a roof, a bank or a
+  corner either — they stop at its edge, or fall beside it. A floor or a roof over a
+  prop is ground of its own, so the air above that stays open. Someone already over
+  a prop (a save made where one now stands) can still walk off it.
 
 **Ports on foot.** The Phase 4 menus are unchanged; you just walk to them.
 - **Doors and signs.** Each harbour records its doors: the market, the tavern and
@@ -642,26 +678,43 @@ your pack is stowed in the hold.
     Hired settlers keep the looks they always had.
   - **Guards.** Two Crown soldiers stand either side of the Governor's door, facing
     out, day and night. They don't count toward the town's numbers.
+  - **Keepers.** Each shop with a building of its own has a keeper at a post
+    (`Port.keepers`, from the town builder): behind the tavern's bar, the office's desk and
+    the market's back counter, facing the room's front, and the shipwright in the shed by
+    the timber, hammering. They stand still and don't count toward the town's numbers.
+    By day all are in; at night only the tavern keeper is, and the others are gone till
+    morning. Their looks come from where they stand (never a draw from the town's dice),
+    dressed for the port and never as soldiers, so they're the same each visit. They're
+    gone when you leave port and back when you land. A lingering place within 0.8 of any
+    keeper's post is hard-clear of it (`KEEPER_CLEAR`), whether the keeper is in or out, so
+    nobody ever lingers inside the shipwright or the tavern keeper's bar.
   - **Spread out.** Folk at the same spot stand in a ring round it, and a spot
     where two already are is less often picked.
 
 **The view.** The camera closes in (36 units). A roof lifter (`render/RoofLifter.ts`)
 opens up whatever hides the captain, as in a doll's house.
-- **In the way.** Six rays run from the captain toward the camera. The first tree
-  or building a ray hits is flood-filled whole, from the captain's feet up (never
-  the boards they stand on). The fill follows edges as well as faces, because the
-  courses of an open shed's stepped roof meet only at their edges. Everything from
-  a storey above its floor, or from its eaves if those are lower, lifts, so no roof
-  is left hanging. If the line of sight passes through lower down (the captain just
-  behind a tall building's wall), it lifts from there. Lanterns go with the wall or
-  post they hang from, and a prop hung on a wall goes with its anchor (§8). It's held
-  for 0.6 s after the captain moves clear.
+- **In the way.** Six rays run from the captain toward the camera. A ray that starts
+  inside solid (a prop at the captain's own feet) is re-cast ignoring that starting
+  cell first, so walking into a stall or the cart doesn't lift it away from under
+  itself. The first tree or building a ray hits is flood-filled whole, from the
+  captain's feet up (never the boards they stand on). The fill follows edges as
+  well as faces, because the courses of an open shed's stepped roof meet only at
+  their edges — except a prop's blocker, which only joins what it meets face to
+  face, so a stall or the cart grazing a building's corner doesn't drag the whole
+  building in with it. Everything from head height (two above its floor), or from
+  its eaves if those are lower, lifts, so a shop's room shows as a house's does. If
+  the line of sight passes through lower down (the captain just behind a tall
+  building's wall), it lifts from there. The line of sight then goes on through
+  what it has lifted, through up to three trees or buildings, so a stall's post in
+  front of a shop can't keep the shop's roof on. Lanterns go with the wall or post
+  they hang from, a prop hung on a wall goes with its anchor, and a porch's posts go
+  with its canopy (§8). It's held for 0.6 s after the captain moves clear.
 - **Beside you in port.** With the camera nearer than 60, a roofed building within
   2 of the captain lifts too (the one whose door they're at, say), so you see in; the
   rest of the town keeps its roofs. (Lifting every roof within 12 made the town read
   as ruins.) The scan runs four times a second, and a building stays lifted until
-  the captain is 4 away, so nothing flickers at the edge. Stalls, carts, guns and
-  flags lift only when they're in the way.
+  the captain is 4 away, so nothing flickers at the edge. Stalls, the cart, guns and
+  flags lift only when they're in the way; a stall or the cart then goes whole.
 - **In the shader.** Up to twelve boxes lift at once, what's in the way first. The
   terrain shader discards lifted voxels whole: each fragment finds its voxel half a
   block back from its face and tests that voxel's middle, as `ChunkRenderer.hides`
@@ -1033,7 +1086,10 @@ straight into the storehouses.
   canopy, and the old `Lantern` blocks where the lantern props now stand. That's only
   for the look of it: a porch's posts and rails over the bare pad, a prop lantern
   inside an old one. The ship on the stocks is never in such a chunk. At seed 1717
-  it's Haven's tavern porch, and a few street lamps in each port.
+  it's Haven's tavern porch, and a few street lamps in each port. From the
+  shops-and-interiors work on, rooms, stalls and the cart are props; in such a
+  chunk the old block furniture and stalls stand on beside them, and nobody is
+  kept out of the props' cells there.
 
 ## 10. Crews, production and night (Phase 6)
 
@@ -1446,12 +1502,18 @@ src/
   DuelScene.ts         runs a duel from boarding to verdict (sim + presentation)
   worldgen/            seeded noise, island generator, archipelago plan, harbours,
                        deposits (where outcrops go), bandits (where bandit camps
-                       go, and raising them)
+                       go, and raising them), rooms (a room's furniture laid out
+                       by role and size), furnish (standing props: blockers and
+                       anchors; furnishing a building)
   props/               the towns' decoration finer than a block: types, sketch
                        (drawing a model voxel by voxel), models (lanterns, signs,
                        the clock, porch posts and rails), catalog (every kind, the
-                       sloop's hull among them), place (a placement's matrix) and
-                       reserve (the blocker in a prop's cells)
+                       sloop's hull among them), place (a placement's matrix),
+                       reserve (the blocker in a prop's cells), kit (the finer
+                       props' colours and helpers), furniture (barrels, crates,
+                       beds, tables, shelves, chests, hearths, rugs, the bar, the
+                       desk), market (stalls, the hand cart, the hall's counters),
+                       shapes (a finer prop's cells)
   ocean/               waves.ts (CPU + GLSL twin), SeabedMap
   render/              CameraRig, Sun, ChunkRenderer, OceanRenderer, FleetView,
                        ShipView, ShotsView, BarrelsView, RangeArcs, Effects,
@@ -1548,8 +1610,8 @@ verified in the running game. None of those directories import from `render`,
       3/10 from another model, so not to be set against the 4/10 above) read the night
       lanterns as dark figures with glowing eyes; their glass now runs unbroken round
       them. Still open, from that pass and from the look at the game that went with it:
-      - Lifting a roof shows a bare room, and on foot the square is ringed with
-        roofless boxes (as before).
+      - ~~Lifting a roof shows a bare room~~ (fixed: rooms are furnished, §8), and
+        on foot the square is ringed with roofless boxes (as before).
       - The tool's red target outline, half hidden, reads as stray debug lines.
       - Wind streaks read as white glitches over the town and the water.
       - The broadside range dots show in port, a dotted line across the sea.
@@ -1562,18 +1624,20 @@ verified in the running game. None of those directories import from `render`,
         awnings from most views.
       - The ship on the stocks never lifts on foot (a prop with no anchor), so at the
         yard her hull and mast can stand between the camera and the captain.
-      - At Kingsreach, in the street between the tavern and the Governor's House with
-        the camera from the south-west, a roof hides the captain and doesn't lift (the
-        same on `main`).
-    - **Asked for after 10.2**, with the town art pass (GitHub issues):
-      - Shopkeepers behind the counters in the port shops, dressed for the port
+      - ~~At Kingsreach, in the street between the tavern and the Governor's House with
+        the camera from the south-west, a roof hides the captain and doesn't lift~~
+        (fixed: the head-height cut and the line of sight going on through what it's
+        lifted, §9 "The view").
+    - **Asked for after 10.2**, with the town art pass
+      ([plan](superpowers/plans/2026-10-09-town-shops-and-interiors.md); GitHub issues):
+      - ✅ Shopkeepers behind the counters in the port shops, dressed for the port
         ([#1](https://github.com/jeffory/havens-end/issues/1)).
-      - Shop roofs that lift away to show the inside, as house roofs do
+      - ✅ Shop roofs that lift away to show the inside, as house roofs do
         ([#2](https://github.com/jeffory/havens-end/issues/2)).
-      - The small cart-like stalls in front of the shops, which read badly at play
+      - ✅ The small cart-like stalls in front of the shops, which read badly at play
         zoom, reworked into a clear stall or a proper cart
         ([#3](https://github.com/jeffory/havens-end/issues/3)).
-      - House interiors dressed (beds, tables, shelves, hearths and the rest), checked
+      - ✅ House interiors dressed (beds, tables, shelves, hearths and the rest), checked
         with a visual-critic pass
         ([#4](https://github.com/jeffory/havens-end/issues/4)).
 11. **Terrain & UI:** building near a town shown by a red dithered border; a ground leveller in place of the shovel; caves carved into the islands, with the new ores in them.
