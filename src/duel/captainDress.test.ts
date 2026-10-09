@@ -20,6 +20,12 @@ const hex = (n: number) => [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 const charcoal = ([r, g, b]: number[]) => Math.max(r, g, b) <= 0x40 && Math.max(r, g, b) - Math.min(r, g, b) <= 4;
 const redOf = ([r, g, b]: number[]) => r > 2 * g && r > 2 * b && r > 0x50;
 const same = (a: number[], b: number[]) => a.every((v, k) => v === b[k]);
+/** Is `rgb` the colour `of`, a shade lighter or darker (each channel scaled alike)? */
+const shadeOf = (rgb: number[], of: number) => {
+  const base = hex(of);
+  const k = rgb[0] / base[0];
+  return rgb.every((c, i) => Math.abs(c - Math.min(255, Math.round(base[i] * k))) <= 2);
+};
 
 describe('the captain’s dress', () => {
   it('is a deep red coat, gold at its lapels, cuffs and hem, over a light shirt: nothing left charcoal on the body', () => {
@@ -34,7 +40,8 @@ describe('the captain’s dress', () => {
     // The shirt shows light at the chest.
     const light = cells(dressed, 'torso').filter(({ rgb: [r, g, b] }) => Math.min(r, g, b) > 0xd8);
     expect(light.length).toBeGreaterThan(10);
-    expect(COAT).toBeDefined();
+    // The coat's red is the coat's colour, lighter or darker in the folds.
+    for (const c of cells(dressed, 'torso').filter((c) => redOf(c.rgb))) expect(shadeOf(c.rgb, COAT), `${c.rgb}`).toBe(true);
   });
 
   it('gives the hat a gold edge round its brim, which shows from above, and no black', () => {
@@ -55,8 +62,7 @@ describe('the captain’s dress', () => {
     const reach = (c: { x: number; z: number }) => Math.hypot(c.x - mx, c.z - mz);
     const average = (list: Array<{ x: number; z: number }>) => list.reduce((s, c) => s + reach(c), 0) / list.length;
     expect(average(gold)).toBeGreaterThan(average(seen.filter((c) => !same(c.rgb, hex(TRIM)))));
-    expect(seen.some((c) => c.rgb[0] < 0x60 && c.rgb[0] > c.rgb[2] && !charcoal(c.rgb)), 'brown felt').toBe(true);
-    expect(HAT).toBeDefined();
+    expect(seen.filter((c) => !same(c.rgb, hex(TRIM))).every((c) => shadeOf(c.rgb, HAT)), 'brown felt inside the braid').toBe(true);
   });
 
   it('keeps the face, hands, boots and the figure’s shape and joints as they were', () => {

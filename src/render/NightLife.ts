@@ -7,8 +7,9 @@ const BATS = 7;
 /** A bat's wing, shoulder to tip, and front to back. */
 const WING = 0.2;
 const CHORD = 0.12;
-/** A bat this near a lifted room as the camera sees it keeps away, and comes back this quickly (1/s) once it's clear. */
+/** A bat keeps this far from a lifted room, as the camera sees it... */
 const ROOM_MARGIN = 1.5;
+/** ...and grows back this quickly (1/s) once it's clear. */
 const BACK = 4;
 const WISPS_PER_ISLE = 5;
 /** Ghost lights show this far off: they're a lure across the water. */
