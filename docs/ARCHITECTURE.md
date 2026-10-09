@@ -420,8 +420,11 @@ Each port island gets a harbour:
     and the strakes under her sheer laid from aft, beams across her here and there, and
     no deck or mast, so from above you look down into her. (The sloop's own hull, a
     block a voxel, read from above as a hollow crate, and her mast as a beam across the
-    view.) She never lifts on foot (a prop with no anchor) and is never cut: you see the
-    captain through her frames. Stocks stand under her keel every third cell. She's
+    view.) She never lifts on foot (a prop with no anchor) and is never cut. Above her
+    planking the captain shows between her frames; down the slipway under her bottom she
+    can still hide him (his ring shows). Lifted whole, she'd vanish whenever he walked
+    beside her, since her blockers join the slipway and the shed, which lift for being
+    near. Stocks stand under her keel every third cell. She's
     18 long and outruns every slipway, so past its end they carry on out over the
     water, standing on the seabed. A timber shed stands beside the slipway, dressed as
     a workshop on a floor of packed sand (on planks it read as brown on brown): a rack
@@ -1674,7 +1677,8 @@ verified in the running game. None of those directories import from `render`,
         awnings from most views.
       - The ship on the stocks never lifts on foot (a prop with no anchor), so at the
         yard she can stand between the camera and the captain. Since the critic's pass
-        on the interiors she has no mast, and the captain shows between her frames.
+        on the interiors she has no mast, and above her planking the captain shows
+        between her frames; under her bottom, on the slipway, she still hides him.
       - ~~At Kingsreach, in the street between the tavern and the Governor's House with
         the camera from the south-west, a roof hides the captain and doesn't lift~~
         (fixed: the head-height cut and the line of sight going on through what it's
