@@ -5,12 +5,14 @@ import { type Dress, settlerDress } from './dress';
 const SKIN = [0xf1c9a5, 0xd9a47a, 0xa86f48, 0x6e4630];
 const HAIR = [0x2a1b10, 0x5a3a1e, 0xc9a24a, 0x8e3b1f, 0x9a9a9a];
 
-/** Palette slots. The last three are only filled for those who wear them. */
-const C = { skin: 1, hair: 2, shirt: 3, trousers: 4, boots: 5, belt: 6, eyes: 7, hat: 8, band: 9, over: 10, stripe: 11, whites: 12 } as const;
+/** Palette slots. Those from `over` on are only filled for those who wear them. */
+const C = { skin: 1, hair: 2, shirt: 3, trousers: 4, boots: 5, belt: 6, eyes: 7, hat: 8, band: 9, over: 10, stripe: 11, whites: 12, crown: 13, cockade: 14 } as const;
 /** How tall a settler is without a hat, in voxels. */
 const HEIGHT = 26;
 /** A soldier's cross-belts and cuffs. */
 const WHITES = 0xefeadf;
+/** A tricorn's cockade: a brass button on a rosette. */
+const BRASS = 0xc9a24a;
 
 /**
  * A settler, or someone about town, built from code rather than drawn: legs, a shirt,
@@ -37,6 +39,10 @@ export function buildSettlerModel(look: number, dress: Dress = settlerDress(look
   if (over !== 'none') set(C.over, dress.over.colour);
   if (dress.stripe !== undefined) set(C.stripe, dress.stripe);
   if (dress.soldier) set(C.whites, WHITES);
+  if (head === 'tricorn') {
+    set(C.crown, lighter(dress.head.colour));
+    set(C.cockade, BRASS);
+  }
   const longHair = hash2(look, 6) < 0.4;
   const longSleeves = over === 'smock' || over === 'coat';
   const shirt = (y: number) => (dress.stripe !== undefined && y % 2 === 0 ? C.stripe : C.shirt);
@@ -111,7 +117,9 @@ export function buildSettlerModel(look: number, dress: Dress = settlerDress(look
 
 /**
  * A tricorn: the brim cocked up into a rounded triangle, a corner to the front and two
- * behind, its turned-up edge in the band's colour (a soldier's white lace), over a low crown.
+ * behind, its turned-up edge in the band's colour (a soldier's white lace), round a low
+ * crown a shade lighter, and a brass cockade on the left of the brim: seen from above, a
+ * hat, not a flat dark shape.
  */
 function tricorn(cells: number[], box: (part: PartName, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, colour: () => number) => void): void {
   const brim = (x: number, z: number) => x * x + z * z <= 38 && z >= -4.5 && 0.866 * Math.abs(x) + 0.5 * z <= 4.5;
@@ -122,8 +130,16 @@ function tricorn(cells: number[], box: (part: PartName, x0: number, x1: number, 
       if (!brim(x + 1, z) || !brim(x - 1, z) || !brim(x, z + 1) || !brim(x, z - 1)) cells.push(x, 27, z, C.band);
     }
   }
-  box('head', -2, 2, 27, 27, -2, 2, () => C.hat);
-  box('head', -1, 1, 28, 28, -1, 1, () => C.hat);
+  box('head', -2, 2, 27, 27, -2, 2, () => C.crown);
+  box('head', -1, 1, 28, 28, -1, 1, () => C.crown);
+  // The cockade, pinned to the turned-up brim between its front corner and its left one.
+  box('head', 3, 3, 28, 28, 2, 3, () => C.cockade);
+}
+
+/** A hat's colour a shade lighter, toward a pale grey: its crown, catching the light. */
+function lighter(hex: number): number {
+  const mix = (c: number) => Math.round(c + (0xb4 - c) * 0.3);
+  return (mix((hex >> 16) & 255) << 16) | (mix((hex >> 8) & 255) << 8) | mix(hex & 255);
 }
 
 /**

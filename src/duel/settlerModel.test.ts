@@ -67,6 +67,26 @@ describe('buildSettlerModel', () => {
     expect(coloursOn(cloth, 'head', (_x, y) => y >= 24)).toContain(0xa62a22);
   });
 
+  it('gives a tricorn a lighter crown and a brass cockade, so from above it reads as a hat, not a black shape', () => {
+    const m = buildSettlerModel(42, townDress('soldier', 42));
+    // From above: the colour of the top cell of each column of the head.
+    const cells = m.parts.head.cells;
+    const top = new Map<string, [number, number]>();
+    for (let i = 0; i < cells.length; i += 4) {
+      const k = `${cells[i]},${cells[i + 2]}`;
+      if (!top.has(k) || top.get(k)![0] < cells[i + 1]) top.set(k, [cells[i + 1], cells[i + 3]]);
+    }
+    const colourOf = (slot: number) => (m.palette[slot * 4] << 16) | (m.palette[slot * 4 + 1] << 8) | m.palette[slot * 4 + 2];
+    const seen = [...top.entries()].map(([k, [, slot]]) => ({ x: +k.split(',')[0], z: +k.split(',')[1], colour: colourOf(slot) }));
+    const hat = townDress('soldier', 42).head;
+    const crown = seen.filter((c) => c.x === 0 && c.z === 0)[0].colour;
+    expect(brightness(crown), 'the crown lighter than the brim').toBeGreaterThan(brightness(hat.colour) + 0.1);
+    expect(seen.some((c) => c.colour === hat.colour), 'the brim').toBe(true);
+    expect(seen.some((c) => c.colour === hat.band), 'the lace on its edge').toBe(true);
+    const brass = seen.filter((c) => { const [r, g, b] = rgb(c.colour); return r > 0xa0 && g > 0x80 && b < 0x70; });
+    expect(brass.length, 'a brass cockade').toBeGreaterThan(0);
+  });
+
   it('gives a soldier a musket that stands up from the hand', () => {
     const { cells } = musketCells();
     const ys = [...cells].filter((_, i) => i % 4 === 1);
