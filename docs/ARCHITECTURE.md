@@ -478,10 +478,11 @@ Each port island gets a harbour:
       hand cart and the hall's counters are drawn an eighth of a block a voxel with the
       colours in `props/kit.ts` (`furniture.ts`, `market.ts`).
     - *Drawing:* one `InstancedMesh` a kind a town (props within 150 of a town's
-      first share it), so a town off screen isn't drawn. That's ten draw calls and
-      about 39,000 triangles a pass (the shadow map and the water's reflection draw
-      them too), never culled, since each mesh spans every town; at Haven at night
-      the frame time stayed within the noise of the build before them. A prop hung
+      first share it), so a town off screen isn't drawn: each per-town mesh keeps
+      its own small bounding sphere and is frustum-culled like any other mesh, so
+      only the towns actually in view cost a draw call, never all five at once (the
+      shadow map and the water's reflection draw them too). At Haven at night the
+      frame time stayed within the noise of the build before them. A prop hung
       on a wall names that block as its anchor, and the shader discards it while
       the anchor is lifted away on foot (the lift test in `render/lifts.ts`, shared
       with the terrain). So a sign, a door lantern or the clock goes with its wall,
