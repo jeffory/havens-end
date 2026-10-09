@@ -1169,6 +1169,71 @@ straight into the storehouses.
   chunk the old block furniture and stalls stand on beside them, and nobody is
   kept out of the props' cells there.
 
+### Sound (Phase 10.3)
+
+The design and the player's answers are in
+[phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md). Sound covers the
+sea as well as the land; it sits here with the rest of Phase 10.
+
+**The catalogue** (`audio/sfx/sounds.ts`) lists every sound: 40 one-shots and 7
+ambience loops. Each has the prompt it was made from, its length and number of takes,
+a volume tuned by ear, a reach, a cap and a pitch spread. Its takes are found by glob
+(`audio/sfx/files.ts`): `src/assets/sfx/<id>-<take>.mp3`. A sound with no files is
+silence, never an error, so the game runs and tests pass with the folder empty.
+
+**The engine** (`audio/sfx/Sfx.ts`, Web Audio):
+- **One audio context,** made on the first key press or click, as the music's is.
+- **The effects volume** is a setting beside the music's (`VOLUME_CHOICES`, with Off).
+  It's applied to each voice as it starts. With it off nothing is fetched.
+- **A one-shot** plays a random take, never the one it played last
+  (`mix.pickVariant`), with a slight pitch shift.
+- **Where it is.** `Game.placeSound` gives a sound's distance from the camera's focus
+  and its pan. It falls off quadratically to nothing at the sound's reach
+  (`mix.falloff`); a reach of 0 is heard everywhere, centred. It pans by its place on
+  screen, kept to ±0.7 (`mix.panFor`).
+- **Voices.** At most 24 at once (`MAX_VOICES`), each sound or group held to its cap:
+  footsteps 2 between them, cannon 8. Past either, the oldest is cut (`VoicePool`).
+- **Loops** start the first time their level rises above 0, from silence, and run on.
+  A new level glides in with a 0.6 s time constant, so they crossfade.
+
+**The ambience** (`audio/sfx/ambience.ts`) sets each loop's level from where the
+captain is:
+- **At sea:** waves 0.5 + 0.4 × speed and timbers 0.25 + 0.45 × speed (speed over top
+  speed); the rigging 0.7 × the wind's strength, to at most 0.7.
+- **On foot:** surf by the distance to open water (0.8 × closeness² within 30, sampled in
+  rings every half second); harbour bustle within 60 of a port (halved at night); a
+  campfire's crackle within 12 of a camp's fire or a bandit camp's (0.9 × closeness²;
+  a bandit camp's fire burns until the camp is gone for good).
+- **Gulls** by day within 150 of a port, at sea or ashore.
+- **Silence** in a duel, in any menu, asleep, with the tab hidden, and when sunk.
+
+**The director** (`render/SoundDirector.ts`, free of three.js) turns events into
+sounds, beside `Effects`:
+- **The sea:** fire, hits (with a sail tear for chain shot), splashes, thuds, barrels,
+  blasts and sinking; the sails set when the order rises from furled, or by half or
+  more at once.
+- **The land:** each kind of work (`WORK`); building and razing; the sawpit's saw and
+  the forge's hammer as they make something (the building is looked up by id); shots
+  and where they land; the captain hurt; a bandit's shout on `alarm`; goats and boar on
+  `bolt`; the reload on `loaded`. Treasure: a chest found, the guardian's wail.
+- **The duel:** swings, hits, blocks, parries, guard breaks, centred.
+- **Footsteps** by the block underfoot (`audio/sfx/ground.ts`: sand, grass, wood or
+  stone), one each time the walk cycle's footfall count changes, however far it
+  jumped. None while paused.
+- **Menus** (`Overlay.onClick`): a click for any click in an open menu, a page as the
+  chart, journal or a story opens, coins when gold changes with a port or store menu
+  open, and "can't" on the Shore's bad-tone notices and the harbour's refusals.
+
+**Making the sounds** (`scripts/sfx/process.ts`). Takes are generated with ElevenLabs
+(`elevenlabs/sound-generation` through Comfy Cloud's MCP) and saved in `sfx-raw/`
+(gitignored), as FLAC, MP3, WAV or OGG. `npm run sfx -- process` uses ffmpeg to trim
+the silence, even out the loudness and save small mono MP3s; loops have their last
+1.5 s crossfaded into their start. `npm run sfx -- docs` writes `docs/sfx.md`, every
+prompt. 98 takes of 47 sounds, 1.6 MB.
+
+**The sound board** (`/?sounds`, dev only; `ui/SoundBoard.ts`) lists every sound with
+its prompt and plays each take, so they can be heard and picked for redoing.
+
 ## 10. Crews, production and night (Phase 6)
 
 **The clock** (`core/clock.ts`). A day runs from sunrise to sunrise:
@@ -1561,6 +1626,10 @@ src/
                        mid-song; Ashore on foot), a LoopPlayer (Broadsides, which
                        crossfades its end into its start) and the Soundtrack that
                        picks one: a fight (Sea.inBattle, or a duel) over the rest
+    sfx/               sound effects (made as in docs/sfx.md, §9 "Sound"): sounds
+                       (the catalogue), files (takes by glob), mix (variants,
+                       falloff, pan, the voice pool), Sfx (the Web Audio engine),
+                       ambience (the loops' levels), ground (footsteps by block)
   voxel/               engine-agnostic voxel core, no three.js imports
     blocks.ts          block ids, colours, solidity, the stair and slab shapes
     palette.ts         colour + solidity tables for the mesher
@@ -1609,7 +1678,9 @@ src/
                        glow, PropsView (the props, one instanced mesh a kind),
                        lifts (the roof lift's shader test, shared by the terrain
                        and the props), fightFrame and roomFrame (framing a fight
-                       or a room on foot), Tracers (a shot's faint streak)
+                       or a room on foot), Tracers (a shot's faint streak),
+                       SoundDirector (events, footfalls and menus to sounds;
+                       the surroundings to the ambience)
   land/                on foot: the walker, tools, camps and buildings, crops,
                        settlers and their paths, workshops, creatures (the night's
                        and the goats), deposits (outcrops of stone and ore),
@@ -1626,10 +1697,12 @@ src/
                        treasure maps on parchment), buildStamp; story/ (the
                        painted panels, the journal); port/People; comeTo (the
                        card's words for going down) and Fade (the fade to black,
-                       for sleep and the card)
+                       for sleep and the card); SoundBoard (`/?sounds`, dev)
   util/                hash, small math helpers
 scripts/               asset generators (placeholder ships, captains via Tripo,
                        voxelizer) and the duel balance harness
+  sfx/                 process.ts: raw sound takes → trimmed, levelled mono MP3s
+                       (loops crossfaded), and docs/sfx.md
   assetgen/            prompt → art via ComfyUI: pixel textures, sprites, icons,
                        HD materials, .vox models (see its README)
 public/models/         ship and character .vox files
@@ -1639,8 +1712,9 @@ public/models/         ship and character .vox files
 next to the code). The browser-bound `Input`, `GameLoop` and the React menus are
 verified in the running game. None of those directories import from `render`,
 `tools`, `ui` or three.js. `props` is unit-tested too; it imports nothing from
-`render` or `ui`, and three.js only for a placement's matrix (`place.ts`). Only
-`Game.ts` knows about everything.
+`render` or `ui`, and three.js only for a placement's matrix (`place.ts`).
+`audio/sfx` is unit-tested against a fake audio context, and `render/SoundDirector`
+against a fake sink. Only `Game.ts` knows about everything.
 
 ## 16. Roadmap (proposed)
 
@@ -1655,7 +1729,7 @@ verified in the running game. None of those directories import from `render`,
 8. ✅ **Story:** a painted intro (the foundling, the *Good Hope*, the Imperial attack); a journal whose entries gather what people tell you; Nell, Quill, Finch and Red Mary; Blackwood's letter naming Lord Admiral Harrow; the choice of the black flag or the Guild's letter of marque; the *Sovereign*, a frigate with two brigs (and the Brethren's ships beside you under the black flag), and a last duel with Harrow; an epilogue.
 
 9. 🔄 **Quick wins:** going down (sunk or jailed) clears the sea and keeps it quiet for a minute, so nobody camps the port; the shovel retired (dig for treasure with F where you stand, and the ground is never changed); trees that take several axe blows; cannons that fly back when fired and run out when loaded.
-10. 🔄 **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
+10. ✅ **Deposits, guns & sound** ([phase-10-deposits-guns-sound.md](phase-10-deposits-guns-sound.md)): outcrops of stone, iron, copper, silver and gold that grow back, and settler miners; a pistol and a rifle for the captain on foot, wild goats, and bandit camps on wild islets; a "come to" card for going down; sound effects from ElevenLabs on Comfy Cloud, with sea ambience.
     - ✅ **Before 10.2: the towns.** Every port was rebuilt as a real town
       (section 8). There's a paved square with stalls, and streets on levelled
       ground. Houses of one or two storeys are spaced out and furnished. The doors
@@ -1680,7 +1754,14 @@ verified in the running game. None of those directories import from `render`,
       and hides. Bandit camps on four wild islets: their bandits see, hear, fight and
       flee, the camp has a chest to loot, and it's manned again five days after it's
       cleared. The captain's health on foot, and a come-to card for every way of going
-      down. Save version 6. Still to come in 10: 10.3, the sound.
+      down. Save version 6.
+    - ✅ **10.3: sound** (§9, "Sound";
+      [plan](superpowers/plans/2026-10-09-phase-10-3-sound.md)). 98 takes of 47 sounds
+      made with ElevenLabs on Comfy Cloud: the sea's guns and hits, footsteps by the
+      ground, work, guns and beasts, the duel and the menus, with an "Effects volume"
+      setting. Ambience loops (waves, timbers, rigging, surf, gulls, harbour,
+      campfire) follow where the captain is. Every prompt is in `docs/sfx.md`, and a
+      dev sound board at `/?sounds` plays every take.
     - **Next: a town art pass.** The critic's open points from its last pass
       (`.playwright-mcp/critic-town-4/report.md`, not in git):
       - ✅ The Tavern, Guildhall and Governor's House have a porch, a hanging

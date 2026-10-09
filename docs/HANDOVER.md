@@ -8,15 +8,15 @@ This is where the work stood when the machine was reset, and what a new session 
   - Phases 1–9 and 10.1–10.2.
   - The town shops and interiors work.
 - **Every local branch is merged into `main`.** The phase branches stay local only, but nothing on them is missing from `main`.
-- **Tests:** 746 tests. `npx tsc --noEmit -p .` is clean. Vitest is capped at four workers in `vite.config.ts`, because an uncapped run on a loaded machine timed out slow world-building tests. When the machine is heavily loaded (a load average above about 20, or the game rendering in a browser), some slow tests still time out. In the final run that hit `combat.test.ts` (5 s budget), `archipelago`, `bandits` and `town`. They all pass when run alone. If it happens, rerun the failing files.
+- **Tests:** 838 tests. `npx tsc --noEmit -p .` is clean. Vitest is capped at four workers in `vite.config.ts`, because an uncapped run on a loaded machine timed out slow world-building tests. When the machine is heavily loaded (a load average above about 20, or the game rendering in a browser), some slow tests still time out. In the final run that hit `combat.test.ts` (5 s budget), `archipelago`, `bandits` and `town`. They all pass when run alone. If it happens, rerun the failing files.
 
 | Work | State |
 |---|---|
 | Phase 10.1, outcrops and ores | ✅ |
 | Phase 10.2, guns, goats, bandit camps, captain's health, the come-to card | ✅ merged `482f0a0` (plan `docs/superpowers/plans/2026-09-30-phase-10-2-guns-bandits.md`) |
 | Town shops and interiors (issues #1–#4) | ✅ built and merged; the interior visual-critic loop stopped at 5/10 by the player's choice; leftovers filed as issues (below) |
-| Phase 10.3, sound | next: ElevenLabs SFX through the user's ComfyUI `partner_generate`, a Web Audio engine, and a dev sound board at `/?sounds` for review by ear. Design in `docs/phase-10-deposits-guns-sound.md` |
-| Phase 11, terrain and UI | later: red dithered town border, ground leveller, caves with ores |
+| Phase 10.3, sound | ✅ on branch `phase-10-3-sound` (plan `docs/superpowers/plans/2026-10-09-phase-10-3-sound.md`): 98 takes of 47 sounds, a Web Audio engine, ambience loops, an "Effects volume" setting. Hear every take on the dev board at `/?sounds`; every prompt is in `docs/sfx.md` |
+| Phase 11, terrain and UI | next: red dithered town border, ground leveller, caves with ores |
 | Phase 12, farming | later: watering, growth cycles |
 
 ## How the work was run (so a new session can carry on the same way)
@@ -46,12 +46,20 @@ This is where the work stood when the machine was reset, and what a new session 
 
 These aren't in git:
 - `.env`: the ComfyUI URL and key (`COMFY_URL`). The asset and music pipelines need it. See `.env.example`.
+- `sfx-raw/`: the raw ElevenLabs downloads behind `src/assets/sfx/`. They can be made again from the prompts, but not the same takes.
 - `.opencode/`: another tool's state (and an old `git stash` of it). Not this project's code.
 - Claude's memory for this project (`~/.claude/projects/-home-keith-Projects-Haven-s-end/memory/`). Its useful facts are folded into this file and ARCHITECTURE.
 
 ## Decisions made on the player's behalf
 
 The player can overturn any of these. Each was made because the player asked for the work to continue on best judgement.
+
+### Phase 10.3
+- **The rulings** (loops gliding in, silence in duels and menus, the ambience formulas, which event plays which sound, footsteps by footfall, the menu sounds) are listed in `docs/phase-10-deposits-guns-sound.md` under 10.3, "Built".
+- **Making more sounds:**
+  - Generation runs through the `comfy-cloud` MCP server (`partner_generate`, or `submit_batch` for many; `elevenlabs/sound-generation`, length in `params.duration`). It needs a login with `/mcp` first. The key isn't in `.env`.
+  - Save the downloads in `sfx-raw/` as `<id>-<take>.<ext>`, then run `npm run sfx -- process` (needs ffmpeg) and `npm run sfx -- docs`.
+  - Add or change a sound's prompt in `src/audio/sfx/sounds.ts` first, so `docs/sfx.md` stays true.
 
 ### Phase 10.2
 - **Planned rulings that stand:**
