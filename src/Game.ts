@@ -698,7 +698,7 @@ export class Game {
     this.renderer.shadowMap.needsUpdate = true;
     this.ocean.renderBelow(this.renderer, this.scene, rig.camera);
     this.renderer.render(this.scene, rig.camera);
-    this.signs.update(paused ? [] : signs, rig.camera, this.container.clientWidth, this.container.clientHeight);
+    this.signs.update(paused ? [] : signs, rig.camera, this.container.clientWidth, this.container.clientHeight, this.footHud.band());
     if (!paused && !this.land.walker) {
       const wind = this.weather.windAt(pose.x, pose.z, time);
       this.hud.setNav(this.navReadout(wind, fx, fz, pose.x, pose.z));

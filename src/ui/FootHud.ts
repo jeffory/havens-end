@@ -1,6 +1,7 @@
 import type { Held } from '../land/Land';
 import { SACK } from '../render/itemIcons';
 import { heldByLabel, heldIcon, iconUrl, type KeyEntries, Legend, type Scheme, showPrompt } from './hudParts';
+import type { ScreenBox } from './WorldLabels';
 
 export interface Slot {
   key: string;
@@ -114,6 +115,14 @@ export class FootHud {
     this.health.hidden = true;
     this.root.append(this.health, this.lodestone, this.prompt, this.hint, this.pack, this.slots);
     parent.append(this.legend.el, this.compass, this.root);
+  }
+
+  /** Where the hotbar, the pack and the prompt over them sit, on the screen it's in; null while it's hidden. */
+  band(): ScreenBox | null {
+    if (this.root.hidden || !this.root.parentElement) return null;
+    const r = this.root.getBoundingClientRect();
+    const p = this.root.parentElement.getBoundingClientRect();
+    return { x0: r.left - p.left, y0: r.top - p.top, x1: r.right - p.left, y1: r.bottom - p.top };
   }
 
   setVisible(visible: boolean): void {

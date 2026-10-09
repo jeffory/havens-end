@@ -10,14 +10,29 @@ export interface WorldLabel {
   kind?: 'sign' | 'pin';
 }
 
-/** Does a sign `w` by `h`, hung by the middle of its foot at (x, y), fit whole on a `width` by `height` screen? */
-export function labelFits(x: number, y: number, w: number, h: number, width: number, height: number): boolean {
-  return x - w / 2 >= 0 && x + w / 2 <= width && y - h >= 0 && y <= height;
+/** A box on the screen, in pixels from its top left: x0, y0 to x1, y1. */
+export interface ScreenBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * Does a sign `w` by `h`, hung by the middle of its foot at (x, y), fit whole on a `width` by
+ * `height` screen, clear of the HUD's band at the bottom (`band`, if it's showing)?
+ */
+export function labelFits(x: number, y: number, w: number, h: number, width: number, height: number, band: ScreenBox | null = null): boolean {
+  const [x0, x1, y0] = [x - w / 2, x + w / 2, y - h];
+  const onScreen = x0 >= 0 && x1 <= width && y0 >= 0 && y <= height;
+  const underBand = band !== null && x1 > band.x0 && x0 < band.x1 && y > band.y0 && y0 < band.y1;
+  return onScreen && !underBand;
 }
 
 /**
  * Signs hanging in the world (over port doors): plain DOM text placed where a world point
- * lands on screen. A sign that won't fit on screen whole is hidden, not cut off at the edge.
+ * lands on screen. A sign that won't fit on screen whole is hidden, not cut off at the edge,
+ * and so is one that would sit under the HUD's bottom band (the hotbar and the prompt).
  */
 export class WorldLabels {
   private readonly layer = document.createElement('div');
@@ -29,7 +44,7 @@ export class WorldLabels {
     parent.append(this.layer);
   }
 
-  update(labels: readonly WorldLabel[], camera: Camera, width: number, height: number): void {
+  update(labels: readonly WorldLabel[], camera: Camera, width: number, height: number, band: ScreenBox | null = null): void {
     const seen = new Set<string>();
     for (const label of labels) {
       seen.add(label.id);
@@ -54,7 +69,7 @@ export class WorldLabels {
       this.point.set(label.x, label.y, label.z).project(camera);
       const x = ((this.point.x + 1) / 2) * width;
       const y = ((1 - this.point.y) / 2) * height;
-      const visible = this.point.z < 1 && labelFits(x, y, sign.w, sign.h, width, height);
+      const visible = this.point.z < 1 && labelFits(x, y, sign.w, sign.h, width, height, band);
       el.style.visibility = visible ? '' : 'hidden';
       if (visible) el.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;
     }

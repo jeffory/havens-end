@@ -16,4 +16,15 @@ describe('world labels', () => {
     expect(fits(960, 10), 'top').toBe(false);
     expect(fits(960, 1090), 'bottom').toBe(false);
   });
+
+  it('hide a sign that would sit under the hotbar and the prompt over it, as if off the screen', () => {
+    // On foot at 1280 × 800: the bottom band the hotbar, the pack and the prompt take.
+    const band = { x0: 210, y0: 640, x1: 1070, y1: 786 };
+    const under = (x: number, y: number) => labelFits(x, y, 80, 24, 1280, 800, band);
+    expect(under(290, 730), 'behind the hotbar').toBe(false);
+    expect(under(640, 655), 'its top under the prompt').toBe(false);
+    expect(under(640, 638), 'just over the band').toBe(true);
+    expect(under(120, 760), 'beside the band, low on the screen').toBe(true);
+    expect(labelFits(290, 730, 80, 24, 1280, 800, null), 'no band: off foot').toBe(true);
+  });
 });
