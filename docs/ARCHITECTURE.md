@@ -202,7 +202,9 @@ anywhere: by ships, the HUD, wind streaks, and later AI captains.
 
 **Feedback.** HUD compass: wind, heading and north in screen space, plus speed,
 point of sail, local conditions and sail setting. Wind streaks drift with the local
-wind. Squalls darken the sky and light. The flag streams with the *apparent* wind.
+wind, over open water only: they float just above it, so over a beach or a quay they
+lay on the ground as white lines. Squalls darken the sky and light. The flag streams
+with the *apparent* wind.
 
 **Controls** (`core/Controls.ts`) merge keyboard and any standard-mapping gamepad.
 Rudder is analog. Button presses are queued until the simulation takes them, so a
@@ -373,6 +375,12 @@ What you do with it is §8.
    views and the part colouring.
 3. The game builds joints from part bounds (shoulders at the inner end of each arm,
    hips at the top of each leg, and so on) and gives every captain a generated cutlass.
+4. Your own captain is dressed at load (`duel/captainDress.ts`), ashore and in the duel
+   alike: the Tripo figure came out charcoal from hat to coat tails, lost at night and
+   against dark-clad guards. Its charcoal becomes a deep red coat (its shading kept),
+   gold at the lapels, cuffs and hem, and a brown hat with gold braid round the brim's
+   edge, which is most of what shows from above; the shirt is lightened and the red
+   sash becomes a belt. Face, hands, hair, breeches and boots are untouched.
 
 To restyle a captain, open its `.vox` in MagicaVoxel, keep the six object names and
 the T-pose, and save. Known limit: a model with its arms up by its ears (the pirate)
@@ -700,7 +708,9 @@ your pack is stowed in the hold.
     oilskins and smocks; the free port's folk wear straw hats and aprons; the
     Brethren wear bandanas, the odd tricorn, and striped or ragged shirts with a
     sash; the Crown's ports are soberer, with the odd soldier (red coat, white
-    cross-belts, tricorn, musket). No one comes out dressed like the last one out.
+    cross-belts, tricorn, musket). A tricorn's crown is a shade lighter than its brim,
+    with a brass cockade on the brim, so from above it reads as a hat, not a dark
+    shape. No one comes out dressed like the last one out.
     Hired settlers keep the looks they always had.
   - **Guards.** Two Crown soldiers stand either side of the Governor's door, two along
     the wall from where the captain stands to go in, facing out, day and night. They
@@ -753,6 +763,15 @@ opens up whatever hides the captain, as in a doll's house.
   as ruins.) The scan runs four times a second, and a building stays lifted until
   the captain is 4 away, so nothing flickers at the edge. Stalls, the cart, guns and
   flags lift only when they're in the way; a stall or the cart then goes whole.
+- **The room framed.** At the door of a building lifted for being near, or in it
+  (within 1.5 of its walls: `RoofLifter.roomNear`), the camera frames its room
+  (`render/roomFrame.ts`): it eases in to 26/36 of the player's zoom (less close for a
+  room too big to fit, never closer than 12), and its focus shifts 0.9 of the way to
+  the room's middle (never more than 6) and looks 2.5 lower, so the room sits
+  mid-screen above the prompt and the hotbar, wherever the door is. It eases back out
+  when the captain walks off. A fight's framing (§9, bandits) wins: no room is framed
+  while one's on. Out in the street, past a building's wall, nothing is framed, so
+  the view doesn't swing from house to house.
 - **In the shader.** Up to twelve boxes lift at once, what's in the way first, with
   their rooms and the camera (`render/lifts.ts`: `liftedBy`, and the same test in
   GLSL for the terrain and the props). The terrain shader discards lifted voxels
@@ -765,6 +784,12 @@ opens up whatever hides the captain, as in a doll's house.
   the chunks a lift reaches, and the props, cast theirs through a depth material that
   discards what's lifted, so a lifted roof leaves no shade in its room (a discard
   costs the shadow pass its early depth test, so other chunks use the plain one).
+- **Furniture against the near walls.** A prop in a room within a block of a wall
+  facing the camera is cut as low as that wall (`cutsProp`, and `propTop` in the
+  props' shader): a shelf there stood two high against a one-course wall and hid the
+  keeper at his post beside it. Its cut shows its inside, drawn from its back faces in
+  the walls' cap colour, so it reads as solid; elsewhere a prop goes whole or not at
+  all, by its anchor.
 - **The cut's top.** The mesher draws the top of a cutaway block under another, so a
   lifted wall has a clean top, and marks it: it's only ever seen as the top of a cut,
   and it's drawn in one dark timber colour, never glowing, on every building alike (a
@@ -1162,7 +1187,9 @@ straight into the storehouses.
     night the moon's cold light comes from the north-west.
   - The sky and fog darken, and the fog closes in by about half.
   - Blocks can glow: embers, lanterns and the new glass windows carry a flag in the
-    mesh, alongside the cutaway flag.
+    mesh, alongside the cutaway flag. A window carries a glass flag too: the terrain
+    shader draws its faces as four panes between glazing bars, and after dark lights
+    the panes a warm amber, brightest in the middle of each, so it reads as lit glass.
   - Six point lights, a fixed pool so shaders never recompile, go to the nearest
     campfires, torches, forges, pier lamps, Imperial beacons, your ship, and the
     lantern the captain carries ashore. They fall off gently (decay 1) rather than
@@ -1192,7 +1219,9 @@ straight into the storehouses.
     (§9);
   - they're gone by dawn, and they aren't saved.
 - **For the look of it** (`render/NightLife.ts`):
-  - Bats flit over the captain's head.
+  - Bats flit over the captain's head: small, shaded blue-brown, the leading edges of
+    their wings lighter. One the camera would see over a lifted room keeps away (gone
+    at once, back gently), so none seems to fly round inside it.
   - Ghost lights hang over three cursed islets, visible from 700 away through the fog.
     They're a lure for Phase 7's treasure hunting.
 
@@ -1545,7 +1574,8 @@ src/
                        AI captains, encounters
   duel/                captains' duel: moves, fighters, AI swordsmen, character
                        models (.vox parts → joints), cutlass; settlerModel
-                       (settlers built from code, same joints); ghostModel
+                       (settlers built from code, same joints); ghostModel;
+                       captainDress (your captain's red coat and hat)
   economy/             goods and cargo, markets, reputation, contracts, the price
                        book, the shipyard, the captain; Economy ties them together
   treasure/            treasure maps: sites and landmarks, clues, the Treasure
@@ -1576,7 +1606,8 @@ src/
                        creatures), NightLights, NightLife (bats, ghost lights),
                        glow, PropsView (the props, one instanced mesh a kind),
                        lifts (the roof lift's shader test, shared by the terrain
-                       and the props), Tracers (a shot's faint streak)
+                       and the props), fightFrame and roomFrame (framing a fight
+                       or a room on foot), Tracers (a shot's faint streak)
   land/                on foot: the walker, tools, camps and buildings, crops,
                        settlers and their paths, workshops, creatures (the night's
                        and the goats), deposits (outcrops of stone and ore),
@@ -1656,8 +1687,10 @@ verified in the running game. None of those directories import from `render`,
       - Each faction lays its town out its own way, not one kit re-roofed.
       - ✅ The ship on the stocks reads as a ship from above: she's drawn in frame,
         being built (the sloop's own hull, which she was before, read as a hollow crate).
-      - The captain should read at a glance (a lighter, more distinct figure).
-      - Night: bats read as debris, and moonlit plaster turns royal blue.
+      - ✅ The captain reads at a glance: a deep red coat trimmed gold and a gold-edged
+        hat (§7, "Character pipeline").
+      - Night: ~~bats read as debris~~ (fixed: shaded, smaller), and moonlit plaster
+        turns royal blue.
 
       The critic's pass after the props (`.playwright-mcp/critic-town-5/report.md`,
       3/10 from another model, so not to be set against the 4/10 above) read the night
@@ -1666,7 +1699,8 @@ verified in the running game. None of those directories import from `render`,
       - ~~Lifting a roof shows a bare room~~ (fixed: rooms are furnished, §8), and
         on foot the square is ringed with roofless boxes (as before).
       - The tool's red target outline, half hidden, reads as stray debug lines.
-      - Wind streaks read as white glitches over the town and the water.
+      - Wind streaks read as white glitches over ~~the town~~ (fixed: over open water
+        only) and the water.
       - The broadside range dots show in port, a dotted line across the sea.
       - The ports look alike from the sea, and the HUD's text is small. Place labels
         (serif on cream) and prompts (sans on white) look like two kits, and the
