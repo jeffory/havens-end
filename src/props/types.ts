@@ -48,10 +48,15 @@ export type PropKind =
   | 'mapTable'
   | 'bannerCrown'
   | 'bannerGuild'
-  | 'bannerBrethren';
+  | 'bannerBrethren'
+  | 'workbench'
+  | 'sawhorse'
+  | 'timberRack'
+  | 'ropeCoil'
+  | 'pitchPot';
 
 /** Every prop kind, in one list. */
-export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate', 'stallProduceRed', 'stallClothRed', 'stallProduceBlue', 'stallClothBlue', 'handCart', 'bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'rug', 'runner', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth', 'rugGuild', 'rugSea', 'rugBrethren', 'runnerGuild', 'runnerSea', 'runnerBrethren', 'deskGrand', 'strongbox', 'ledgerChest', 'treasureChest', 'mapTable', 'bannerCrown', 'bannerGuild', 'bannerBrethren'];
+export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate', 'stallProduceRed', 'stallClothRed', 'stallProduceBlue', 'stallClothBlue', 'handCart', 'bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'rug', 'runner', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth', 'rugGuild', 'rugSea', 'rugBrethren', 'runnerGuild', 'runnerSea', 'runnerBrethren', 'deskGrand', 'strongbox', 'ledgerChest', 'treasureChest', 'mapTable', 'bannerCrown', 'bannerGuild', 'bannerBrethren', 'workbench', 'sawhorse', 'timberRack', 'ropeCoil', 'pitchPot'];
 
 /** A point in the world or a model's own voxels. */
 export interface Point {
@@ -84,6 +89,6 @@ export interface PropModel {
   palette: VoxelPalette;
   origin: Point;
   scale: number;
-  /** Keep people out of the cells it fills (Block.Blocker): only for a prop drawn a block a voxel. */
+  /** Keep people out of the cells its voxels lie in (Block.Blocker, by `reserveProps`): for one standing on no floor of its own (the ship on the stocks). */
   reserve?: boolean;
 }

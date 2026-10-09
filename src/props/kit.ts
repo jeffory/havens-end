@@ -49,6 +49,10 @@ export const COLOURS = {
   sand: 0xd8c290,
   tar: 0x2e2624,
   bone: 0xe6dfcb,
+  // The shipyard's: rope, and sawdust and shavings.
+  rope: 0xb49d6b,
+  ropeDark: 0x8f7a4e,
+  sawdust: 0xe3cc98,
   awningRed: 0xb8422e,
   awningBlue: 0x356aa3,
   clothPurple: 0x7d4a93,

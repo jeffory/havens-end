@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SEA_LEVEL } from '../config';
 import type { Port } from '../economy/ports';
@@ -9,12 +8,9 @@ import { propCatalog } from '../props/catalog';
 import { reserveProps } from '../props/reserve';
 import { PROP_SHAPES, shapeCells } from '../props/shapes';
 import type { PropKind } from '../props/types';
-import { buildShipModel } from '../sailing/shipModel';
-import { SLOOP } from '../sailing/ships';
 import { baseOf, Block, blocksWalker, FACING_DIRS, isSolid, stairFacing, stairOf } from '../voxel/blocks';
 import { pointBlocked } from '../voxel/shapes';
 import { VoxelWorld } from '../voxel/VoxelWorld';
-import { parseVox } from '../vox/parseVox';
 import { planArchipelago } from './archipelago';
 import { type Footprint, groundHeight, overlaps } from './buildings';
 import { buildHarbour } from './harbour';
@@ -156,6 +152,21 @@ describe('towns', () => {
       expect(outside(way, Math.floor(hull!.x), Math.floor(hull!.z)), `${name} hull over the slipway`).toBeLessThanOrEqual(1);
       const yard = harbour.places.find((p) => p.kind === 'shipyard')!;
       expect(outside(shed, Math.floor(yard.x), Math.floor(yard.z)), `${name} yard door`).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('dress the shipyard’s shed as a workshop: a workbench with its tools, a sawhorse, a rack of timber, rope and a pitch pot, on a floor paler than its plank walls', () => {
+    const WORKSHOP: readonly PropKind[] = ['workbench', 'sawhorse', 'timberRack', 'ropeCoil', 'pitchPot'];
+    for (const { name, world, harbour } of PORTS) {
+      const { shed } = harbour.town;
+      const yard = harbour.places.find((p) => p.kind === 'shipyard')!;
+      const kinds = harbour.decor.filter((d) => inside(shed, Math.floor(d.x), Math.floor(d.z))).map((d) => d.kind);
+      for (const k of WORKSHOP) expect(kinds, `${name} shed: ${k}`).toContain(k);
+      for (const [x, z] of cells(shed)) {
+        expect(world.getVoxel(x, yard.y - 1, z), `${name} shed floor at ${x},${z}`).not.toBe(Block.Planks);
+        // Its timber is on the rack now, not stacked in whole blocks.
+        if (outside(shed, x, z) === 0 && world.getVoxel(x, yard.y, z) === Block.Wood) expect(shed.x0 < x && x < shed.x0 + shed.w - 1 && shed.z0 < z && z < shed.z0 + shed.d - 1, `${name} timber block at ${x},${z}`).toBe(false);
+      }
     }
   });
 
@@ -393,9 +404,7 @@ describe('towns', () => {
   it(
     'keeps everyone off the hull on the stocks too, once reserveProps has blocked her in at runtime',
     () => {
-      const bytes = readFileSync(`public/${SLOOP.model}`);
-      const sloop = buildShipModel(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), SLOOP.draft);
-      const catalog = propCatalog(sloop);
+      const catalog = propCatalog();
       let tried = 0;
       const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
       const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
@@ -618,7 +627,7 @@ describe('towns', () => {
     }
   });
 
-  it('set the sloop on the stocks: level on her keel over them, stern to the land and bow to the sea', () => {
+  it('set the ship on the stocks: level on her keel over them, stern to the land and bow to the sea', () => {
     for (const { name, world, harbour } of PORTS) {
       const hull = harbour.decor.find((d) => d.kind === 'hullOnStocks')!;
       const [dx, dz] = FACING_DIRS[hull.facing];

@@ -300,11 +300,11 @@ export function buildTown(
     slipway = footprint(f, slip.lane);
   }
   const shedPlot = footprint(f, shed);
-  buildShed(world, f, shed, low, style.roof, ys);
+  buildShed(world, f, shed, low, style.roof, ys, decor);
   const yardAt = at(f, q + 3, ys * 8);
   const yard = { x: yardAt.x + 0.5, y: low, z: yardAt.z + 0.5 };
-  // The shipwright, in the shed by the timber, looking out to the square.
-  const wright = at(f, shed.u0 + 1, ys * 10);
+  // The shipwright, in the shed by the timber and his bench, looking out to the square.
+  const wright = at(f, shed.u0 + 2, ys * 11);
   keepers.push({ kind: 'shipyard', x: wright.x + 0.5, y: low, z: wright.z + 0.5, facing: Math.atan2(-ys * f.sx, -ys * f.sz) });
 
   // The well, in the square.
@@ -719,11 +719,16 @@ function buildSlipway(world: VoxelWorld, f: Frame, lane: Rect, heights: Readonly
 }
 
 /**
- * The shipyard's shed: boarded floor, planked walls at the back and the landward end,
- * open to the square in front and to the slipway, on posts, under a gable roof, with
- * timber stacked against the back wall. `side` is which way (across the town) its back is.
+ * The shipyard's shed: open to the square in front and to the slipway, planked walls at the
+ * back and the landward end, on posts, under a gable roof. It's dressed as a workshop (its
+ * props, an eighth of a block a voxel, into `decor`): a rack of timber along the back wall, a
+ * workbench with its tools against the end wall, a sawhorse, a coil of rope and a pitch pot,
+ * on a floor of packed sand and sawdust, paler than its plank walls (on a plank floor the shed
+ * read as brown on brown). Each keeps people out of its cells and is anchored at the floor, as
+ * a room's furniture is. `side` is which way (across the town) its back is; the shipwright
+ * stands in the open cell between the sawhorse and the bench, before the rack.
  */
-function buildShed(world: VoxelWorld, f: Frame, r: Rect, base: number, roof: BlockId, side: number): void {
+function buildShed(world: VoxelWorld, f: Frame, r: Rect, base: number, roof: BlockId, side: number, decor: PropPlacement[]): void {
   const back = side > 0 ? r.v1 : r.v0;
   const front = side > 0 ? r.v0 : r.v1;
   const put = (u: number, v: number, y: number, id: BlockId) => {
@@ -731,7 +736,7 @@ function buildShed(world: VoxelWorld, f: Frame, r: Rect, base: number, roof: Blo
     world.setVoxel(x, y, z, id);
   };
   for (const [u, v] of cells(r)) {
-    put(u, v, base - 1, Block.Planks);
+    put(u, v, base - 1, Block.Sand);
     for (let y = base; y < base + 7; y++) put(u, v, y, Block.Air);
   }
   for (const [u, v] of cells(r)) {
@@ -745,9 +750,20 @@ function buildShed(world: VoxelWorld, f: Frame, r: Rect, base: number, roof: Blo
   for (let u = r.u0 - 1; u <= r.u1 + 1; u++) {
     for (let v = r.v0 - 1; v <= r.v1 + 1; v++) put(u, v, base + 3 + Math.round(half - Math.abs(v - mid)) - 1, roof);
   }
-  // Timber against the back wall.
-  const stack = back - Math.sign(side);
-  for (let u = r.u0 + 1; u < r.u1; u++) for (let y = base; y < base + 2; y++) put(u, stack, y, Block.Wood);
+  // The workshop: `k` rows in from the front, `u` along from the slipway's end.
+  const row = (k: number) => front + side * k;
+  const square = facingOf(-side * f.sx, -side * f.sz); // looking out to the square
+  const seaward = facingOf(-f.ix, -f.iz); // looking down the shed to the slipway
+  const stand = (kind: PropKind, u0: number, u1: number, k0: number, k1: number, facing: number) => {
+    const [v0, v1] = [row(k0), row(k1)].sort((a, b) => a - b);
+    const p = standProp(world, decor, kind, plotCells(footprint(f, { u0, u1, v0, v1 })), base, facing);
+    p.anchor = { ...p.anchor!, y: base };
+  };
+  stand('timberRack', r.u0 + 1, r.u1 - 1, 3, 3, square);
+  stand('workbench', r.u1 - 1, r.u1 - 1, 1, 2, seaward);
+  stand('sawhorse', r.u0, r.u0 + 1, 2, 2, square);
+  stand('ropeCoil', r.u0, r.u0, 3, 3, square);
+  stand('pitchPot', r.u1 - 1, r.u1 - 1, 0, 0, square);
 }
 
 /**

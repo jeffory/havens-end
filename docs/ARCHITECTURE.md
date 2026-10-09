@@ -413,11 +413,21 @@ Each port island gets a harbour:
     barrels by the door. The market is an open hall of stalls. The office (the
     Guildhall, the Governor's House or the Pirate Lord's Hall) is two storeys, three
     in Imperial ports, and flies the faction's flag. Floors are boarded.
-  - **Shipyard.** A slipway seven wide runs down into the water, with the sloop on
-    the stocks (a prop, below): her own hull without sails, a block a voxel, stern to
-    the land and bow to the sea. Stocks stand under her keel every third cell. She's
+  - **Shipyard.** A slipway seven wide runs down into the water, with a ship on the
+    stocks being built (a prop, below, `props/yard.ts`), stern to the land and bow to
+    the sea. She's drawn in frame an eighth of a block a voxel: keel, stem and
+    sternpost in dark timber, frames a block apart, her bottom planked to a dark wale
+    and the strakes under her sheer laid from aft, beams across her here and there, and
+    no deck or mast, so from above you look down into her. (The sloop's own hull, a
+    block a voxel, read from above as a hollow crate, and her mast as a beam across the
+    view.) She never lifts on foot (a prop with no anchor) and is never cut: you see the
+    captain through her frames. Stocks stand under her keel every third cell. She's
     18 long and outruns every slipway, so past its end they carry on out over the
-    water, standing on the seabed. A timber shed stands beside the slipway, and the
+    water, standing on the seabed. A timber shed stands beside the slipway, dressed as
+    a workshop on a floor of packed sand (on planks it read as brown on brown): a rack
+    of timber along its back wall, a workbench with a saw, a mallet and an adze against
+    its end wall, a sawhorse with a plank half sawn, a coil of rope and a pitch pot,
+    and the shipwright among them. The
     berth is on the pier's other side.
   - **Dressing.** Two stalls stand on the square by the market, either side of the column of
     its door, their fronts to the square's middle and two clear rows between their backs
@@ -482,13 +492,13 @@ Each port island gets a harbour:
     - *The clock,* two blocks across, over the office door, standing on the porch's
       canopy. It goes up only where the wall is behind the whole of it and nothing is
       in front of its face (the Pirate Lord's Hall's eave is, so it has none). The
-      porches' posts and rails. The sloop on the stocks.
+      porches' posts and rails. The ship on the stocks.
     - *Models* are drawn in code with a `Sketch` (`props/models.ts`), a quarter of a
       block a voxel unless said otherwise, or read from a `.vox` file
-      (`propFromVox`). The sloop's is her own ship file (`props/catalog.ts`). All are
-      meshed with `meshCells`, as ships are. The town's finer furniture, the stalls, the
-      hand cart and the hall's counters are drawn an eighth of a block a voxel with the
-      colours in `props/kit.ts` (`furniture.ts`, `market.ts`).
+      (`propFromVox`). All are meshed with `meshCells`, as ships are. The town's finer
+      furniture, the stalls, the hand cart, the hall's counters, the ship on the stocks
+      and the shed's workshop are drawn an eighth of a block a voxel with the colours in
+      `props/kit.ts` (`furniture.ts`, `market.ts`, `yard.ts`).
     - *Drawing:* one `InstancedMesh` a kind a town (props within 150 of a town's
       first share it), so a town off screen isn't drawn: each per-town mesh keeps
       its own small bounding sphere and is frustum-culled like any other mesh, so
@@ -499,9 +509,9 @@ Each port island gets a harbour:
       the anchor is lifted away on foot (the lift test in `render/lifts.ts`, shared
       with the terrain). So a sign, a door lantern or the clock goes with its wall,
       and street furniture, with no anchor, never lifts.
-    - *Reserved cells:* a prop drawn a block a voxel (the ship on the stocks) keeps
-      people out of the cells it fills: `reserveProps` writes the blocker into
-      them, once, straight after worldgen and before `trackEdits`. A finer prop
+    - *Reserved cells:* a prop that stands on no floor of its own (the ship on the
+      stocks) keeps people out of the cells its voxels lie in: `reserveProps` writes the
+      blocker into them, once, straight after worldgen and before `trackEdits`. A finer prop
       has a shape in blocks (`props/shapes.ts`: across, along the way it faces, and
       high). The town builder stands it with `standProp`, which writes the blocker
       into its cells three high (the walker climbs two), except under stools,
@@ -664,7 +674,7 @@ your pack is stowed in the hold.
   corner, a bench, a roof's edge. A horizontal move is also refused
   into any column whose first walker-blocking cell below the feet, within
   `BLOCKER_REACH` (64), is a blocker (`blockerColumn`): so nobody walks, steps or
-  drops onto a stall, the cart or the sloop on the stocks from a roof, a bank or a
+  drops onto a stall, the cart or the ship on the stocks from a roof, a bank or a
   corner either — they stop at its edge, or fall beside it. A floor or a roof over a
   prop is ground of its own, so the air above that stays open. Someone already over
   a prop (a save made where one now stands) can still walk off it.
@@ -1641,8 +1651,8 @@ verified in the running game. None of those directories import from `render`,
         signboard and (the last two) a clock. Still open: columns, and shapes of their
         own rather than the house every dwelling uses.
       - Each faction lays its town out its own way, not one kit re-roofed.
-      - ✅ The ship on the stocks reads as a ship from above: she's the sloop's own
-        hull.
+      - ✅ The ship on the stocks reads as a ship from above: she's drawn in frame,
+        being built (the sloop's own hull, which she was before, read as a hollow crate).
       - The captain should read at a glance (a lighter, more distinct figure).
       - Night: bats read as debris, and moonlit plaster turns royal blue.
 
@@ -1663,7 +1673,8 @@ verified in the running game. None of those directories import from `render`,
       - Haven's market signpost stands in the gap at a stall's end, hidden by the
         awnings from most views.
       - The ship on the stocks never lifts on foot (a prop with no anchor), so at the
-        yard her hull and mast can stand between the camera and the captain.
+        yard she can stand between the camera and the captain. Since the critic's pass
+        on the interiors she has no mast, and the captain shows between her frames.
       - ~~At Kingsreach, in the street between the tavern and the Governor's House with
         the camera from the south-west, a roof hides the captain and doesn't lift~~
         (fixed: the head-height cut and the line of sight going on through what it's

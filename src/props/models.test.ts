@@ -1,23 +1,16 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { meshCells } from '../render/voxelGeometry';
-import { buildShipModel, type ShipModel } from '../sailing/shipModel';
-import { SLOOP } from '../sailing/ships';
 import { FLAG_GLOW, srgbToLinear } from '../voxel/palette';
 import { parseVox, type VoxFile } from '../vox/parseVox';
 import { writeVox } from '../vox/writeVox';
 import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
-import { hullOnStocks, propCatalog, propFromVox } from './catalog';
+import { propCatalog, propFromVox } from './catalog';
 import { hearth } from './furniture';
 import { type Colour, COLOURS } from './kit';
 import { clock, lantern, signboard, wallLantern } from './models';
 import { PROP_SHAPES } from './shapes';
 import { PROP_KINDS, type PropKind, type PropModel } from './types';
-
-function loadSloop(): ShipModel {
-  const bytes = readFileSync(`public/${SLOOP.model}`);
-  return buildShipModel(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), SLOOP.draft);
-}
+import { shipOnStocks } from './yard';
 
 function bounds(m: PropModel) {
   const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity };
@@ -37,7 +30,7 @@ const RUGS = ['rug', 'runner', 'rugGuild', 'runnerGuild', 'rugSea', 'runnerSea',
 
 describe('prop models', () => {
   it('build every kind, each voxel in a colour of its own palette', () => {
-    const catalog = propCatalog(loadSloop());
+    const catalog = propCatalog();
     for (const kind of PROP_KINDS) {
       const model = catalog[kind];
       expect(model.cells.length, kind).toBeGreaterThan(0);
@@ -46,13 +39,13 @@ describe('prop models', () => {
     }
   });
 
-  it('are a quarter of a block a voxel; lanterns an eighth, and the ship a block', () => {
-    const catalog = propCatalog(loadSloop());
+  it('are a quarter of a block a voxel; lanterns, and the ship on the stocks, an eighth', () => {
+    const catalog = propCatalog();
     expect(catalog.signTavern.scale).toBe(0.25);
     expect(catalog.clock.scale).toBe(0.25);
     expect(catalog.lantern.scale).toBe(0.125);
     expect(catalog.wallLantern.scale).toBe(0.125);
-    expect(catalog.hullOnStocks.scale).toBe(1);
+    expect(catalog.hullOnStocks.scale).toBe(0.125);
   });
 
   it('light the lantern glass after dark, and nothing else', () => {
@@ -86,22 +79,37 @@ describe('prop models', () => {
     for (const m of [signboard('tavern'), clock()]) expect(bounds(m).minZ).toBeGreaterThanOrEqual(m.origin.z);
   });
 
-  it('set the sloop on the stocks from her stern, on her keel, without sails or flag', () => {
-    const sloop = loadSloop();
-    const hull = hullOnStocks(sloop);
+  it('set the ship on the stocks from her stern, on her keel, keeping people out of her', () => {
+    const hull = shipOnStocks();
     expect(hull.reserve).toBe(true);
-    expect(hull.cells).toBe(sloop.hull.cells);
     const b = bounds(hull);
     expect(hull.origin.z).toBe(b.minZ);
     expect(hull.origin.y).toBe(b.minY);
     expect(hull.origin.x).toBe((b.minX + b.maxX + 1) / 2);
   });
 
-  it('lay the stocks for the sloop’s own length', () => {
-    const hull = hullOnStocks(loadSloop());
-    let maxZ = -Infinity;
-    for (let i = 2; i < hull.cells.length; i += 4) maxZ = Math.max(maxZ, hull.cells[i]);
-    expect(maxZ + 1 - hull.origin.z).toBe(HULL_ON_STOCKS_LENGTH);
+  it('lay the stocks for the ship’s own length', () => {
+    const hull = shipOnStocks();
+    expect((bounds(hull).maxZ + 1 - hull.origin.z) * hull.scale).toBe(HULL_ON_STOCKS_LENGTH);
+  });
+
+  it('draw the ship on the stocks as one being built, to read from above: open between her frames, and no mast', () => {
+    const hull = shipOnStocks();
+    const b = bounds(hull);
+    // No mast: she stands no more than five and a half blocks over her keel (the sloop's mast made a beam across the view).
+    expect((b.maxY + 1 - b.minY) * hull.scale).toBeLessThanOrEqual(5.5);
+    // From above, you look down into her: the top of most columns of her lies well below the
+    // top of her sides within a block along her (where a frame, or the strakes under her sheer, stand).
+    const top = new Map<string, number>();
+    const slice = new Map<number, number>();
+    for (let i = 0; i < hull.cells.length; i += 4) {
+      const [x, y, z] = [hull.cells[i], hull.cells[i + 1], hull.cells[i + 2]];
+      top.set(`${x},${z}`, Math.max(top.get(`${x},${z}`) ?? -Infinity, y));
+      slice.set(z, Math.max(slice.get(z) ?? -Infinity, y));
+    }
+    const sides = (z: number) => Math.max(...[-4, -3, -2, -1, 0, 1, 2, 3, 4].map((dz) => slice.get(z + dz) ?? -Infinity));
+    const open = [...top].filter(([k, y]) => (sides(Number(k.split(',')[1])) - y) * hull.scale >= 2);
+    expect(open.length / top.size).toBeGreaterThan(0.5);
   });
 
   it('make a prop of a MagicaVoxel file, standing on the middle of its foot', () => {
@@ -139,6 +147,8 @@ describe('prop models', () => {
   const ROOM_KINDS: readonly PropKind[] = [
     ...['bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'barrel', 'crate', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'] as const,
     ...['deskGrand', 'strongbox', 'ledgerChest', 'treasureChest', 'mapTable'] as const,
+    // The shipyard's shed is a room too.
+    ...['workbench', 'sawhorse', 'timberRack', 'ropeCoil', 'pitchPot'] as const,
     ...RUGS,
   ];
 
@@ -151,7 +161,7 @@ describe('prop models', () => {
   });
 
   it('light only the hearth’s fire and the desks’ candles after dark, of all that’s drawn finer', () => {
-    const catalog = propCatalog(loadSloop());
+    const catalog = propCatalog();
     const glows = (kind: PropKind) => {
       const m = catalog[kind];
       for (let i = 3; i < m.cells.length; i += 4) if (m.palette.flags![m.cells[i]] & FLAG_GLOW) return true;
@@ -186,7 +196,7 @@ describe('prop models', () => {
   });
 
   it('hang each port’s banner on a wall: flat against it, in its owners’ colours, and below head height', () => {
-    const catalog = propCatalog(loadSloop());
+    const catalog = propCatalog();
     const colours = new Set<string>();
     for (const kind of ['bannerCrown', 'bannerGuild', 'bannerBrethren'] as const) {
       const m = catalog[kind];

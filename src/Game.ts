@@ -271,7 +271,7 @@ export class Game {
     const camps = placeBanditCamps(this.world, this.islands, WORLD_SEED, regionTier, (x, z) => inTown(x, z) || nearOutcrop(x, z));
     // The towns' props, and the ship on the stocks keeping people out of the cells she fills.
     const decor = this.ports.flatMap((p) => p.decor ?? []);
-    const catalog = propCatalog(models.get(SLOOP)!);
+    const catalog = propCatalog();
     reserveProps(this.world, decor, catalog);
     this.world.trackEdits(); // from here on, changes are what a save stores
 

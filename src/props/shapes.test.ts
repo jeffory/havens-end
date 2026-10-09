@@ -1,20 +1,11 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildShipModel, type ShipModel } from '../sailing/shipModel';
-import { SLOOP } from '../sailing/ships';
-import { parseVox } from '../vox/parseVox';
 import { propCatalog } from './catalog';
 import { PROP_SHAPES, shapeCells } from './shapes';
 import type { PropKind, PropPlacement } from './types';
 
-function loadSloop(): ShipModel {
-  const bytes = readFileSync(`public/${SLOOP.model}`);
-  return buildShipModel(parseVox(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), SLOOP.draft);
-}
-
 describe('prop shapes', () => {
   it('fit every model drawn finer than a block: an eighth a voxel, standing on its foot in its cells, as tall as it says', () => {
-    const catalog = propCatalog(loadSloop());
+    const catalog = propCatalog();
     const kinds = Object.keys(PROP_SHAPES) as PropKind[];
     expect(kinds.length).toBeGreaterThan(0);
     for (const kind of kinds) {

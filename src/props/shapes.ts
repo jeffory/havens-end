@@ -50,6 +50,11 @@ export const PROP_SHAPES: Partial<Record<PropKind, PropShape>> = {
   ledgerChest: { w: 1, d: 1, h: 1.125, blocks: true },
   treasureChest: { w: 1, d: 1, h: 1.125, blocks: true },
   mapTable: { w: 1, d: 1, h: 1, blocks: true },
+  workbench: { w: 2, d: 1, h: 1.125, blocks: true },
+  sawhorse: { w: 2, d: 1, h: 1.25, blocks: true },
+  timberRack: { w: 3, d: 1, h: 1.625, blocks: true },
+  ropeCoil: { w: 1, d: 1, h: 0.375, blocks: true },
+  pitchPot: { w: 1, d: 1, h: 0.875, blocks: true },
 };
 
 /** The grid cells a placed prop of this shape stands in: round its origin, turned with it. */

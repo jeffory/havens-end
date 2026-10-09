@@ -1,13 +1,13 @@
-import type { ShipModel } from '../sailing/shipModel';
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
 import { paletteFromRgba } from '../voxel/palette';
 import { banner, bar, barCask, barrel, bed, chair, chest, crate, desk, deskGrand, hearth, ledgerChest, mapTable, rug, type RugColours, runner, shelf, stool, strongbox, table, treasureChest } from './furniture';
 import { counter, handCart, stall } from './market';
 import { clock, lantern, porchPost, porchRail, signboard, signpost, wallLantern } from './models';
 import type { Point, PropKind, PropModel } from './types';
+import { pitchPot, ropeCoil, sawhorse, shipOnStocks, timberRack, workbench } from './yard';
 
 /** The middle of a model's foot: centred across x and z, at its lowest voxel. */
-function foot(cells: ArrayLike<number>): Point & { minZ: number } {
+function foot(cells: ArrayLike<number>): Point {
   let [minX, maxX, minY, minZ, maxZ] = [Infinity, -Infinity, Infinity, Infinity, -Infinity];
   for (let i = 0; i < cells.length; i += 4) {
     minX = Math.min(minX, cells[i]);
@@ -16,13 +16,7 @@ function foot(cells: ArrayLike<number>): Point & { minZ: number } {
     minZ = Math.min(minZ, cells[i + 2]);
     maxZ = Math.max(maxZ, cells[i + 2]);
   }
-  return { x: (minX + maxX + 1) / 2, y: minY, z: (minZ + maxZ + 1) / 2, minZ };
-}
-
-/** The sloop's hull (no sails or flag), a block a voxel, for the ship on the stocks: her origin at her stern, on her keel. */
-export function hullOnStocks(sloop: ShipModel): PropModel {
-  const f = foot(sloop.hull.cells);
-  return { cells: sloop.hull.cells, palette: { ...paletteFromRgba(sloop.palette), flags: new Uint8Array(256) }, origin: { x: f.x, y: f.y, z: f.minZ }, scale: 1, reserve: true };
+  return { x: (minX + maxX + 1) / 2, y: minY, z: (minZ + maxZ + 1) / 2 };
 }
 
 /** A prop from a MagicaVoxel file: every object in it as one, standing on the middle of its foot. */
@@ -44,8 +38,8 @@ const RUGS = {
   brethren: { field: 'tar', border: 'blanket', motif: 'bone' },
 } as const satisfies Record<string, RugColours>;
 
-/** Every prop the towns use, built once at startup. The sloop's model gives the ship on the stocks. */
-export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
+/** Every prop the towns use, built once at startup. */
+export function propCatalog(): Record<PropKind, PropModel> {
   return {
     lantern: lantern(),
     wallLantern: wallLantern(),
@@ -56,7 +50,7 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     clock: clock(),
     porchPost: porchPost(),
     porchRail: porchRail(),
-    hullOnStocks: hullOnStocks(sloop),
+    hullOnStocks: shipOnStocks(),
     barrel: barrel(),
     crate: crate(),
     stallProduceRed: stall('red', 'produce'),
@@ -94,5 +88,10 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     bannerCrown: banner('crown'),
     bannerGuild: banner('guild'),
     bannerBrethren: banner('brethren'),
+    workbench: workbench(),
+    sawhorse: sawhorse(),
+    timberRack: timberRack(),
+    ropeCoil: ropeCoil(),
+    pitchPot: pitchPot(),
   };
 }

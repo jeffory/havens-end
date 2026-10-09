@@ -26,9 +26,17 @@ describe('reserving props', () => {
     for (let x = 11; x <= 13; x++) for (const z of [19, 20]) expect(world.getVoxel(x, 5, z), `${x},${z}`).toBe(Block.Blocker);
   });
 
-  it('leaves alone props that don’t ask, and refuses one drawn finer than a block a voxel', () => {
+  it('leaves alone props that don’t ask', () => {
     const world = new VoxelWorld();
     expect(reserveProps(world, [{ kind: 'hullOnStocks', x: 0, y: 0, z: 0, facing: 0, anchor: null }], catalog({ ...brick(), reserve: false }))).toBe(0);
-    expect(() => reserveProps(world, [{ kind: 'hullOnStocks', x: 0, y: 0, z: 0, facing: 0, anchor: null }], catalog({ ...brick(), scale: 0.25 }))).toThrow();
+  });
+
+  it('keeps people out of the cells a finer prop’s voxels lie in, by their middles, once each', () => {
+    const world = new VoxelWorld();
+    // An eighth of a block a voxel: two in the first cell, one a cell and a half along x, one a block and more up.
+    const fine: PropModel = { ...new Sketch().paint('a', 0).put(0, 0, 0, 'a').put(1, 0, 0, 'a').put(12, 0, 0, 'a').put(0, 9, 0, 'a').model({ x: 0, y: 0, z: 0 }, 1 / 8), reserve: true };
+    const taken = reserveProps(world, [{ kind: 'hullOnStocks', x: 10, y: 5, z: 20, facing: 0, anchor: null }], catalog(fine));
+    expect(taken).toBe(3);
+    for (const [x, y] of [[10, 5], [11, 5], [10, 6]]) expect(world.getVoxel(x, y, 20), `${x},${y}`).toBe(Block.Blocker);
   });
 });
