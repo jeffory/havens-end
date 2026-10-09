@@ -1,7 +1,19 @@
-import { type BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, MeshLambertMaterial, type WebGLProgramParametersWithUniforms } from 'three';
+import {
+  BackSide,
+  type BufferGeometry,
+  Color,
+  DoubleSide,
+  Group,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  MeshDepthMaterial,
+  MeshLambertMaterial,
+  type WebGLProgramParametersWithUniforms,
+} from 'three';
 import { placementMatrix } from '../props/place';
 import type { PropKind, PropModel, PropPlacement } from '../props/types';
-import { LIFT_GLSL, type Lifts } from './lifts';
+import { CAP_COLOR, LIFT_GLSL, type Lifts } from './lifts';
 import { meshCells } from './voxelGeometry';
 
 /** The anchor of a prop that never lifts: under anything a lift reaches. */
@@ -13,15 +25,19 @@ const NEVER_LIFTED = -1e6;
  */
 const TOWN_REACH = 150;
 
-/** Puts into a props material's shaders that one hung on a building that's lifted away goes with it, the lifts' uniforms shared. */
+/**
+ * Puts into a props material's shaders that one hung on a building that's lifted away goes
+ * with it, and furniture against a lifted room's wall facing the camera is cut as low as the
+ * wall (`propTop` is how high it stands there), the lifts' uniforms shared.
+ */
 function goWithLifts(shader: WebGLProgramParametersWithUniforms, lifts: Lifts): void {
   Object.assign(shader.uniforms, lifts.uniforms);
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute vec3 anchor;\nvarying vec3 vAnchor;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAnchor = anchor;');
+    .replace('#include <common>', '#include <common>\nattribute vec3 anchor;\nvarying vec3 vAnchor;\nvarying vec3 vSpot;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAnchor = anchor;\nvSpot = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\n${LIFT_GLSL}\nvarying vec3 vAnchor;`)
-    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (lifted(vAnchor)) discard;');
+    .replace('#include <common>', `#include <common>\n${LIFT_GLSL}\nvarying vec3 vAnchor;\nvarying vec3 vSpot;`)
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nfloat propHeight = propTop(vSpot);\nif (lifted(vAnchor) || vSpot.y > propHeight) discard;');
 }
 
 /**
@@ -34,7 +50,12 @@ export class PropsView {
   /** Each kind's meshes, one a town (none for a kind no town uses). */
   readonly meshes = new Map<PropKind, InstancedMesh[]>();
   private readonly glow = { value: 0.2 };
-  private readonly material = new MeshLambertMaterial({ vertexColors: true });
+  private readonly capColor = { value: new Color(CAP_COLOR) };
+  /**
+   * Both sides drawn: where furniture is cut, its inside shows through the cut, drawn as the
+   * cut's cap (as a wall's is), so it reads as solid. Its shadow is cast as before, from its back.
+   */
+  private readonly material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide, shadowSide: BackSide });
   /** The props as the sun sees them, for shadows: one lifted away casts none. */
   private readonly depthMaterial = new MeshDepthMaterial();
 
@@ -43,12 +64,17 @@ export class PropsView {
     this.material.onBeforeCompile = (shader) => {
       goWithLifts(shader, lifts);
       shader.uniforms.uGlow = this.glow;
+      shader.uniforms.uCapColor = this.capColor;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying float vGlow;\nvarying vec3 vSpot;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = step(1.5, flags);\nvSpot = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying float vGlow;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = step(1.5, flags);');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nvarying float vGlow;\nvarying vec3 vSpot;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
+        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform vec3 uCapColor;\nvarying float vGlow;')
+        // A face's back is only ever seen through a cut: drawn as the cut's cap, lit as a top
+        // face is. (Elsewhere it's left out: the prop's own faces hide it.)
+        .replace('#include <color_fragment>', '#include <color_fragment>\nif (!gl_FrontFacing) {\n  if (propHeight > 1e5) discard;\n  diffuseColor.rgb = uCapColor;\n}')
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (!gl_FrontFacing) normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (gl_FrontFacing) totalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
         // In a lifted room after dark, lamplight on it, as on the room's walls.
         .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nif (uRoomLight.r > 0.0 && inRoom(vSpot, 0.0)) reflectedLight.indirectDiffuse += uRoomLight * diffuseColor.rgb;');
     };

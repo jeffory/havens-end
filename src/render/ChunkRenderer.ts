@@ -6,13 +6,11 @@ import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import { type Eye, LIFT_GLSL, type Lift, Lifts } from './lifts';
+import { CAP_COLOR, type Eye, LIFT_GLSL, type Lift, Lifts } from './lifts';
 import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
 const ZONE_COLOR = 0xe0583a;
-/** The top of a cut, where what was over it is lifted away: a dark timber plate, on every building alike. */
-const CAP_COLOR = 0x5b3f29;
 
 /**
  * GLSL, the vertex shader's part of cutting away what's lifted: the block a vertex's face

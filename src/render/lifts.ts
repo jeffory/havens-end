@@ -7,6 +7,10 @@ export const MAX_LIFTS = 12;
 const NEVER = 1e6;
 /** Lamplight in a lifted room after dark: warm, and enough that its walls read as walls. */
 const ROOM_LIGHT = new Color(0xffb36b).multiplyScalar(0.6);
+/** The top of a cut, where what was over it is lifted away: a dark timber plate, on every building and prop alike. */
+export const CAP_COLOR = 0x5b3f29;
+/** A prop's face lying on a cut (the top of a counter one course high) stays. */
+const ON_CUT = 0.01;
 
 /**
  * A box lifted away: on the grid from (x0, z0) up to but not including (x1, z1), everything
@@ -46,6 +50,20 @@ export function liftedBy(l: Lift, eye: Eye, x: number, y: number, z: number): bo
   return cy > (facing ? Math.min(l.from, r.front) : l.from);
 }
 
+/**
+ * Does a lift cut away the point (x, y, z) of a prop, the camera at `eye`? Furniture standing
+ * in a room against a wall facing the camera (within a block of the wall's inside, or in the
+ * wall) is cut as low as that wall, so a shelf there hides nobody behind it: whatever of it
+ * is above the wall's standing course goes. Elsewhere a prop goes whole or not at all, by its
+ * anchor (`liftedBy`). The props' test (`propTop` in LIFT_GLSL).
+ */
+export function cutsProp(l: Lift, eye: Eye, x: number, y: number, z: number): boolean {
+  const r = l.room;
+  if (!r || !(x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1)) return false;
+  const against = (eye.x > r.x1 && x > r.x1 - 2) || (eye.x < r.x0 && x < r.x0 + 2) || (eye.z > r.z1 && z > r.z1 - 2) || (eye.z < r.z0 && z < r.z0 + 2);
+  return against && y > Math.min(l.from, r.front) + 0.5 + ON_CUT;
+}
+
 /** GLSL: the lifted boxes, and whether a voxel (by its centre) is lifted away: `liftedBy`, for every box. */
 export const LIFT_GLSL = /* glsl */ `
 uniform vec4 uLiftBox[${MAX_LIFTS}];
@@ -66,6 +84,20 @@ bool lifted(vec3 cell) {
       && cell.y > (facingEye(uLiftRoom[k], cell) ? uLiftFrom[k].y : uLiftFrom[k].x)) return true;
   }
   return false;
+}
+/**
+ * How high a prop stands at point p: as low as a lifted room's walls facing the camera, if
+ * it's in the room against one (within a block of its inside); as high as it likes elsewhere.
+ * cutsProp, for every box.
+ */
+float propTop(vec3 p) {
+  for (int k = 0; k < ${MAX_LIFTS}; k++) {
+    vec4 r = uLiftRoom[k];
+    if (p.x > r.x && p.x < r.z && p.z > r.y && p.z < r.w
+      && ((uLiftEye.x > r.z && p.x > r.z - 2.0) || (uLiftEye.x < r.x && p.x < r.x + 2.0)
+        || (uLiftEye.y > r.w && p.z > r.w - 2.0) || (uLiftEye.y < r.y && p.z < r.y + 2.0))) return uLiftFrom[k].y + ${(0.5 + ON_CUT).toFixed(3)};
+  }
+  return 1e6;
 }
 /** Lamplight in a lifted room (none by day). */
 uniform vec3 uRoomLight;
