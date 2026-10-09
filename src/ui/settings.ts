@@ -8,13 +8,15 @@ export interface Settings {
   shanties: boolean;
   /** How loud the music is (shanties, the tune ashore, the fight music), 0 (off) to 1. */
   musicVolume: number;
+  /** How loud the sound effects and the ambience are, 0 (off) to 1. */
+  effectsVolume: number;
 }
 
 /** The volumes offered. */
 export const VOLUME_CHOICES: readonly number[] = [0, 0.25, 0.5, 0.75, 1];
 
 const KEY = 'havens-end-settings';
-const DEFAULTS: Settings = { dayMinutes: DEFAULT_DAY_MINUTES, shanties: false, musicVolume: 0.5 };
+const DEFAULTS: Settings = { dayMinutes: DEFAULT_DAY_MINUTES, shanties: false, musicVolume: 0.5, effectsVolume: 0.75 };
 
 export function loadSettings(): Settings {
   try {
@@ -23,6 +25,7 @@ export function loadSettings(): Settings {
       dayMinutes: DAY_MINUTE_CHOICES.includes(stored.dayMinutes ?? NaN) ? stored.dayMinutes! : DEFAULTS.dayMinutes,
       shanties: typeof stored.shanties === 'boolean' ? stored.shanties : DEFAULTS.shanties,
       musicVolume: VOLUME_CHOICES.includes(stored.musicVolume ?? NaN) ? stored.musicVolume! : DEFAULTS.musicVolume,
+      effectsVolume: VOLUME_CHOICES.includes(stored.effectsVolume ?? NaN) ? stored.effectsVolume! : DEFAULTS.effectsVolume,
     };
   } catch {
     return { ...DEFAULTS }; // storage blocked (a private window): the defaults will do

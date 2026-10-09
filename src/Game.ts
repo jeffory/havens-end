@@ -53,6 +53,7 @@ import { NightLife } from './render/NightLife';
 import { PropsView } from './render/PropsView';
 import { Soundtrack } from './audio/Soundtrack';
 import { SHANTIES } from './audio/tracks';
+import { Sfx } from './audio/sfx/Sfx';
 import { DropsView } from './render/DropsView';
 import { hasRelic, SPYGLASS_RANGE } from './treasure/relics';
 import { DEPTH } from './treasure/sites';
@@ -199,6 +200,8 @@ export class Game {
   private readonly drops = new DropsView();
   /** The music: shanties at sea if they're wanted, a tune ashore, and another in a fight. */
   private readonly music = new Soundtrack();
+  /** The sound effects and the ambience. */
+  private readonly sfx = new Sfx();
   private readonly nightLights = new NightLights();
   private readonly nightLife: NightLife;
   private readonly settings: Settings = loadSettings();
@@ -303,6 +306,11 @@ export class Game {
     this.story = new Story(this.world, this.sea, this.ports);
     this.sea.clock.length = this.settings.dayMinutes * 60;
     this.music.volume = this.settings.musicVolume;
+    this.sfx.volume = this.settings.effectsVolume;
+    // Browsers won't start sound before the player has pressed or clicked something.
+    const unlockSound = () => this.sfx.unlock();
+    window.addEventListener('keydown', unlockSound);
+    window.addEventListener('pointerdown', unlockSound);
     this.music.shanties.onTrack = (track) => this.hud.toast(`♪ The crew strikes up “${track.title}”`);
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
@@ -511,6 +519,7 @@ export class Game {
     saveSettings(this.settings);
     this.sea.clock.length = this.settings.dayMinutes * 60;
     this.music.volume = this.settings.musicVolume;
+    this.sfx.volume = this.settings.effectsVolume;
   }
 
   private openSystem(title: boolean): void {

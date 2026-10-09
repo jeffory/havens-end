@@ -164,6 +164,20 @@ export function SystemMenu({ title, summary, resume, save, load, remove, newGame
               press it again and they fall quiet.
               {SHANTIES.length > 0 && ` They know ${SHANTIES.length === 1 ? 'one' : SHANTIES.length}: ${SHANTIES.map((t) => t.title).join(', ')}.`}
             </p>
+            <h3>Effects volume</h3>
+            <div className="choice-row">
+              {VOLUME_CHOICES.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={v === settings.effectsVolume ? 'active' : ''}
+                  aria-pressed={v === settings.effectsVolume}
+                  onClick={() => change({ ...settings, effectsVolume: v })}
+                >
+                  {v === 0 ? 'Off' : `${Math.round(v * 100)}%`}
+                </button>
+              ))}
+            </div>
           </>
         )}
 
