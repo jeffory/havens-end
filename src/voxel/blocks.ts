@@ -1,4 +1,4 @@
-import { type Box, FLAG_CUTAWAY, FLAG_GLOW, srgbToLinear, type VoxelPalette } from './palette';
+import { type Box, FLAG_CUTAWAY, FLAG_GLASS, FLAG_GLOW, srgbToLinear, type VoxelPalette } from './palette';
 
 /** Block ids stored in chunk voxel arrays (one byte each, so up to 256 kinds). */
 export const Block = {
@@ -300,6 +300,7 @@ for (const id of [
 }
 // What glows after dark.
 for (const id of [Block.Embers, Block.Window, Block.Lantern]) FLAGS[id] |= FLAG_GLOW;
+FLAGS[Block.Window] |= FLAG_GLASS;
 
 // Stairs and slabs are what they're cut from: plank ones lift with the building they're part of.
 for (let id = 0; id < 256; id++) if (BASE[id] !== id) FLAGS[id] = FLAGS[BASE[id]];

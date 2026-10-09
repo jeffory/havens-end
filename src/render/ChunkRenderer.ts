@@ -11,6 +11,8 @@ import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
 const ZONE_COLOR = 0xe0583a;
+/** Lamplight through a window's glass after dark: warm, brightest mid-pane. */
+const WINDOW_LIGHT = 0xffa04a;
 
 /**
  * GLSL, the vertex shader's part of cutting away what's lifted: the block a vertex's face
@@ -64,6 +66,7 @@ export class ChunkRenderer {
   private readonly zone = { value: new Vector4(0, 0, 0, 0) };
   private readonly zoneColor = { value: new Color(ZONE_COLOR) };
   private readonly capColor = { value: new Color(CAP_COLOR) };
+  private readonly windowLight = { value: new Color(WINDOW_LIGHT) };
   /** Seconds, to move the caustics on the seabed. */
   private readonly time = { value: 0 };
 
@@ -75,14 +78,16 @@ export class ChunkRenderer {
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
       shader.uniforms.uCapColor = this.capColor;
+      shader.uniforms.uWindowLight = this.windowLight;
       shader.uniforms.uTime = this.time;
-      // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows. A corner's 8: the
-      // top of a cut (see the mesher's corners), drawn as its cap, never glowing.
+      // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows, 4 = a window's
+      // glass. A corner's 8: the top of a cut (see the mesher's corners), drawn as its cap,
+      // never glowing.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nvarying vec3 vFaceWorld;\nvarying float vCap;\nvarying float vGlow;\nvarying float vUp;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nvarying vec3 vFaceWorld;\nvarying float vCap;\nvarying float vGlow;\nvarying float vGlass;\nvarying float vUp;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvFaceWorld = normalize(mat3(modelMatrix) * objectNormal);\nvCap = step(7.5, corner);\nvGlow = step(1.5, flags) * (1.0 - vCap);\nvUp = vFaceWorld.y;',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvFaceWorld = normalize(mat3(modelMatrix) * objectNormal);\nvCap = step(7.5, corner);\nvGlow = mod(floor(flags / 2.0), 2.0) * (1.0 - vCap);\nvGlass = step(3.5, flags) * (1.0 - vCap);\nvUp = vFaceWorld.y;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -92,11 +97,13 @@ uniform float uGlow;
 uniform vec4 uZone;
 uniform vec3 uZoneColor;
 uniform vec3 uCapColor;
+uniform vec3 uWindowLight;
 uniform float uTime;
 varying vec3 vCutWorld;
 varying vec3 vFaceWorld;
 varying float vCap;
 varying float vGlow;
+varying float vGlass;
 varying float vUp;
 /** Light focused by the swell onto the seabed: a drifting web of bright lines, 0 to 1. */
 float caustics(vec2 p, float t) {
@@ -117,6 +124,17 @@ float caustics(vec2 p, float t) {
           /* glsl */ `#include <color_fragment>
 // The top of a cut: one cap colour, on every building alike.
 if (vCap > 0.5) diffuseColor.rgb = uCapColor;
+// A window: four panes in a timber frame, a glazing bar across each way between them; after
+// dark the panes glow with the lamplight inside, warm, brightest in the middle of each.
+vec3 selfLight = vColor.rgb;
+if (vGlass > 0.5) {
+  vec3 across = abs(vFaceWorld);
+  vec2 uv = fract(across.x > 0.5 ? vCutWorld.zy : across.z > 0.5 ? vCutWorld.xy : vCutWorld.xz);
+  vec2 inPane = abs(fract(uv * 2.0) - 0.5);
+  float bar = step(0.4, max(inPane.x, inPane.y));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uCapColor, bar);
+  selfLight = uWindowLight * (1.0 - bar) * (1.0 - 0.55 * smoothstep(0.1, 0.5, length(inPane)));
+}
 // A face looking into a lifted room (its walls' insides, its floor): lit by the room's lamps
 // after dark, so it reads as a wall, not a hole; and a lit window in its walls glows outward,
 // not into it (embers standing in the room still glow). (After dark only: by day there's no
@@ -147,7 +165,7 @@ if (under > 0.0) {
   reflectedLight.directDiffuse *= 1.0 + caustic * smoothstep(0.0, 0.5, under) * (1.0 - smoothstep(2.0, 8.0, under));
 }`,
         )
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow * (walledIn ? 0.0 : 1.0) + uZoneColor * zoneEdge * 0.5;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += selfLight * vGlow * uGlow * (walledIn ? 0.0 : 1.0) + uZoneColor * zoneEdge * 0.5;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
     this.depthMaterial.onBeforeCompile = (shader) => cutAway(shader, this.lifts);

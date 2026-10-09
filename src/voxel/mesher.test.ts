@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { Block } from './blocks';
+import { Block, BLOCK_PALETTE } from './blocks';
 import { buildPaddedVolume, meshPaddedVolume } from './mesher';
-import { paletteFromRgba } from './palette';
+import { FLAG_GLASS, FLAG_GLOW, paletteFromRgba } from './palette';
 import { VoxelWorld } from './VoxelWorld';
 
 function meshChunk(world: VoxelWorld, cx: number, cy: number, cz: number) {
@@ -146,6 +146,23 @@ describe('mesher options for models', () => {
       capped.add([0, 1, 2].map((a) => Math.floor(mesh.positions[v * 3 + a] + 0.25 - 0.5 * ((mesh.corners![v] >> a) & 1))).join(','));
     }
     expect([...capped].sort()).toEqual(['5,5,5', '9,5,5']);
+  });
+
+  it('marks a window’s faces as glass, to be drawn as panes lit from within, and nothing else', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Window);
+    world.setVoxel(9, 5, 5, Block.Lantern); // glows, but isn't glass
+    world.setVoxel(13, 5, 5, Block.Embers);
+    world.setVoxel(17, 5, 5, Block.Plaster);
+    const mesh = meshChunk(world, 0, 0, 0)!;
+    const glass = new Set<number>();
+    for (let v = 0; v < mesh.positions.length / 3; v++) {
+      const flags = mesh.flags![v];
+      expect((flags & FLAG_GLOW) !== 0 || (flags & FLAG_GLASS) === 0, 'glass glows').toBe(true);
+      if (flags & FLAG_GLASS) glass.add(Math.floor(mesh.positions[v * 3] + 0.25 - 0.5 * (mesh.corners![v] & 1))); // its block, by its corner
+    }
+    expect([...glass]).toEqual([5]);
+    expect(BLOCK_PALETTE.flags!.filter((f) => f & FLAG_GLASS)).toHaveLength(1);
   });
 
   it('keeps the ground’s face against a tree or building, so lifting it leaves no hole', () => {

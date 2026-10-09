@@ -14,7 +14,7 @@ export interface VoxelPalette {
   colors: Float32Array;
   /** 1 where the id is solid (256 entries). */
   solid: Uint8Array;
-  /** Per id, which of FLAG_CUTAWAY and FLAG_GLOW apply (terrain only; models have none). */
+  /** Per id, which of FLAG_CUTAWAY, FLAG_GLOW and FLAG_GLASS apply (terrain only; models have none, but for a prop's glowing glass). */
   flags?: Uint8Array;
   /** Per id, the boxes of a block that isn't a whole cube: stairs and slabs (terrain only; null for a cube). */
   shapes?: ReadonlyArray<readonly Box[] | null>;
@@ -26,6 +26,8 @@ export interface VoxelPalette {
 export const FLAG_CUTAWAY = 1;
 /** Gives off its own light at night: embers, lanterns, lit windows. */
 export const FLAG_GLOW = 2;
+/** A window's glass: drawn as panes between glazing bars, lit warm from within after dark. */
+export const FLAG_GLASS = 4;
 
 export const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
