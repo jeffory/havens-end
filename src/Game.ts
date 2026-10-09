@@ -8,6 +8,7 @@ import { SIM_HZ } from './config';
 import { clockText, darkness, isNight, WAKE_AT, secondsUntil } from './core/clock';
 import { boardingDuel, type DuelCast, DuelScene, guardianDuel } from './DuelScene';
 import { ghostModel } from './duel/ghostModel';
+import { dressCaptain } from './duel/captainDress';
 import { buildCharacterModel, type CharacterModel } from './duel/characterModel';
 import type { DuelIntent } from './duel/duel';
 import { BOUNTY_NOUNS } from './economy/contracts';
@@ -248,7 +249,9 @@ export class Game {
     }
     const captains = new Map<string, CharacterModel>();
     for (const name of CAPTAINS) {
-      captains.set(name, buildCharacterModel(parseVox(await load(`${import.meta.env.BASE_URL}models/characters/${name}.vox`))));
+      const model = buildCharacterModel(parseVox(await load(`${import.meta.env.BASE_URL}models/characters/${name}.vox`)));
+      // Your own captain in a red coat, ashore and in a duel alike, so you're seen.
+      captains.set(name, name === 'player' ? dressCaptain(model) : model);
     }
     return new Game(container, models, captains);
   }
