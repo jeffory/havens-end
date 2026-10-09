@@ -23,6 +23,22 @@ export const PROP_SHAPES: Partial<Record<PropKind, PropShape>> = {
   stallProduceBlue: { w: 3, d: 2, h: 2.875, blocks: true },
   stallClothBlue: { w: 3, d: 2, h: 2.875, blocks: true },
   handCart: { w: 2, d: 3, h: 1.625, blocks: true },
+  bed: { w: 1, d: 2, h: 0.875, blocks: true },
+  table: { w: 1, d: 1, h: 1, blocks: true },
+  stool: { w: 1, d: 1, h: 0.5, blocks: false },
+  chair: { w: 1, d: 1, h: 1, blocks: false },
+  shelfCrockery: { w: 1, d: 1, h: 1.75, blocks: true },
+  shelfBottles: { w: 1, d: 1, h: 1.75, blocks: true },
+  shelfBooks: { w: 1, d: 1, h: 1.75, blocks: true },
+  chest: { w: 1, d: 1, h: 0.625, blocks: true },
+  hearth: { w: 1, d: 1, h: 2, blocks: true },
+  rug: { w: 2, d: 2, h: 0.125, blocks: false },
+  runner: { w: 1, d: 2, h: 0.125, blocks: false },
+  bar: { w: 1, d: 1, h: 1.25, blocks: true },
+  barCask: { w: 1, d: 1, h: 1.375, blocks: true },
+  desk: { w: 1, d: 1, h: 1.25, blocks: true },
+  counterProduce: { w: 1, d: 1, h: 1.125, blocks: true },
+  counterCloth: { w: 1, d: 1, h: 1.125, blocks: true },
 };
 
 /** The grid cells a placed prop of this shape stands in: round its origin, turned with it. */

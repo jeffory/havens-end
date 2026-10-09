@@ -81,3 +81,23 @@ export function handCart(): PropModel {
   s.box(9, 10, 10, 11, 11, 13, 'sack');
   return s.model({ x: 8, y: 0, z: 12 }, EIGHTH);
 }
+
+/** A trestle counter in the market hall, a block square, a sack under it, its goods on it: baskets of produce, or bolts of cloth. */
+export function counter(goods: 'produce' | 'cloth'): PropModel {
+  const s = kit('timber', 'plank', 'sack', 'wicker', 'wickerDark', 'greens', 'fruit', 'apple', 'clothPurple', 'clothBlue', 'clothOchre', 'linen');
+  for (const x of [0, 7]) s.box(x, 0, 1, x, 4, 6, 'timber'); // the trestles
+  s.box(0, 5, 0, 7, 5, 7, 'plank'); // the board
+  s.box(2, 0, 2, 5, 2, 5, 'sack');
+  if (goods === 'produce') {
+    basketAt(s, 0, 6, 0, 'greens');
+    basketAt(s, 4, 6, 4, 'fruit');
+    for (const [x, z] of [[5, 1], [6, 2], [5, 2]]) s.put(x, 6, z, 'apple');
+  } else {
+    for (const [z, colour] of [[1, 'clothPurple'], [3, 'clothBlue'], [5, 'clothOchre']] as const) {
+      s.box(1, 6, z, 6, 7, z + 1, colour);
+      s.box(1, 6, z, 1, 7, z + 1, 'linen');
+    }
+    s.box(2, 8, 3, 5, 8, 4, 'clothBlue'); // one laid on top
+  }
+  return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
+}

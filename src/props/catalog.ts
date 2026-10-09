@@ -1,8 +1,8 @@
 import type { ShipModel } from '../sailing/shipModel';
 import { instanceVoxels, mvToGame, type VoxFile } from '../vox/parseVox';
 import { paletteFromRgba } from '../voxel/palette';
-import { barrel, crate } from './furniture';
-import { handCart, stall } from './market';
+import { bar, barCask, barrel, bed, chair, chest, crate, desk, hearth, rug, runner, shelf, stool, table } from './furniture';
+import { counter, handCart, stall } from './market';
 import { clock, lantern, porchPost, porchRail, signboard, signpost, wallLantern } from './models';
 import type { Point, PropKind, PropModel } from './types';
 
@@ -56,5 +56,21 @@ export function propCatalog(sloop: ShipModel): Record<PropKind, PropModel> {
     stallProduceBlue: stall('blue', 'produce'),
     stallClothBlue: stall('blue', 'cloth'),
     handCart: handCart(),
+    bed: bed(),
+    table: table(),
+    stool: stool(),
+    chair: chair(),
+    shelfCrockery: shelf('crockery'),
+    shelfBottles: shelf('bottles'),
+    shelfBooks: shelf('books'),
+    chest: chest(),
+    hearth: hearth(),
+    rug: rug(),
+    runner: runner(),
+    bar: bar(),
+    barCask: barCask(),
+    desk: desk(),
+    counterProduce: counter('produce'),
+    counterCloth: counter('cloth'),
   };
 }

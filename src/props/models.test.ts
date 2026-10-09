@@ -9,7 +9,8 @@ import { writeVox } from '../vox/writeVox';
 import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
 import { hullOnStocks, propCatalog, propFromVox } from './catalog';
 import { clock, lantern, signboard, wallLantern } from './models';
-import { PROP_KINDS, type PropModel } from './types';
+import { PROP_SHAPES } from './shapes';
+import { PROP_KINDS, type PropKind, type PropModel } from './types';
 
 function loadSloop(): ShipModel {
   const bytes = readFileSync(`public/${SLOOP.model}`);
@@ -127,5 +128,30 @@ describe('prop models', () => {
     // The whole post, three voxels tall.
     geometry.computeBoundingBox();
     expect(geometry.boundingBox!.max.y - geometry.boundingBox!.min.y).toBeCloseTo(3);
+  });
+
+  /** What furnishes a room or stands in the market hall: under its walls when the roof's lifted. */
+  const ROOM_KINDS: readonly PropKind[] = ['bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'rug', 'runner', 'barrel', 'crate', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'];
+
+  it('shape every piece of furniture', () => {
+    for (const kind of ROOM_KINDS) expect(PROP_SHAPES[kind], kind).toBeDefined();
+  });
+
+  it('keep a room’s furniture to head height, where the walls are cut, so none of it pokes up when the roof lifts', () => {
+    for (const kind of ROOM_KINDS) expect(PROP_SHAPES[kind]!.h, kind).toBeLessThanOrEqual(2);
+  });
+
+  it('light only the hearth’s fire and the desk’s candle after dark, of all that’s drawn finer', () => {
+    const catalog = propCatalog(loadSloop());
+    const glows = (kind: PropKind) => {
+      const m = catalog[kind];
+      for (let i = 3; i < m.cells.length; i += 4) if (m.palette.flags![m.cells[i]] & FLAG_GLOW) return true;
+      return false;
+    };
+    expect((Object.keys(PROP_SHAPES) as PropKind[]).filter(glows).sort()).toEqual(['desk', 'hearth']);
+  });
+
+  it('lay rugs flat on the floor, a voxel thick, keeping nobody out', () => {
+    for (const kind of ['rug', 'runner'] as const) expect(PROP_SHAPES[kind], kind).toMatchObject({ h: 1 / 8, blocks: false });
   });
 });

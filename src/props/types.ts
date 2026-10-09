@@ -18,10 +18,26 @@ export type PropKind =
   | 'stallClothRed'
   | 'stallProduceBlue'
   | 'stallClothBlue'
-  | 'handCart';
+  | 'handCart'
+  | 'bed'
+  | 'table'
+  | 'stool'
+  | 'chair'
+  | 'shelfCrockery'
+  | 'shelfBottles'
+  | 'shelfBooks'
+  | 'chest'
+  | 'hearth'
+  | 'rug'
+  | 'runner'
+  | 'bar'
+  | 'barCask'
+  | 'desk'
+  | 'counterProduce'
+  | 'counterCloth';
 
 /** Every prop kind, in one list. */
-export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate', 'stallProduceRed', 'stallClothRed', 'stallProduceBlue', 'stallClothBlue', 'handCart'];
+export const PROP_KINDS: readonly PropKind[] = ['lantern', 'wallLantern', 'signTavern', 'signOffice', 'signpostMarket', 'signpostShipyard', 'clock', 'porchPost', 'porchRail', 'hullOnStocks', 'barrel', 'crate', 'stallProduceRed', 'stallClothRed', 'stallProduceBlue', 'stallClothBlue', 'handCart', 'bed', 'table', 'stool', 'chair', 'shelfCrockery', 'shelfBottles', 'shelfBooks', 'chest', 'hearth', 'rug', 'runner', 'bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'];
 
 /** A point in the world or a model's own voxels. */
 export interface Point {
