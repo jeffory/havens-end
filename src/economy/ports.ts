@@ -28,6 +28,8 @@ export interface Port {
   spots?: TownSpot[];
   /** The town's props (lanterns, signs, the ship on the stocks): from the seed, never saved. */
   decor?: PropPlacement[];
+  /** Where the shops' keepers stand (none for a port with no town of its own): from the seed, never saved. */
+  keepers?: KeeperPost[];
 }
 
 /** What a spot in town is: where townsfolk come and go, and where they linger. */
@@ -51,6 +53,19 @@ export interface PortPlace {
   z: number;
   /** Where its sign hangs: on the building, over the door (older layouts put it over the door step). */
   sign?: { x: number; y: number; z: number };
+}
+
+/**
+ * Where a shop's keeper stands: behind its counter (the tavern's bar, the office's desk, the
+ * market's back counter), or the shipwright in the shed; and which way they look, an angle
+ * as a walker's facing.
+ */
+export interface KeeperPost {
+  kind: PlaceKind;
+  x: number;
+  y: number;
+  z: number;
+  facing: number;
 }
 
 export const FACTION_NAMES: Record<PortFaction, string> = {

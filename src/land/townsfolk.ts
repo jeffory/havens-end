@@ -1,6 +1,6 @@
 import { isNight } from '../core/clock';
 import { alike, type Dress, type DressKind, townDress } from '../duel/dress';
-import type { Port, PortPlace, SpotKind, TownSpot } from '../economy/ports';
+import type { KeeperPost, Port, PortPlace, SpotKind, TownSpot } from '../economy/ports';
 import { hash2 } from '../util/hash';
 import type { VoxelReader } from '../voxel/raycast';
 import type { Land } from './Land';
@@ -19,8 +19,8 @@ interface Point {
 /**
  * Someone about town: out of a door, off to the square, the stalls, the well, the
  * shipyard or the tavern, lingering a while, then off again; home at night. Or one of
- * the Crown's soldiers, standing guard at the Governor's door. Just for life: nobody
- * talks to them, and they aren't saved.
+ * the Crown's soldiers, standing guard at the Governor's door, or a shop's keeper behind
+ * the counter. Just for life: nobody talks to them, and they aren't saved.
  */
 export interface Townsman {
   id: number;
@@ -34,7 +34,8 @@ export interface Townsman {
     | { kind: 'walk'; path: PathPoint[]; next: number; stuck: number; to: TownSpot; at: Point }
     | { kind: 'linger'; left: number; spot: TownSpot; at: Point }
     | { kind: 'wait'; left: number }
-    | { kind: 'guard' };
+    | { kind: 'guard' }
+    | { kind: 'keep'; post: KeeperPost };
   /** Heading home, to go in at a door. */
   home: boolean;
   /** Gone in: taken off the streets next step. */
@@ -77,6 +78,35 @@ const FRESH_TRIES = 12;
 /** How quickly someone lingering turns to face the spot. */
 const TURN = 3;
 
+/** A keeper this close to a spot stands in the way of those round it. */
+const KEEPER_NEAR = 3;
+
+/** Who stands fixed at a post: the Crown's guards and the shops' keepers. They don't count toward the town's numbers. */
+const fixed = (f: Townsman): boolean => f.task.kind === 'guard' || f.task.kind === 'keep';
+
+/** Those at posts who are in the way of anyone standing round a spot: the guards, and a keeper close by. */
+function postedBy(folk: readonly Townsman[], spot: TownSpot): Walker[] {
+  return folk.filter((f) => f.task.kind === 'guard' || (f.task.kind === 'keep' && Math.hypot(f.walker.x - spot.x, f.walker.z - spot.z) < KEEPER_NEAR)).map((f) => f.walker);
+}
+
+/** Is a keeper in their shop? By day, all of them; at night, only the tavern's. */
+export const keeping = (post: KeeperPost, night: boolean): boolean => !night || post.kind === 'tavern';
+
+/**
+ * A keeper's looks: from where they stand, not a draw from the town's dice, so they look the
+ * same each visit and the town's dice roll as they would without them. Dressed for the port,
+ * and never as a soldier.
+ */
+export function keeperLook(port: Port, post: KeeperPost): { look: number; dress: Dress } {
+  let tried = { look: 0, dress: townDress(dressKind(port), 0) };
+  for (let salt = 0; salt < 32; salt++) {
+    const look = Math.floor(hash2(Math.floor(post.x) * 7 + salt, Math.floor(post.z), 0x6b) * 1e6);
+    tried = { look, dress: townDress(dressKind(port), look) };
+    if (!tried.dress.soldier) return tried;
+  }
+  return tried;
+}
+
 /** One step of the town's comings and goings, while the captain walks a town. */
 export function stepTownsfolk(land: Land, dt: number, random: () => number): void {
   const port = land.sea.docked;
@@ -88,7 +118,8 @@ export function stepTownsfolk(land: Land, dt: number, random: () => number): voi
     return;
   }
   const doors = spots.filter((s) => s.kind === 'door');
-  const want = isNight(land.sea.clock.phase) ? NIGHT_FOLK : port.faction === 'pirate' ? DAY_FOLK - 1 : DAY_FOLK;
+  const night = isNight(land.sea.clock.phase);
+  const want = night ? NIGHT_FOLK : port.faction === 'pirate' ? DAY_FOLK - 1 : DAY_FOLK;
 
   // The Crown's soldiers take their posts at the Governor's door as soon as the captain's in town.
   if (!land.townsfolk.some((f) => f.task.kind === 'guard')) {
@@ -97,22 +128,29 @@ export function stepTownsfolk(land: Land, dt: number, random: () => number): voi
       land.townsfolk.push({ id: land.nextTownsman++, look, dress: townDress('soldier', look), walker: createWalker(post.x, post.y, post.z, post.facing), task: { kind: 'guard' }, home: false });
     }
   }
+  // The shops' keepers, behind their counters: all of them by day, only the tavern's at night.
+  for (const post of port.keepers ?? []) {
+    const here = land.townsfolk.find((f) => f.task.kind === 'keep' && f.task.post === post);
+    if (here && !keeping(post, night)) here.gone = true;
+    if (here || !keeping(post, night)) continue;
+    const { look, dress } = keeperLook(port, post);
+    land.townsfolk.push({ id: land.nextTownsman++, look, dress, walker: createWalker(post.x, post.y, post.z, post.facing), task: { kind: 'keep', post }, home: false });
+  }
   // Arriving, the town's already about its business: its folk are out at its places, not
   // all still to come out of their doors.
-  if (land.lastOut === null && !land.townsfolk.some((f) => f.task.kind !== 'guard')) {
+  if (land.lastOut === null && !land.townsfolk.some((f) => !fixed(f))) {
     const places = spots.filter((s) => s.kind !== 'door');
-    const guards = land.townsfolk.filter((f) => f.task.kind === 'guard').map((f) => f.walker);
     for (let i = 0; i < want && places.length > 0; i++) {
       const spot = pickSpot(places, (s) => standingAt(land.townsfolk, s).length, random)!;
-      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...guards], random);
-      const { look, dress } = freshLook(dressKind(port), land.townsfolk.map((f) => f.dress), random, land.lastOut ?? undefined);
+      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...postedBy(land.townsfolk, spot)], random);
+      const { look, dress } = freshLook(dressKind(port), land.townsfolk.filter((f) => f.task.kind !== 'keep').map((f) => f.dress), random, land.lastOut ?? undefined);
       land.lastOut = dress;
       const walker = createWalker(at.x, at.y, at.z, random() * Math.PI * 2);
       land.townsfolk.push({ id: land.nextTownsman++, look, dress, walker, task: { kind: 'linger', left: between(LINGER[spot.kind], random), spot, at }, home: false });
     }
     land.townSpawnIn = SPAWN_EVERY;
   }
-  const folk = land.townsfolk.filter((f) => f.task.kind !== 'guard');
+  const folk = land.townsfolk.filter((f) => !fixed(f));
   const about = folk.filter((f) => !f.home);
   // Out of a door, till there are enough about; the rest head home.
   land.townSpawnIn -= dt;
@@ -158,8 +196,8 @@ export function freshLook(kind: DressKind, about: readonly Dress[], random: () =
 
 function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readonly TownSpot[], dt: number, random: () => number): void {
   const t = f.task;
-  if (t.kind === 'guard') {
-    stepWalker(f.walker, 0, 0, land.world, dt); // stands his post
+  if (t.kind === 'guard' || t.kind === 'keep') {
+    stepWalker(f.walker, 0, 0, land.world, dt); // stands at their post
     return;
   }
   if (t.kind === 'walk') {
@@ -180,7 +218,7 @@ function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readon
     f.gone = f.home;
     return;
   }
-  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...others.filter((o) => o.task.kind === 'guard').map((o) => o.walker)], random);
+  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...postedBy(others, to)], random);
   const path = findPath(land.world, f.walker, at, 0.6, PATH_NODES);
   if (path && !f.home) path.push({ x: at.x, y: path[path.length - 1]?.y ?? f.walker.y, z: at.z });
   f.task = path ? { kind: 'walk', path, next: 0, stuck: 0, to, at } : { kind: 'wait', left: 2 };

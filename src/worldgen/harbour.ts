@@ -1,5 +1,5 @@
 import { SEA_LEVEL } from '../config';
-import type { PortFaction, PortPlace, PlaceKind, TownSpot } from '../economy/ports';
+import type { KeeperPost, PortFaction, PortPlace, PlaceKind, TownSpot } from '../economy/ports';
 import type { PropPlacement } from '../props/types';
 import { Block } from '../voxel/blocks';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
@@ -23,6 +23,8 @@ export interface Harbour {
   spots: TownSpot[];
   /** The town's props (see Town.decor), and the pier's. */
   decor: PropPlacement[];
+  /** Where the shops' keepers stand (see Town.keepers). */
+  keepers: KeeperPost[];
 }
 
 /** Columns this low leave room under any keel (surface ≤ 8 means 3.6+ units of water). */
@@ -80,7 +82,7 @@ export function buildHarbour(world: VoxelWorld, island: IslandParams, faction: P
     const sign = town.signs[kind];
     places.push(door && sign ? { kind, x: door.outX + 0.5, y: door.outY ?? door.y, z: door.outZ + 0.5, sign } : { ...places[0], kind });
   }
-  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor };
+  return { x: berth.x, z: berth.z, heading: Math.atan2(dx, dz), pier: { x: pier.x, y: PIER_Y + 1, z: pier.z }, places, lamps, town: town.layout, spots: town.spots, decor, keepers: town.keepers };
 }
 
 /** A post on the pier deck with a lantern standing on top; returns where the light is. */

@@ -1,5 +1,5 @@
 import { SEA_LEVEL } from '../config';
-import type { SpotKind, TownSpot } from '../economy/ports';
+import type { KeeperPost, SpotKind, TownSpot } from '../economy/ports';
 import type { PropKind, PropPlacement } from '../props/types';
 import { baseOf, Block, type BlockId, blocksWalker, FACING_DIRS, isSolid, slabOf, stairOf } from '../voxel/blocks';
 import { pointBlocked, topIn } from '../voxel/shapes';
@@ -67,6 +67,8 @@ export interface Town {
   beacon: { x: number; y: number; z: number } | null;
   /** Props set about the town: lanterns, signs, porches, the ship on the stocks. */
   decor: PropPlacement[];
+  /** Where each shop's keeper stands: behind the tavern's bar, the office's desk and the market's counter, and the shipwright in the shed. */
+  keepers: KeeperPost[];
 }
 
 /**
@@ -142,6 +144,7 @@ export function buildTown(
   const f = frame(footX, footZ, dx, dz);
   const decor: PropPlacement[] = [];
   const lamps: Town['lamps'] = [];
+  const keepers: KeeperPost[] = [];
   /** Porch decks' cells ("x,z"): half a block up from the ground under them. */
   const decked = new Set<string>();
   const natural = (u: number, v: number) => {
@@ -299,6 +302,9 @@ export function buildTown(
   buildShed(world, f, shed, low, style.roof, ys);
   const yardAt = at(f, q + 3, ys * 8);
   const yard = { x: yardAt.x + 0.5, y: low, z: yardAt.z + 0.5 };
+  // The shipwright, in the shed by the timber, looking out to the square.
+  const wright = at(f, shed.u0 + 1, ys * 10);
+  keepers.push({ kind: 'shipyard', x: wright.x + 0.5, y: low, z: wright.z + 0.5, facing: Math.atan2(-ys * f.sx, -ys * f.sz) });
 
   // The well, in the square.
   buildWell(world, footprint(f, well), low);
@@ -320,12 +326,14 @@ export function buildTown(
     let door: Door;
     if (lot.role === 'market') {
       door = buildMarketHall(world, fp, base, style, face.x + 0.5, face.z + 0.5);
-      furnish(world, fp, door, 'market', decor, look);
+      const post = furnish(world, fp, door, 'market', decor, look);
+      if (post) keepers.push({ kind: 'market', ...post });
     } else {
       const storeys = lot.role === 'house' ? (hash2(fp.x0, fp.z0, 71) < 0.4 ? 2 : 1) : lot.role === 'office' ? (style.officeStoreys ?? 2) : 2;
       door = buildHouse(world, fp, base, style, face.x + 0.5, face.z + 0.5, storeys);
       boardFloor(world, fp, base);
-      furnish(world, fp, door, lot.role, decor, look);
+      const post = furnish(world, fp, door, lot.role, decor, look);
+      if (post && lot.role !== 'house') keepers.push({ kind: lot.role, ...post });
       if (lot.role === 'tavern') barrelsBy(world, door);
       if (lot.role === 'office') flagOver(world, fp, style.flag);
     }
@@ -481,6 +489,7 @@ export function buildTown(
     lamps,
     beacon,
     decor,
+    keepers,
   };
 }
 

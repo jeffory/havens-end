@@ -81,7 +81,7 @@ export class PeopleView {
       );
     }
     // Townsfolk (by negative keys, clear of the settlers'), dressed for their port:
-    // strolling, lingering, and at the shipyard, hammering. Soldiers carry their muskets.
+    // strolling, lingering, keeping shop, and at the shipyard, hammering. Soldiers carry their muskets.
     for (const f of land.townsfolk) {
       const w = f.walker;
       const x = w.prev.x + (w.x - w.prev.x) * alpha;
@@ -98,7 +98,9 @@ export class PeopleView {
         this.figures.set(key, figure);
         this.group.add(figure.view.root);
       }
-      const working = !f.dress.soldier && f.task.kind === 'linger' && f.task.spot.kind === 'yard';
+      // At the yard they hammer: the townsfolk lingering there, and the shipwright at his post.
+      const shipwright = f.task.kind === 'keep' && f.task.post.kind === 'shipyard';
+      const working = !f.dress.soldier && ((f.task.kind === 'linger' && f.task.spot.kind === 'yard') || shipwright);
       const held: InHand | null = f.dress.soldier ? 'musket' : working ? 'hammer' : null;
       if (held !== figure.held) {
         figure.held = held;

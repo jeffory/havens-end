@@ -4,14 +4,14 @@ import { shipClass } from '../combat/vessel';
 import { SEA_LEVEL } from '../config';
 import { phaseOf } from '../core/clock';
 import { alike, type Dress, townDress } from '../duel/dress';
-import type { Port, PortPlace } from '../economy/ports';
+import type { KeeperPost, Port, PortPlace } from '../economy/ports';
 import { footprintSamples } from '../sailing/hull';
 import { BRIG, MERCHANT_BRIG, MERCHANT_SLOOP, SLOOP } from '../sailing/ships';
 import { Weather } from '../sailing/weather';
 import { Block } from '../voxel/blocks';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { Land } from './Land';
-import { pickSpot, type SpotKind, standAt, type TownSpot } from './townsfolk';
+import { keeperLook, pickSpot, type SpotKind, standAt, type TownSpot } from './townsfolk';
 import { collides } from './walker';
 
 const CLASSES = new Map(
@@ -264,5 +264,88 @@ describe('the Crown’s guards', () => {
     const { sea, land } = town({ ...port(2, 'imperial'), places: [SHIPYARD, { ...SHIPYARD, kind: 'office' }] });
     run(sea, land, 10);
     expect(guards(land)).toHaveLength(0);
+  });
+});
+
+describe('the shops’ keepers', () => {
+  /** In the flat town: the office's behind its desk (inside its walls), and three more out on the grass, well away from the spots townsfolk go to. */
+  const KEEPERS: KeeperPost[] = [
+    { kind: 'office', x: 28.5, y: FLOOR, z: -2.5, facing: -Math.PI / 2 },
+    { kind: 'tavern', x: -30.5, y: FLOOR, z: 30.5, facing: 0 },
+    { kind: 'market', x: -30.5, y: FLOOR, z: -30.5, facing: 0 },
+    { kind: 'shipyard', x: 30.5, y: FLOOR, z: 30.5, facing: Math.PI },
+  ];
+  const shops = (where: Port = TOWN): Port => ({ ...where, places: [SHIPYARD, { ...OFFICE }], keepers: KEEPERS });
+  const keepers = (land: Land) => land.townsfolk.filter((f) => f.task.kind === 'keep');
+  const about = (land: Land) => land.townsfolk.filter((f) => f.task.kind !== 'keep' && f.task.kind !== 'guard');
+  const kinds = (land: Land) => keepers(land).map((f) => (f.task.kind === 'keep' ? f.task.post.kind : '')).sort();
+  const ALL = ['market', 'office', 'shipyard', 'tavern'];
+
+  it('keep their shops by day: one at each post, standing still, facing the room’s front', () => {
+    const { sea, land } = town(shops());
+    run(sea, land, 0.1);
+    expect(kinds(land)).toEqual(ALL);
+    const ids = keepers(land).map((f) => f.id);
+    run(sea, land, 30);
+    expect(keepers(land).map((f) => f.id)).toEqual(ids);
+    for (const f of keepers(land)) {
+      if (f.task.kind !== 'keep') continue;
+      const { post } = f.task;
+      expect(Math.hypot(f.walker.x - post.x, f.walker.z - post.z), post.kind).toBeLessThan(0.05);
+      expect(f.walker.y, post.kind).toBe(post.y);
+      expect(f.walker.facing, post.kind).toBe(post.facing);
+    }
+  });
+
+  it('leave only the tavern keeper at night, and are all back in the morning', () => {
+    const { sea, land } = town(shops());
+    run(sea, land, 1);
+    const tavern = keepers(land).find((f) => f.task.kind === 'keep' && f.task.post.kind === 'tavern')!.id;
+    sea.clock.phase = phaseOf(23);
+    run(sea, land, 1);
+    expect(kinds(land)).toEqual(['tavern']);
+    expect(keepers(land)[0].id).toBe(tavern);
+    sea.clock.phase = phaseOf(8);
+    run(sea, land, 1);
+    expect(kinds(land)).toEqual(ALL);
+  });
+
+  it('are gone when the captain leaves town, and back behind their counters when they land', () => {
+    const where = shops();
+    const { sea, land } = town(where);
+    run(sea, land, 1);
+    sea.docked = null;
+    land.step(0.05);
+    expect(keepers(land)).toHaveLength(0);
+    sea.docked = where;
+    land.step(0.05);
+    expect(kinds(land)).toEqual(ALL);
+  });
+
+  it('dress for their port, never as soldiers, and look the same each visit', () => {
+    const where = shops(port(2, 'imperial'));
+    const { sea, land } = town(where);
+    run(sea, land, 1);
+    const looks = keepers(land).map((f) => f.look).sort();
+    for (const f of keepers(land)) {
+      expect(f.dress.soldier ?? false).toBe(false);
+      expect(f.dress).toEqual(townDress('imperial', f.look));
+      if (f.task.kind === 'keep') expect(keeperLook(where, f.task.post).look).toBe(f.look);
+    }
+    sea.docked = null;
+    land.step(0.05);
+    sea.docked = where;
+    land.step(0.05);
+    expect(keepers(land).map((f) => f.look).sort()).toEqual(looks);
+  });
+
+  it('don’t count toward the town’s numbers, and take nothing from its dice: the town goes on just as it would without them', () => {
+    const a = town({ ...TOWN, places: [SHIPYARD, { ...OFFICE }] }, 5);
+    const b = town(shops(), 5);
+    run(a.sea, a.land, 30);
+    run(b.sea, b.land, 30);
+    const where = (land: Land) => about(land).map((f) => [f.look, f.walker.x, f.walker.z]);
+    expect(about(b.land).length).toBeGreaterThanOrEqual(5);
+    expect(where(b.land)).toEqual(where(a.land));
   });
 });

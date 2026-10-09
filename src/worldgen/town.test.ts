@@ -719,4 +719,26 @@ describe('towns', () => {
       for (const s of onPorch) expect(groundBelow(world, s.x, s.z, s.y + 0.5), `${name} ${s.kind} spot at ${s.x},${s.z}`).toBe(s.y);
     }
   });
+
+  it('post a keeper in each shop with a building of its own: behind its counter, facing the room’s front, clear of every door', () => {
+    const COUNTERS = ['bar', 'barCask', 'desk', 'counterProduce', 'counterCloth'];
+    for (const { name, world, harbour } of PORTS) {
+      const yard = harbour.places.find((p) => p.kind === 'shipyard')!;
+      const own = harbour.places.filter((p) => p.kind === 'shipyard' || p.x !== yard.x || p.z !== yard.z);
+      expect(harbour.keepers.map((k) => k.kind).sort(), name).toEqual(own.map((p) => p.kind).sort());
+      for (const post of harbour.keepers) {
+        const label = `${name} ${post.kind}’s keeper`;
+        expect(collides(world, post.x, post.y, post.z), `${label}: room to stand`).toBe(false);
+        expect(groundBelow(world, post.x, post.z, post.y + 0.5), `${label}: on the floor`).toBe(post.y);
+        for (const p of harbour.places) expect(Math.hypot(post.x - p.x, post.z - p.z), `${label}, by the ${p.kind}’s door`).toBeGreaterThanOrEqual(1.5);
+        if (post.kind === 'shipyard') {
+          expect(inside(harbour.town.shed, Math.floor(post.x), Math.floor(post.z)), `${label}: in the shed`).toBe(true);
+          continue;
+        }
+        const ahead = { x: Math.floor(post.x + Math.sin(post.facing)), z: Math.floor(post.z + Math.cos(post.facing)) };
+        const counter = harbour.decor.find((d) => COUNTERS.includes(d.kind) && Math.floor(d.x) === ahead.x && Math.floor(d.z) === ahead.z);
+        expect(counter, `${label}: a counter before them`).toBeDefined();
+      }
+    }
+  });
 });
