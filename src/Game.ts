@@ -28,6 +28,7 @@ import { CameraRig } from './render/CameraRig';
 import { fightDistance, fightShift } from './render/fightFrame';
 import { roomDistance, roomShift, roomZoom } from './render/roomFrame';
 import { ChunkRenderer } from './render/ChunkRenderer';
+import type { Lift } from './render/lifts';
 import { RoofLifter } from './render/RoofLifter';
 import { Effects } from './render/Effects';
 import { FleetView } from './render/FleetView';
@@ -654,13 +655,14 @@ export class Game {
     else this.leaveFoot();
     // Ashore, cut away what's between the camera and the captain (and in port, every roof
     // round them), and fade your own ship beside you.
+    let lifted: Lift[] = [];
     if (walker) {
       const inTown = this.sea.docked && rig.distance < TOWN_LIFT_UNDER;
-      this.terrain.setLifts(this.lifter.update(this.shore.focus, walker.y, rig.camera.position, frameSeconds, inTown ? TOWN_LIFT_RADIUS : 0), rig.camera.position);
+      lifted = this.lifter.update(this.shore.focus, walker.y, rig.camera.position, frameSeconds, inTown ? TOWN_LIFT_RADIUS : 0);
     } else {
       this.lifter.clear();
-      this.terrain.setLifts([], rig.camera.position);
     }
+    this.terrain.setLifts(lifted, rig.camera.position);
     const near = walker ? Math.hypot(pose.x - walker.x, pose.z - walker.z) : Infinity;
     this.fleet.view(player.id)?.setFade(near < 16 ? 0.3 + 0.7 * Math.max(0, (near - 10) / 6) : 1);
     if (this.duel) {
@@ -688,7 +690,7 @@ export class Game {
     this.people.update(this.land, paused ? 1 : alpha, paused ? 0 : frameSeconds, time, focus);
     this.drops.update(this.land.drops, paused ? 1 : alpha, time, focus);
     const hoards = this.sea.captain.maps.filter((m) => m.tier === 'cursed').map((m) => ({ x: m.site.x, y: m.site.y + DEPTH, z: m.site.z }));
-    this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time, hoards);
+    this.nightLife.update(walker ? this.shore.focus : focus, dark, walker !== null, time, hoards, { lifts: lifted, camera: rig.camera.position });
     this.hud.setClock(sea.clock.day, clockText(phase), isNight(phase));
     // The music: quiet asleep or while the tab is hidden; Broadsides in a fight or a duel,
     // hushing the shanties; Ashore on foot.
