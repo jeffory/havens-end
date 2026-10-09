@@ -188,6 +188,21 @@ describe('wild goats', () => {
     for (const g of goats(land).slice(0, 2)) expect(g.fleeing).toBeGreaterThan(0);
   });
 
+  it('a goat bolting is heard once, not every step it runs', () => {
+    const { land } = upland();
+    loose(land, 'goat', 6.5, 0.5);
+    loose(land, 'goat', 9.5, 2.5);
+    land.creatures.forEach((c) => (c.walker.y = SEA_LEVEL + 7));
+    land.takeEvents();
+    for (let t = 0; t < 0.6; t += 1 / 20) land.step(1 / 20);
+    const bolts = () => land.takeEvents().filter((e) => e.kind === 'bolt');
+    const first = bolts();
+    expect(first).toHaveLength(2);
+    for (const e of first) expect(e).toMatchObject({ kind: 'bolt', creature: 'goat' });
+    for (let t = 0; t < 1; t += 1 / 20) land.step(1 / 20);
+    expect(bolts()).toHaveLength(0);
+  });
+
   it('are gone at night, as crabs and boar are gone by day', () => {
     const { land, sea } = upland();
     loose(land, 'goat', 20.5, 0.5);

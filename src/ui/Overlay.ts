@@ -26,6 +26,8 @@ export class Overlay {
   private readonly root: Root;
   readonly handlers: NavHandlers = {};
   kind: ScreenKind | null = null;
+  /** Called on every click in the panel (the menu's click sound). */
+  onClick?: () => void;
   /** Where focus last was, to recover from a focused button being disabled or removed. */
   private lastFocus: DOMRect | undefined;
 
@@ -40,11 +42,12 @@ export class Overlay {
       if (e.target instanceof HTMLElement) this.lastFocus = e.target.getBoundingClientRect();
     });
     // A click that disables its own button (buying the last you can afford) drops focus: pick it back up nearby.
-    this.el.addEventListener('click', () =>
+    this.el.addEventListener('click', () => {
+      this.onClick?.();
       requestAnimationFrame(() => {
         if (this.kind && !this.el.contains(document.activeElement)) recoverFocus(this.el, this.lastFocus);
-      }),
-    );
+      });
+    });
     parent.append(this.el);
     this.root = createRoot(this.el);
   }

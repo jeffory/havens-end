@@ -46,6 +46,7 @@ import { Weather, type Wind } from './sailing/weather';
 import { Bandits } from './land/bandits';
 import { Deposits } from './land/deposits';
 import { Land, TOWN_RADIUS } from './land/Land';
+import type { Walker } from './land/walker';
 import { type Building, isWorkshop } from './land/structures';
 import { LandView } from './render/LandView';
 import { type LightSource, NightLights } from './render/NightLights';
@@ -53,6 +54,11 @@ import { NightLife } from './render/NightLife';
 import { PropsView } from './render/PropsView';
 import { Soundtrack } from './audio/Soundtrack';
 import { SHANTIES } from './audio/tracks';
+import { shoreDistance } from './audio/sfx/ambience';
+import { groundOf } from './audio/sfx/ground';
+import { panFor } from './audio/sfx/mix';
+import { type Placement, Sfx } from './audio/sfx/Sfx';
+import { SoundDirector } from './render/SoundDirector';
 import { DropsView } from './render/DropsView';
 import { hasRelic, SPYGLASS_RANGE } from './treasure/relics';
 import { DEPTH } from './treasure/sites';
@@ -113,6 +119,8 @@ const TOWN_LIFT_RADIUS = 2;
 const TOWN_LIFT_UNDER = 60;
 /** On foot, with the camera further back than this, a pin marks the captain. */
 const PIN_BEYOND = 55;
+/** On foot, seconds between measures of how far it is to open water (for the surf). */
+const SHORE_EVERY = 0.5;
 /** Seconds of sim time per step while the night is slept through. */
 const SLEEP_STEP = 1;
 /** A card for going down holds this long (a key or a click skips it). */
@@ -199,6 +207,16 @@ export class Game {
   private readonly drops = new DropsView();
   /** The music: shanties at sea if they're wanted, a tune ashore, and another in a fight. */
   private readonly music = new Soundtrack();
+  /** The sound effects and the ambience. */
+  private readonly sfx = new Sfx();
+  /** What's heard when: the sim's events, the sails, footsteps and menus, as sound effects. */
+  private readonly sounds = new SoundDirector(this.sfx, (x, y, z) => this.placeSound(x, y, z));
+  private readonly soundPoint = new Vector3();
+  /** On foot, how far it is to open water, and the seconds since that was measured. */
+  private shoreNear = Infinity;
+  private shoreAge = Infinity;
+  /** The captain's purse last frame, to hear coins change hands in port. */
+  private lastGold = 0;
   private readonly nightLights = new NightLights();
   private readonly nightLife: NightLife;
   private readonly settings: Settings = loadSettings();
@@ -303,6 +321,11 @@ export class Game {
     this.story = new Story(this.world, this.sea, this.ports);
     this.sea.clock.length = this.settings.dayMinutes * 60;
     this.music.volume = this.settings.musicVolume;
+    this.sfx.volume = this.settings.effectsVolume;
+    // Browsers won't start sound before the player has pressed or clicked something.
+    const unlockSound = () => this.sfx.unlock();
+    window.addEventListener('keydown', unlockSound);
+    window.addEventListener('pointerdown', unlockSound);
     this.music.shanties.onTrack = (track) => this.hud.toast(`♪ The crew strikes up “${track.title}”`);
     const seabed = (this.seabed = new SeabedMap(this.world, 256, this.ship.x, this.ship.z));
 
@@ -323,6 +346,7 @@ export class Game {
     this.footHud = new FootHud(container);
     this.overlay = new Overlay(container);
     this.landView = new LandView(captains.get('player')!);
+    this.overlay.onClick = () => this.sounds.ui('click');
     this.nightLife = new NightLife(this.islands);
     this.fade = new Fade(container);
     this.shore = new Shore(this.land, this.treasure, this.landView, this.footHud, this.rig, this.input, {
@@ -333,7 +357,7 @@ export class Game {
       openSystem: () => this.openSystem(false),
       rest: () => this.rest(),
       aboard: (message) => this.toSea(message),
-      toast: (text, tone) => this.hud.toast(text, tone),
+      refused: () => this.sounds.ui('cant'),
       hidden: (x, y, z, id) => this.terrain.hides(x, y, z, id),
     });
     this.scene.add(
@@ -511,6 +535,7 @@ export class Game {
     saveSettings(this.settings);
     this.sea.clock.length = this.settings.dayMinutes * 60;
     this.music.volume = this.settings.musicVolume;
+    this.sfx.volume = this.settings.effectsVolume;
   }
 
   private openSystem(title: boolean): void {
@@ -575,7 +600,10 @@ export class Game {
     if (board && !orders.board && this.sea.player.status === 'afloat') {
       const result = this.land.goAshore();
       if (result.ok) this.toFoot(result.message);
-      else this.hud.toast(result.message, 'bad');
+      else {
+        this.sounds.ui('cant');
+        this.hud.toast(result.message, 'bad');
+      }
     }
 
     this.sea.step(dt, orders);
@@ -697,6 +725,7 @@ export class Game {
     const where = this.fade.active || document.hidden ? null : walker ? 'land' : player.status === 'afloat' ? 'sea' : null;
     const fighting = this.duel !== null || (where === 'sea' && this.sea.inBattle());
     this.music.update({ where, fighting, singing: this.settings.shanties }, frameSeconds);
+    this.soundFrame(where, walker, pose, overhead.strength, paused, frameSeconds);
 
     this.terrain.update(REMESH_BUDGET, focus);
     this.terrain.setTime(time);
@@ -730,6 +759,53 @@ export class Game {
     this.input.endFrame();
   }
 
+  /** Each frame's sounds: the sails going up, footsteps, coins in port, and the ambience. */
+  private soundFrame(where: 'sea' | 'land' | null, walker: Walker | null, pose: { x: number; z: number }, wind: number, paused: boolean, frameSeconds: number): void {
+    const { sounds, sea } = this;
+    const player = sea.player;
+    // Ashore or sunk the sails count as furled, so the first order after coming back aboard is heard.
+    if (walker || player.status !== 'afloat') sounds.sails(0, pose.x, pose.z);
+    else if (!paused) sounds.sails(this.orders.sails, pose.x, pose.z);
+    this.shoreAge += frameSeconds;
+    if (walker) {
+      // Paused (a menu, the sleep fade), the walk cycle runs on in place: no steps. The count
+      // it reached is heard as a single step on unpausing, as the director plays one however far it jumped.
+      if (!paused) {
+        const ground = groundOf(this.world.getVoxel(Math.floor(walker.x), Math.floor(walker.y - 0.5), Math.floor(walker.z)));
+        sounds.footfall(this.landView.footfalls, ground, walker.x, walker.y, walker.z);
+      }
+      if (this.shoreAge >= SHORE_EVERY) {
+        this.shoreAge = 0;
+        this.shoreNear = shoreDistance(this.world, walker.x, walker.z);
+      }
+    }
+    const gold = sea.captain.gold;
+    if ((this.overlay.kind === 'port' || this.overlay.kind === 'store') && gold !== this.lastGold) sounds.ui('coins');
+    this.lastGold = gold;
+    const focus = this.rig.focus;
+    const from = (x: number, z: number) => Math.hypot(x - focus.x, z - focus.z);
+    let fire = Infinity;
+    for (const b of this.land.buildings) if (b.kind === 'campfire') fire = Math.min(fire, from(b.x0 + b.w / 2, b.z0 + b.d / 2));
+    const bandits = this.land.bandits;
+    for (const c of bandits.camps) if (!bandits.state(c.id).gone) fire = Math.min(fire, from(c.x, c.z));
+    sounds.surroundings({
+      where: this.duel || this.overlay.kind ? null : where,
+      speed: Math.min(1, Math.abs(player.ship.surge) / player.cls.type.topSpeed),
+      wind,
+      shore: walker ? this.shoreNear : Infinity,
+      port: Math.min(...this.ports.map((p) => from(p.x, p.z))),
+      fire,
+      night: isNight(sea.clock.phase),
+    });
+  }
+
+  /** Where a sound is heard from: how far from the camera's focus, and panned by where it is on screen. */
+  private placeSound(x: number, y: number, z: number): Placement {
+    const { focus, camera } = this.rig;
+    const v = this.soundPoint.set(x, y, z).project(camera);
+    return { distance: Math.hypot(x - focus.x, y - focus.y, z - focus.z), pan: panFor(v.x) };
+  }
+
   /** What gives off light at night near here: fires and torches in camps, lamps in port, ships' lanterns. */
   private lightSources(): LightSource[] {
     const sources: LightSource[] = [];
@@ -749,6 +825,8 @@ export class Game {
   /** Turns what happened in the sim into smoke, splashes and news. */
   private handleEvents(events: SeaEvent[], time: number): void {
     const fx = this.effects;
+    // Under the fade (a night's sleep passing at once) nothing is heard.
+    if (!this.fade.active) this.sounds.sea(events, (id) => this.fleet.pose(id) ?? null);
     for (const e of events) {
       switch (e.kind) {
         case 'fire':
@@ -819,6 +897,7 @@ export class Game {
           break;
         }
         case 'refused':
+          this.sounds.ui('cant');
           this.hud.toast(REFUSALS[e.reason](this.ports[e.port].name), 'bad');
           break;
         case 'mending':
@@ -952,10 +1031,12 @@ export class Game {
 
   /** Painted pictures and their words: the intro, the epilogue. */
   private openStory(panels: readonly Panel[], title: string): void {
+    this.sounds.ui('page');
     this.openMenu(() => this.overlay.show('story', createElement(StoryPanels, { panels, title, done: this.closeScreen, nav: this.overlay.handlers })));
   }
 
   private openJournal(): void {
+    this.sounds.ui('page');
     this.openMenu(() =>
       this.overlay.show(
         'journal',
@@ -998,7 +1079,9 @@ export class Game {
 
   /** A chest dug up glitters; a cursed one's guardian rises. */
   private handleTreasure(): void {
-    for (const e of this.treasure.takeEvents()) {
+    const events = this.treasure.takeEvents();
+    if (!this.fade.active) this.sounds.treasure(events);
+    for (const e of events) {
       if (e.kind === 'found') {
         this.effects.emit('parrySparks', e.x + 0.5, e.y + 1.2, e.z + 0.5);
         this.effects.emit('dust', e.x + 0.5, e.y + 1, e.z + 0.5);
@@ -1011,7 +1094,10 @@ export class Game {
   private handleLand(_time: number): void {
     const focus = this.rig.focus;
     const near = (x: number, z: number) => Math.hypot(x - focus.x, z - focus.z) < 120;
-    for (const e of this.land.takeEvents()) {
+    const events = this.land.takeEvents();
+    // A night's work, stepped at once under the sleep fade, would be heard all together: under the fade nothing is.
+    if (!this.fade.active) this.sounds.land(events, (id) => this.land.building(id)?.kind);
+    for (const e of events) {
       if (e.kind === 'work' && near(e.x, e.z)) {
         const woody = e.action === 'fell' || e.action === 'chop';
         this.effects.emit(woody ? 'splinters' : 'dust', e.x + 0.5, e.y + 0.5, e.z + 0.5, 0, 0, 0.4);
@@ -1042,6 +1128,7 @@ export class Game {
   }
 
   private openChart(): void {
+    this.sounds.ui('page');
     this.openMenu(() =>
       this.overlay.show(
         'chart',
@@ -1098,7 +1185,7 @@ export class Game {
         lost: 'Harrow’s blade finds you, and you are dragged below in irons.',
       });
     }
-    this.duel = new DuelScene(setup, seed, this.duelHud, this.effects, this.rig, this.container);
+    this.duel = new DuelScene(setup, seed, this.duelHud, this.effects, this.rig, this.container, this.sounds);
     this.controls.setMode('duel');
     this.hud.setVisible(false);
     this.labels.setVisible(false);
@@ -1119,7 +1206,7 @@ export class Game {
     const cast: DuelCast = { player: this.captains.get('player')!, enemy: ghostModel(this.captains.get('pirate')!) };
     const island = islandName(this.islands[map.site.island]);
     const seed = Math.floor(this.sea.random() * 2 ** 31);
-    this.duel = new DuelScene(guardianDuel(ground, island, cast, hasRelic(this.sea.captain, 'cutlass')), seed, this.duelHud, this.effects, this.rig, this.container);
+    this.duel = new DuelScene(guardianDuel(ground, island, cast, hasRelic(this.sea.captain, 'cutlass')), seed, this.duelHud, this.effects, this.rig, this.container, this.sounds);
     this.controls.setMode('duel');
     this.landView.setVisible(false);
     this.footHud.setVisible(false);

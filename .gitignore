@@ -8,3 +8,4 @@ art-source
 __pycache__
 .assetgen
 .wrangler
+/sfx-raw/

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Gun } from './land/firearms';
 import type { Land } from './land/Land';
-import { Shore } from './Shore';
+import { Shore, type ShoreHost } from './Shore';
 import type { FootHud } from './ui/FootHud';
 
 /** The captain on foot, with only what the hotbar asks of the land: the guns they own. */
@@ -30,5 +30,17 @@ describe('on foot', () => {
     shore.broughtDown();
     expect(shore.placing).toBeNull();
     expect(shore['digging']).toBeNull();
+  });
+
+  it("tells the host once when something can't be done, and not when it can", () => {
+    const land = { walker: { x: 3.5, z: 4.5 }, digAim: () => ({ ok: false, reason: 'Too rocky to dig here.' }), townAt: () => null } as unknown as Land;
+    let refusals = 0;
+    const host = { refused: () => refusals++ } as unknown as ShoreHost;
+    const none = null as never;
+    const shore = new Shore(land, none, none, { onSelect: null } as unknown as FootHud, none, none, host);
+    shore['startDigging']();
+    expect(refusals).toBe(1);
+    shore['report']({ ok: true, message: 'Digging…' });
+    expect(refusals).toBe(1);
   });
 });

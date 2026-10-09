@@ -14,7 +14,7 @@ import { WATER_LEVEL } from '../ocean/waves';
 import { type Bandit, Bandits, type BanditsSnapshot, FLEE_AT, stepBandits } from './bandits';
 import { beds, CLAIM_RADIUS, campStores, fireAt, fireCentre, stepWorkshop, type WorkshopState } from './camps';
 import { clearCrop, CROP_FOR_SEED, CROPS, type Crop, type CropKind, type Sapling, saplingStage, showCrop, showSapling, type Stage, stageOf } from './crops';
-import { type Creature, CREATURES, harm, stepCreatures, strike } from './creatures';
+import { type Creature, type CreatureKind, bolted, CREATURES, harm, stepCreatures, strike } from './creatures';
 import { type Drop, DROP_SECONDS, dropItem, stepDrops } from './drops';
 import { aimPoint, GUN_LIST, GUNS, type Gun, hitChance, isGun, pickTarget, type Point3, resolveShot, type Shootable } from './firearms';
 import { atWork, breakfast, createSettler, type Fallow, type Job, type Settler, stepSettler, think } from './settlers';
@@ -79,7 +79,13 @@ export type LandEvent =
   | { kind: 'notice'; text: string; tone: 'info' | 'good' | 'bad' }
   | { kind: 'shot'; gun: Gun | 'musket'; from: Point3; to: Point3; hit: 'creature' | 'bandit' | 'captain' | null }
   | { kind: 'hurt'; x: number; y: number; z: number }
-  | { kind: 'downed'; toll: number; pack: boolean };
+  | { kind: 'downed'; toll: number; pack: boolean }
+  /** A camp takes up the fight: where the first bandit stands. */
+  | { kind: 'alarm'; x: number; y: number; z: number }
+  /** A beast that wasn't fleeing starts to. */
+  | { kind: 'bolt'; creature: CreatureKind; x: number; y: number; z: number }
+  /** The captain's gun has finished loading. */
+  | { kind: 'loaded'; gun: Gun };
 
 export type Action = 'fell' | 'chop' | 'mine' | 'break' | 'dig' | 'till' | 'plant' | 'harvest' | 'unbuild' | 'fish' | 'catch';
 
@@ -304,7 +310,12 @@ export class Land {
       stepSettler(this, s, dt, live);
     }
     this.work(dt);
-    for (const gun of GUN_LIST) if (this.loading[gun]) this.loading[gun] = Math.max(0, this.loading[gun]! - dt);
+    for (const gun of GUN_LIST) {
+      const left = this.loading[gun];
+      if (!left) continue;
+      this.loading[gun] = Math.max(0, left - dt);
+      if (left > 0 && this.loading[gun] === 0) this.events.push({ kind: 'loaded', gun });
+    }
     this.pouchInPort();
     if (this.walker && this.health < HEALTH_MAX) {
       this.quiet += dt;
@@ -707,7 +718,11 @@ export class Land {
       return b ? this.shootBandit(b, damage) : done('');
     }
     const c = this.creatures.find((o) => o.id === t.id);
-    return c ? this.landed(c, harm(c, damage, w.x, w.z), 'Shot') : done('');
+    if (!c) return done('');
+    const calm = c.fleeing <= 0;
+    const caught = harm(c, damage, w.x, w.z);
+    if (calm && !caught) bolted(this, c); // one brought down doesn’t run
+    return this.landed(c, caught, 'Shot');
   }
 
   /** A shot lands on a bandit: the camp takes up the fight; badly hurt they run; down, they leave cartridges and a few gold. */
@@ -733,7 +748,10 @@ export class Land {
 
   /** The captain is seen, heard or shot at: the camp takes up the fight, and if that starts one, the captain is warned. */
   alertBandits(): void {
-    if (this.bandits.alertAll()) this.events.push({ kind: 'notice', text: 'Bandits! They’ve seen you.', tone: 'bad' });
+    if (!this.bandits.alertAll()) return;
+    this.events.push({ kind: 'notice', text: 'Bandits! They’ve seen you.', tone: 'bad' });
+    const first = this.bandits.live.find((b) => b.mode === 'fight');
+    if (first) this.events.push({ kind: 'alarm', x: first.walker.x, y: first.walker.y, z: first.walker.z });
   }
 
   /** A bandit is gone from their camp, fallen or fled: the last of them clears it. */
@@ -928,7 +946,10 @@ export class Land {
 
   private hit(c: Creature, tool: Tool): Outcome {
     const w = this.walker!;
-    return this.landed(c, strike(c, tool, w.x, w.z), 'Caught');
+    const calm = c.fleeing <= 0;
+    const caught = strike(c, tool, w.x, w.z);
+    if (calm && !caught) bolted(this, c); // one brought down doesn’t run
+    return this.landed(c, caught, 'Caught');
   }
 
   /** A blow or a shot landed on a creature: it bolts, or it's down and what it gives falls where it lay. */

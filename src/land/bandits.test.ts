@@ -245,6 +245,21 @@ describe('bandits', () => {
     expect(warned(events)).toHaveLength(0);
   });
 
+  it('a camp taking up the fight raises an alarm, once', () => {
+    const { land } = ashore(0.5, 30.5);
+    run(land, 1);
+    land.takeEvents();
+    Object.assign(land.walker!, { x: 0.5, z: 12.5 });
+    run(land, 1);
+    const alarms = (events: LandEvent[]) => events.filter((e) => e.kind === 'alarm');
+    const [alarm] = alarms(land.takeEvents());
+    const first = land.bandits.live[0].walker;
+    expect(alarm).toEqual({ kind: 'alarm', x: expect.any(Number), y: expect.any(Number), z: expect.any(Number) });
+    expect(Math.hypot((alarm as { x: number }).x - first.x, (alarm as { z: number }).z - first.z)).toBeLessThan(40);
+    land.alertBandits();
+    expect(alarms(land.takeEvents())).toHaveLength(0);
+  });
+
   it('at night see only half as far', () => {
     const { land, sea } = ashore(0.5, 13.5);
     sea.clock.phase = phaseOf(23);

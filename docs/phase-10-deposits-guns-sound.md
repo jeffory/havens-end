@@ -194,6 +194,44 @@ fades in wherever the captain came to. It grows out of the sleep fade.
 
 ## 10.3 Sound
 
+**Built** (2026-10-09; [the plan](superpowers/plans/2026-10-09-phase-10-3-sound.md)).
+ARCHITECTURE.md §9 ("Sound") describes what was built: 98 takes of 47 sounds (40
+one-shots, 7 loops), 1.6 MB, made with ElevenLabs through Comfy Cloud's MCP. The
+engine is `audio/sfx/Sfx.ts`, not `audio/Sfx.ts`. These rulings were made on the
+player's behalf, all open to them:
+- **Loops glide in from silence** (a 0.6 s time constant), rather than jumping to their
+  level.
+- **The effects volume applies per voice,** as each starts; with it off nothing is
+  fetched.
+- **The ambience is silent in duels and menus,** as well as asleep, with the tab hidden
+  and when sunk.
+- **The ambience formulas** (`audio/sfx/ambience.ts`):
+  - at sea, waves 0.5 + 0.4 × speed, timbers 0.25 + 0.45 × speed, rigging 0.7 × the
+    wind's strength (to at most 0.7);
+  - on foot, surf 0.8 × closeness² within 30 of open water, harbour bustle 0.7 ×
+    closeness within 60 of a port (halved at night), campfire 0.9 × closeness² within
+    12 of a camp's or bandit camp's fire;
+  - gulls 0.6 × closeness within 150 of a port, by day, at sea or ashore.
+- **Which event plays which sound** is `SoundDirector`'s table:
+  - work: chop and unbuild the axe, felling the tree falling, mine the pickaxe, break
+    the outcrop breaking, dig and till the spade (planting at half), harvest the
+    pickup, fishing a soft splash;
+  - building and razing a light axe chop; the sawpit's saw and the forge's hammer as
+    they make something (the building looked up by the event's id);
+  - grape shot hits and splashes at half; chain shot adds a sail tear; a barrel's thud
+    and a floating barrel are a hull hit and a splash, softer;
+  - sails set when the order rises from furled, or by half or more at once;
+  - new land events for the purpose: `alarm` (a bandit's shout), `bolt` (the goat or
+    boar; crabs are silent) and `loaded` (the reload);
+  - in the duel, a hit is a grunt (a kick its own sound), a guard break the blade
+    clash, a defeat a grunt.
+- **Footsteps by footfall:** one step each time the walk cycle's count changes, however
+  far it jumped, and none while paused (a menu, the sleep fade). The ground is the
+  block under the captain's feet: sand, grass, wood or stone.
+- **Menus:** a click for any click in an open menu; a page as the chart, journal or a
+  story opens; coins when gold changes while a port or store menu is open; "can't" on
+  the Shore's bad-tone notices and the harbour's refusals.
+
 **The engine** (new `audio/Sfx.ts`, Web Audio):
 - One audio context, started by the first key press or click (as the music is). An
   "Effects volume" setting beside "Music volume", with Off.

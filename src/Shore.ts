@@ -28,7 +28,8 @@ export interface ShoreHost {
   openSystem(): void;
   rest(): void;
   aboard(message: string): void;
-  toast(text: string, tone?: 'info' | 'good' | 'bad'): void;
+  /** Something the captain tried on foot couldn't be done (heard as a "can't"). */
+  refused(): void;
   /** Is this block cut away from view (a tree or roof between the camera and the captain)? */
   hidden(x: number, y: number, z: number, id: BlockId): boolean;
 }
@@ -301,6 +302,7 @@ export class Shore {
 
   private report(result: { ok: boolean; message: string }): void {
     if (result.message) this.hint = { text: result.message, until: this.clock + HINT_SECONDS, ok: result.ok };
+    if (!result.ok) this.host.refused();
   }
 
   /** The block under the mouse, if the mouse is what's being used (or was just clicked) and the captain can reach it. */
