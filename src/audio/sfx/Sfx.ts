@@ -139,14 +139,24 @@ export class Sfx {
 
   /** Play a sound once, if it's in reach and its files have loaded. */
   play(id: SoundId, options: PlayOptions = {}): void {
-    const { context, master } = this;
-    if (!context || !master || this.level <= 0) return;
-    const spec = SOUNDS[id];
-    const reach = options.at ? falloff(options.at.distance, spec.reach) : 1;
+    if (!this.context || !this.master || this.level <= 0) return;
+    const reach = options.at ? falloff(options.at.distance, SOUNDS[id].reach) : 1;
     if (reach <= 0) return;
     const buffer = this.take(id);
-    if (!buffer) return;
+    if (buffer) this.start(id, buffer, options, reach);
+  }
 
+  /** Play exactly one take (counting from 0) of a sound or loop, once, centred at full strength: for the dev sound board. */
+  playTake(id: SfxName, take: number): void {
+    const url = this.files(id)[take];
+    const buffer = url === undefined ? undefined : this.buffers.get(url);
+    if (buffer && this.level > 0) this.start(id, buffer, {}, 1);
+  }
+
+  private start(id: SfxName, buffer: object, options: PlayOptions, reach: number): void {
+    const { context, master } = this;
+    if (!context || !master) return;
+    const spec = SOUNDS[id];
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = pitchFor(spec.pitch, this.random);

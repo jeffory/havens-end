@@ -7,6 +7,12 @@ const container = document.getElementById('app')!;
 buildStamp(container);
 
 async function main(): Promise<void> {
+  // The dev sound board: /?sounds. A dynamic import, so production never bundles it.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('sounds')) {
+    const { mountSoundBoard } = await import('./ui/SoundBoard');
+    mountSoundBoard(container);
+    return;
+  }
   const game = await Game.create(container);
   // ?load=<slot> comes from the game menu's Load; ?new from New game. Anything else offers the autosave.
   const params = new URLSearchParams(location.search);

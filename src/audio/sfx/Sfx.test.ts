@@ -123,6 +123,18 @@ describe('the sound effects', () => {
     expect(sfx.voices).toBe(1);
   });
 
+  it('playTake plays exactly that file', async () => {
+    const { sfx, started } = setup();
+    sfx.unlock();
+    await settle();
+    sfx.playTake('cannon', 1);
+    sfx.playTake('waves', 0);
+    sfx.playTake('cannon', 7);
+    expect(started.map((s) => new TextDecoder().decode((s.buffer as { bytes: ArrayBuffer }).bytes))).toEqual(['cannon-2.mp3', 'waves-1.mp3']);
+    expect(started[0].loop).toBe(false);
+    expect(sfx.voices).toBe(2);
+  });
+
   it('drops a sound out of reach without taking a voice', async () => {
     const { sfx, started } = setup();
     sfx.unlock();
