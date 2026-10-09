@@ -1330,7 +1330,7 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   text-align: center;
 }
 
-/* None to hand: a sunken slot and a grey picture (still about 3:1), and the name reads plainly. */
+/* None to hand: a sunken slot and a grey picture (still about 3:1); the name a shade greyer than a full slot’s, but plain to read (7.5:1). */
 .foot-slot.empty {
   border-color: #e2dccf;
   background: #ece8df;
@@ -1341,7 +1341,7 @@ tr.contraband { background: rgb(58 42 26 / 0.06); }
   opacity: 0.7;
 }
 
-.foot-slot.empty span { color: #56626d; }
+.foot-slot.empty span { color: #3d4955; }
 
 .foot-slot.empty b {
   background: #d5cfc2;
