@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cutsProp, type Lift, liftedBy, Lifts, MAX_LIFTS } from './lifts';
+import { type Lift, liftedBy, Lifts, MAX_LIFTS, propTop } from './lifts';
 
 /** Far from everything, so no room's walls face it. */
 const NOWHERE = { x: 0, z: 0 };
@@ -75,22 +75,22 @@ describe('lifts', () => {
     });
 
     it('cuts furniture against the walls facing the camera as low as those walls, from every quarter, so it hides nobody behind it', () => {
-      // A shelf two high, a block in from each wall; a table in the middle; a post on the porch.
+      // A shelf, by its anchor, a block in from each wall; a table in the middle; a post on the porch.
       const SHELVES = { west: [2.5, 3.5], east: [7.5, 3.5], north: [4.5, 2.5], south: [4.5, 5.5] } as const;
       for (const { name, eye, near } of QUARTERS) {
         for (const [wall, [x, z]] of Object.entries(SHELVES)) {
-          const facing = (near as readonly string[]).includes(wall);
-          expect(cutsProp(house, eye, x, FLOOR + 0.5, z), `${name}: the shelf by the ${wall} wall, its first course`).toBe(false);
-          expect(cutsProp(house, eye, x, FLOOR + 1, z), `${name}: the shelf by the ${wall} wall, level with the cut`).toBe(false);
-          expect(cutsProp(house, eye, x, FLOOR + 1.5, z), `${name}: the shelf by the ${wall} wall, above the cut`).toBe(facing);
+          const top = propTop(house, eye, x, z);
+          // Its first course stands, and a counter's top level with the cut; above that it's cut.
+          if ((near as readonly string[]).includes(wall)) expect(top, `${name}: the shelf by the ${wall} wall`).toBeCloseTo(FLOOR + 1, 1);
+          else expect(top, `${name}: the shelf by the ${wall} wall`).toBe(Infinity);
         }
-        expect(cutsProp(house, eye, 4.5, FLOOR + 1.5, 3.5), `${name}: the table in the middle`).toBe(false);
-        expect(cutsProp(house, eye, 4.5, FLOOR + 1.5, 8.5), `${name}: the porch, outside the room`).toBe(false);
+        expect(propTop(house, eye, 4.5, 3.5), `${name}: the table in the middle`).toBe(Infinity);
+        expect(propTop(house, eye, 4.5, 8.5), `${name}: the porch, outside the room`).toBe(Infinity);
       }
       // As low as the walls, if the line of sight cuts the whole box lower.
-      expect(cutsProp({ ...house, from: FLOOR - 0.5 }, { x: 40, z: 40 }, 7.5, FLOOR + 0.5, 3.5)).toBe(true);
+      expect(propTop({ ...house, from: FLOOR - 0.5 }, { x: 40, z: 40 }, 7.5, 3.5)).toBeCloseTo(FLOOR, 1);
       // And nothing, out of a room.
-      expect(cutsProp({ x0: 0, z0: 0, x1: 10, z1: 10, from: 14.5 }, { x: 40, z: 40 }, 8.5, 20, 3.5)).toBe(false);
+      expect(propTop({ x0: 0, z0: 0, x1: 10, z1: 10, from: 14.5 }, { x: 40, z: 40 }, 8.5, 3.5)).toBe(Infinity);
     });
 
     it('cuts no wall lower for a camera straight over the room', () => {

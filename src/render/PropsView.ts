@@ -28,16 +28,23 @@ const TOWN_REACH = 150;
 /**
  * Puts into a props material's shaders that one hung on a building that's lifted away goes
  * with it, and furniture against a lifted room's wall facing the camera is cut as low as the
- * wall (`propTop` is how high it stands there), the lifts' uniforms shared.
+ * wall, the lifts' uniforms shared. Both go by the prop's anchor, so they're worked out once a
+ * vertex, not a fragment: `vTop` is how high the prop stands (below anything, if it's lifted
+ * away; 1e6 if it's whole).
  */
 function goWithLifts(shader: WebGLProgramParametersWithUniforms, lifts: Lifts): void {
   Object.assign(shader.uniforms, lifts.uniforms);
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute vec3 anchor;\nvarying vec3 vAnchor;\nvarying vec3 vSpot;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAnchor = anchor;\nvSpot = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+    .replace('#include <common>', `#include <common>\n${LIFT_GLSL}\nattribute vec3 anchor;\nvarying vec3 vSpot;\nvarying float vTop;`)
+    .replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+vSpot = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+vTop = anchor.y < ${NEVER_LIFTED / 2}.0 ? 1e6 : lifted(anchor) ? -1e6 : propTop(anchor);`,
+    );
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\n${LIFT_GLSL}\nvarying vec3 vAnchor;\nvarying vec3 vSpot;`)
-    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nfloat propHeight = propTop(vSpot);\nif (lifted(vAnchor) || vSpot.y > propHeight) discard;');
+    .replace('#include <common>', '#include <common>\nvarying vec3 vSpot;\nvarying float vTop;')
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vSpot.y > vTop) discard;');
 }
 
 /**
@@ -69,10 +76,10 @@ export class PropsView {
         .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying float vGlow;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = step(1.5, flags);');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform vec3 uCapColor;\nvarying float vGlow;')
+        .replace('#include <common>', `#include <common>\n${LIFT_GLSL}\nuniform float uGlow;\nuniform vec3 uCapColor;\nvarying float vGlow;`)
         // A face's back is only ever seen through a cut: drawn as the cut's cap, lit as a top
         // face is. (Elsewhere it's left out: the prop's own faces hide it.)
-        .replace('#include <color_fragment>', '#include <color_fragment>\nif (!gl_FrontFacing) {\n  if (propHeight > 1e5) discard;\n  diffuseColor.rgb = uCapColor;\n}')
+        .replace('#include <color_fragment>', '#include <color_fragment>\nif (!gl_FrontFacing) {\n  if (vTop > 1e5) discard;\n  diffuseColor.rgb = uCapColor;\n}')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (!gl_FrontFacing) normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (gl_FrontFacing) totalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
         // In a lifted room after dark, lamplight on it, as on the room's walls.

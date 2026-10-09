@@ -784,12 +784,14 @@ opens up whatever hides the captain, as in a doll's house.
   the chunks a lift reaches, and the props, cast theirs through a depth material that
   discards what's lifted, so a lifted roof leaves no shade in its room (a discard
   costs the shadow pass its early depth test, so other chunks use the plain one).
-- **Furniture against the near walls.** A prop in a room within a block of a wall
-  facing the camera is cut as low as that wall (`cutsProp`, and `propTop` in the
-  props' shader): a shelf there stood two high against a one-course wall and hid the
-  keeper at his post beside it. Its cut shows its inside, drawn from its back faces in
-  the walls' cap colour, so it reads as solid; elsewhere a prop goes whole or not at
-  all, by its anchor.
+- **Furniture against the near walls.** A prop anchored in a room within a block of a
+  wall facing the camera is cut as low as that wall (`propTop`, in TypeScript and in
+  the props' shader): a shelf there stood two high against a one-course wall and hid
+  the keeper at his post beside it. Its cut shows its inside, drawn from its back faces
+  in the walls' cap colour, so it reads as solid; elsewhere a prop goes whole or not
+  at all, by its anchor. Both go by the anchor, so the props' shader works them out
+  once a vertex: a back face outside a cut is thrown away at once, and drawing both
+  sides costs next to nothing.
 - **The cut's top.** The mesher draws the top of a cutaway block under another, so a
   lifted wall has a clean top, and marks it: it's only ever seen as the top of a cut,
   and it's drawn in one dark timber colour, never glowing, on every building alike (a
