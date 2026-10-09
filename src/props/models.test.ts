@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { meshCells } from '../render/voxelGeometry';
 import { buildShipModel, type ShipModel } from '../sailing/shipModel';
 import { SLOOP } from '../sailing/ships';
-import { FLAG_GLOW } from '../voxel/palette';
+import { FLAG_GLOW, srgbToLinear } from '../voxel/palette';
 import { parseVox, type VoxFile } from '../vox/parseVox';
 import { writeVox } from '../vox/writeVox';
 import { HULL_ON_STOCKS_LENGTH } from '../worldgen/town';
 import { hullOnStocks, propCatalog, propFromVox } from './catalog';
+import { hearth } from './furniture';
+import { type Colour, COLOURS } from './kit';
 import { clock, lantern, signboard, wallLantern } from './models';
 import { PROP_SHAPES } from './shapes';
 import { PROP_KINDS, type PropKind, type PropModel } from './types';
@@ -149,6 +151,27 @@ describe('prop models', () => {
       return false;
     };
     expect((Object.keys(PROP_SHAPES) as PropKind[]).filter(glows).sort()).toEqual(['desk', 'hearth']);
+  });
+
+  /** The top voxel of each column of a model, as seen from straight above: its colour index. */
+  function fromAbove(m: PropModel): number[] {
+    const top = new Map<string, { y: number; c: number }>();
+    for (let i = 0; i < m.cells.length; i += 4) {
+      const k = `${m.cells[i]},${m.cells[i + 2]}`;
+      const seen = top.get(k);
+      if (!seen || m.cells[i + 1] > seen.y) top.set(k, { y: m.cells[i + 1], c: m.cells[i + 3] });
+    }
+    return [...top.values()].map((t) => t.c);
+  }
+  /** Is a model's colour index painted in one of these? */
+  const paintedIn = (m: PropModel, c: number, names: readonly Colour[]) =>
+    names.some((name) => [16, 8, 0].every((shift, i) => Math.abs(m.palette.colors[c * 3 + i] - srgbToLinear(((COLOURS[name] >> shift) & 0xff) / 255)) < 1e-6));
+
+  it('draw the hearth to read from above, not as a block of stone: its fire open to the sky, and under half its top stone', () => {
+    const m = hearth();
+    const tops = fromAbove(m);
+    expect(tops.filter((c) => (m.palette.flags![c] & FLAG_GLOW) !== 0).length, 'fire seen from above').toBeGreaterThanOrEqual(4);
+    expect(tops.filter((c) => paintedIn(m, c, ['stone', 'stoneDark', 'soot'])).length, 'stone seen from above').toBeLessThan(tops.length / 2);
   });
 
   it('lay rugs flat on the floor, a voxel thick, keeping nobody out', () => {

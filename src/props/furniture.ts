@@ -124,23 +124,45 @@ export function chest(): PropModel {
 }
 
 /**
- * A stone hearth against a wall, two blocks high: a hearthstone out into the room, a fire
- * glowing between the cheeks, a pot hung over it from an iron crane, a mantel shelf, and the
- * chimney breast up to head height (it goes on above, with the roof).
+ * A hearth against a wall (z = 0), two blocks high, drawn to read from above as well as from
+ * the room: a fire of logs out on the hearthstone, before the fireplace's mouth and open to
+ * the sky, a black pot of stew hung beside it from an iron crane, a stone surround under a
+ * timber mantel with a jug and a plate on it, a log pile, and a narrow chimney going on up
+ * the wall. (Its old full-width chimney breast over a fire tucked under the lintel read from
+ * above as a grey die.)
  */
 export function hearth(): PropModel {
-  const s = kit('stone', 'stoneDark', 'soot', 'ember', 'flame', 'iron', 'timber');
+  const s = kit('stone', 'stoneDark', 'soot', 'ember', 'flame', 'iron', 'ironLight', 'timber', 'timberDark', 'bark', 'clay', 'crockery');
   s.box(0, 0, 0, 7, 0, 6, 'stoneDark'); // the hearthstone
-  for (const x of [0, 6]) s.box(x, 1, 0, x + 1, 6, 4, 'stone'); // the cheeks
-  s.box(2, 1, 0, 5, 6, 0, 'soot'); // the fireback, blackened
-  s.box(2, 1, 1, 5, 1, 3, 'ember'); // the fire's bed
-  for (const [x, z] of [[2, 2], [3, 1], [4, 2], [5, 1]]) s.put(x, 2, z, 'flame');
-  s.box(2, 6, 2, 4, 6, 2, 'iron'); // the crane
-  s.put(4, 5, 2, 'iron'); // its hook
-  s.box(3, 3, 2, 4, 4, 3, 'iron'); // the pot
-  s.box(0, 7, 0, 7, 7, 4, 'stoneDark'); // the lintel
-  s.box(0, 8, 0, 7, 8, 5, 'timber'); // the mantel shelf
-  for (let y = 9; y <= 15; y++) for (let x = 1; x <= 6; x++) for (let z = 0; z <= 3; z++) s.put(x, y, z, (x * 3 + y * 5 + z) % 7 === 0 ? 'stoneDark' : 'stone');
+  for (const x of [0, 6]) s.box(x, 1, 0, x + 1, 5, 1, 'stone'); // the surround's cheeks
+  s.box(2, 1, 0, 5, 5, 0, 'soot'); // the fireback, blackened
+  s.box(0, 6, 0, 7, 7, 1, 'stone'); // the lintel over the mouth
+  s.box(0, 8, 0, 7, 8, 1, 'timber'); // the mantel shelf
+  s.box(0, 8, 2, 7, 8, 2, 'timberDark'); // its front edge
+  s.box(0, 9, 1, 1, 10, 2, 'clay'); // a jug on it
+  s.put(1, 11, 1, 'clay');
+  s.box(6, 9, 1, 7, 10, 1, 'crockery'); // a plate stood on edge
+  // The chimney, narrower than the hearth, going on up the wall: plain stone between a darker footing and cap.
+  for (let y = 9; y <= 15; y++) s.box(2, y, 0, 5, y, 1, y === 9 || y === 15 ? 'stoneDark' : 'stone');
+  // The fire: logs across the mouth and out onto the hearthstone, embers between, and flames rising.
+  for (const z of [2, 4]) s.box(1, 1, z, 5, 1, z, 'bark');
+  s.box(2, 1, 1, 5, 1, 1, 'ember');
+  s.box(1, 1, 3, 5, 1, 3, 'ember');
+  s.box(1, 2, 2, 4, 2, 4, 'flame');
+  for (const [x, z] of [[4, 2], [1, 4]] as const) s.put(x, 2, z, 'ember');
+  s.box(1, 3, 3, 4, 3, 3, 'flame');
+  s.box(2, 3, 2, 3, 3, 4, 'flame');
+  s.box(2, 4, 3, 3, 4, 3, 'flame');
+  s.put(2, 5, 3, 'flame');
+  // The pot, hung beside the flames from a crane swung out from the right-hand cheek: a dark iron
+  // belly, a pale rim, stew in it.
+  s.box(7, 6, 2, 7, 6, 5, 'iron'); // the crane's arm
+  s.put(6, 6, 5, 'iron'); // its hook
+  s.box(5, 3, 4, 7, 4, 6, 'iron'); // the pot
+  for (let x = 5; x <= 7; x++) for (let z = 4; z <= 6; z++) s.put(x, 5, z, x === 6 && z === 5 ? 'clay' : 'ironLight'); // its rim, round the stew
+  // Firewood stacked on the hearthstone.
+  for (const [y, z] of [[1, 5], [1, 6], [2, 5]] as const) s.box(0, y, z, 2, y, z, 'bark');
+  s.put(3, 1, 6, 'timberDark'); // a log end
   return s.model({ x: 4, y: 0, z: 4 }, EIGHTH);
 }
 
