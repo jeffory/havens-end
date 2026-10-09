@@ -50,7 +50,7 @@ export class PropsView {
         .replace('#include <common>', '#include <common>\nuniform float uGlow;\nvarying float vGlow;\nvarying vec3 vSpot;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
         // In a lifted room after dark, lamplight on it, as on the room's walls.
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nif (uRoomLight.r > 0.0 && inRoom(vSpot)) reflectedLight.indirectDiffuse += uRoomLight * diffuseColor.rgb;');
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nif (uRoomLight.r > 0.0 && inRoom(vSpot, 0.0)) reflectedLight.indirectDiffuse += uRoomLight * diffuseColor.rgb;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-props';
     this.depthMaterial.onBeforeCompile = (shader) => goWithLifts(shader, lifts);

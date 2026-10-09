@@ -120,9 +120,11 @@ float caustics(vec2 p, float t) {
 // The top of a cut: one cap colour, on every building alike.
 if (vCap > 0.5) diffuseColor.rgb = uCapColor;
 // A face looking into a lifted room (its walls' insides, its floor): lit by the room's lamps
-// after dark, so it reads as a wall, not a hole; and a lit window glows outward, not into it.
-// (After dark only: by day there's no lamplight, and a window's glow is faint.)
-bool lookingIn = uRoomLight.r > 0.0 && vCutaway > 0.5 && inRoom(floor(vCell) + 0.5 + round(vFaceWorld));
+// after dark, so it reads as a wall, not a hole; and a lit window in its walls glows outward,
+// not into it (embers standing in the room still glow). (After dark only: by day there's no
+// lamplight, and a window's glow is faint.)
+bool lookingIn = uRoomLight.r > 0.0 && vCutaway > 0.5 && inRoom(floor(vCell) + 0.5 + round(vFaceWorld), 0.0);
+bool walledIn = lookingIn && !inRoom(floor(vCell) + 0.5, 1.0);
 // Marked-out land: stripes across the ground inside it, and a line along its edge.
 float zoneEdge = 0.0;
 if (uZone.w > 0.0) {
@@ -147,7 +149,7 @@ if (under > 0.0) {
   reflectedLight.directDiffuse *= 1.0 + caustic * smoothstep(0.0, 0.5, under) * (1.0 - smoothstep(2.0, 8.0, under));
 }`,
         )
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow * (lookingIn ? 0.0 : 1.0) + uZoneColor * zoneEdge * 0.5;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow * (walledIn ? 0.0 : 1.0) + uZoneColor * zoneEdge * 0.5;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
     this.depthMaterial.onBeforeCompile = (shader) => cutAway(shader, this.lifts);

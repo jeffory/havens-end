@@ -69,10 +69,10 @@ bool lifted(vec3 cell) {
 }
 /** Lamplight in a lifted room (none by day). */
 uniform vec3 uRoomLight;
-/** Is a voxel (by its centre) within a lifted room's walls? */
-bool inRoom(vec3 cell) {
+/** Is a voxel (by its centre) within a lifted room's walls, or (inset 1) within them and not in them? */
+bool inRoom(vec3 cell, float inset) {
   for (int k = 0; k < ${MAX_LIFTS}; k++) {
-    vec4 r = uLiftRoom[k];
+    vec4 r = uLiftRoom[k] + vec4(inset, inset, -inset, -inset);
     if (cell.x > r.x && cell.x < r.z && cell.z > r.y && cell.z < r.w) return true;
   }
   return false;
