@@ -10,7 +10,9 @@ function fakeContext(decodeFails: (bytes: ArrayBuffer) => boolean = () => false)
       value,
       target: NaN,
       timeConstant: NaN,
+      glides: 0,
       setTargetAtTime(target: number, _start: number, timeConstant: number) {
+        p.glides++;
         p.target = target;
         p.timeConstant = timeConstant;
       },
@@ -47,9 +49,15 @@ function fakeContext(decodeFails: (bytes: ArrayBuffer) => boolean = () => false)
     state: 'suspended',
     destination: node('destination'),
     resumed: 0,
+    suspended: 0,
     resume() {
       ctx.resumed++;
       ctx.state = 'running';
+      return Promise.resolve();
+    },
+    suspend() {
+      ctx.suspended++;
+      ctx.state = 'suspended';
       return Promise.resolve();
     },
     createGain: () => node('gain', { gain: param() }),
@@ -76,13 +84,21 @@ function fakeContext(decodeFails: (bytes: ArrayBuffer) => boolean = () => false)
 }
 
 /** Every sound has two files, named after it; fetching records the URL. */
-function setup(options: { files?: (name: SfxName) => readonly string[]; decodeFails?: (bytes: ArrayBuffer) => boolean; random?: () => number } = {}) {
+function setup(
+  options: {
+    files?: (name: SfxName) => readonly string[];
+    decodeFails?: (bytes: ArrayBuffer) => boolean;
+    fetchFails?: (url: string) => boolean;
+    random?: () => number;
+  } = {},
+) {
   const fake = fakeContext(options.decodeFails);
   const fetched: string[] = [];
   const sfx = new Sfx({
     context: () => fake.ctx as unknown as AudioContextLike,
     fetchBytes: (url) => {
       fetched.push(url);
+      if (options.fetchFails?.(url)) return Promise.reject(new Error(`${url}: 404`));
       return Promise.resolve(new TextEncoder().encode(url).buffer as ArrayBuffer);
     },
     random: options.random ?? (() => 0.3),
@@ -203,5 +219,67 @@ describe('the sound effects', () => {
     sfx.setLoops({ ...silent(), waves: 1 });
     expect(started).toHaveLength(1); // the same source, kept alive
     expect(route(waves).gain?.target).toBeCloseTo(0.5);
+  });
+
+  it('a sound with one take failed to load plays its other take every time', async () => {
+    const { sfx, started } = setup({ fetchFails: (url) => url === 'cannon-2.mp3' });
+    sfx.unlock();
+    await settle();
+    for (let i = 0; i < 4; i++) sfx.play('cannon');
+    expect(started.map((s) => new TextDecoder().decode((s.buffer as { bytes: ArrayBuffer }).bytes))).toEqual(Array(4).fill('cannon-1.mp3'));
+  });
+
+  it('still takes turns among the takes that loaded', async () => {
+    const { sfx, started } = setup({
+      files: (name) => [`${name}-1.mp3`, `${name}-2.mp3`, `${name}-3.mp3`],
+      fetchFails: (url) => url === 'cannon-2.mp3',
+    });
+    sfx.unlock();
+    await settle();
+    for (let i = 0; i < 4; i++) sfx.play('cannon');
+    expect(started.map((s) => new TextDecoder().decode((s.buffer as { bytes: ArrayBuffer }).bytes))).toEqual(['cannon-1.mp3', 'cannon-3.mp3', 'cannon-1.mp3', 'cannon-3.mp3']);
+  });
+
+  it("a loop isn't glided again while its level holds", async () => {
+    const { sfx, started, route } = setup();
+    sfx.unlock();
+    await settle();
+    sfx.setLoops({ ...silent(), waves: 0.5 });
+    sfx.setLoops({ ...silent(), waves: 0.5 });
+    sfx.setLoops({ ...silent(), waves: 0.5004 });
+    const gain = route(started[0]).gain;
+    expect(gain?.glides).toBe(1);
+    sfx.setLoops({ ...silent(), waves: 0.6 });
+    expect(gain?.glides).toBe(2);
+    expect(gain?.target).toBeCloseTo(0.6 * SOUNDS.waves.volume);
+    sfx.setLoops({ ...silent(), waves: 0.0005 });
+    sfx.setLoops(silent());
+    expect(gain?.glides).toBe(4);
+    expect(gain?.target).toBe(0);
+  });
+
+  it('falls silent while the tab is hidden, and sounds again when it comes back', async () => {
+    const { sfx, ctx } = setup();
+    sfx.unlock();
+    await settle();
+    expect(ctx.state).toBe('running');
+    sfx.hidden = true;
+    expect(ctx.suspended).toBe(1);
+    expect(ctx.state).toBe('suspended');
+    sfx.unlock(); // a stray press while hidden doesn't wake it
+    expect(ctx.resumed).toBe(1);
+    sfx.hidden = false;
+    expect(ctx.resumed).toBe(2);
+    expect(ctx.state).toBe('running');
+  });
+
+  it('hiding the tab before sound has started is nothing', () => {
+    const { sfx, ctx } = setup();
+    expect(() => {
+      sfx.hidden = true;
+      sfx.hidden = false;
+    }).not.toThrow();
+    expect(ctx.suspended).toBe(0);
+    expect(ctx.resumed).toBe(0);
   });
 });

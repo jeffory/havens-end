@@ -49,6 +49,7 @@ export interface AudioContextLike {
   readonly state: string;
   readonly destination: NodeLike;
   resume(): Promise<void>;
+  suspend(): Promise<void>;
   createGain(): GainLike;
   createStereoPanner(): PannerLike;
   createBufferSource(): SourceLike;
@@ -57,6 +58,8 @@ export interface AudioContextLike {
 
 /** Seconds for a loop's gain to get most of the way to a new level. */
 const LOOP_GLIDE = 0.6;
+/** A loop's level changing by less than this isn't glided to afresh (but 0 always is). */
+const LOOP_STEADY = 0.001;
 
 interface Voice {
   source: SourceLike;
@@ -67,6 +70,8 @@ interface Voice {
 interface Loop {
   source: SourceLike;
   gain: GainLike;
+  /** The level it's gliding to. */
+  target: number;
 }
 
 function fetchBytes(url: string): Promise<ArrayBuffer> {
@@ -94,6 +99,7 @@ export class Sfx {
   private readonly pool = new VoicePool<Voice>();
   private readonly loops = new Map<LoopId, Loop>();
   private loopLevels: Readonly<Record<LoopId, number>> | null = null;
+  private tabHidden = false;
 
   constructor(
     options: {
@@ -107,6 +113,17 @@ export class Sfx {
     this.fetchBytes = options.fetchBytes ?? fetchBytes;
     this.random = options.random ?? Math.random;
     this.files = options.files ?? variantsOf;
+    // The game's frames stop in a hidden tab, so nothing could quieten the loops: the context is held instead.
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => (this.hidden = document.hidden));
+  }
+
+  /** Whether the tab is hidden: then all sound is held, and it carries on when the tab comes back. */
+  set hidden(h: boolean) {
+    this.tabHidden = h;
+    const context = this.context;
+    if (!context) return;
+    if (h) context.suspend().catch(() => {});
+    else if (context.state === 'suspended') context.resume().catch(() => {});
   }
 
   /** How loud the effects are, 0 (off) to 1. */
@@ -134,7 +151,7 @@ export class Sfx {
       this.master.connect(this.context.destination);
       this.load();
     }
-    if (this.context.state === 'suspended') this.context.resume().catch(() => {});
+    if (this.context.state === 'suspended' && !this.tabHidden) this.context.resume().catch(() => {});
   }
 
   /** Play a sound once, if it's in reach and its files have loaded. */
@@ -205,21 +222,28 @@ export class Sfx {
         source.connect(gain);
         gain.connect(master);
         source.start();
-        loop = { source, gain };
+        loop = { source, gain, target: NaN };
         this.loops.set(id, loop);
       }
+      // Silence is always glided to exactly.
+      if (target === loop.target || (target > 0 && Math.abs(target - loop.target) <= LOOP_STEADY)) continue;
+      loop.target = target;
       loop.gain.gain.setTargetAtTime(target, context.currentTime, LOOP_GLIDE);
     }
   }
 
-  /** A decoded take of the sound, not the one it played last; null if none has loaded. */
+  /** A decoded take of the sound, not the one it played last (of those that have loaded); null if none has. */
   private take(name: SfxName): object | null {
     const urls = this.files(name);
-    const i = pickVariant(urls.length, this.lastTake.get(name) ?? -1, this.random);
-    const buffer = i < 0 ? undefined : this.buffers.get(urls[i]);
-    if (!buffer) return null;
+    const ready: number[] = [];
+    urls.forEach((url, i) => {
+      if (this.buffers.has(url)) ready.push(i);
+    });
+    const pick = pickVariant(ready.length, ready.indexOf(this.lastTake.get(name) ?? -1), this.random);
+    if (pick < 0) return null;
+    const i = ready[pick];
     this.lastTake.set(name, i);
-    return buffer;
+    return this.buffers.get(urls[i]) ?? null;
   }
 
   /** Fetch and decode every sound's files not yet asked for, unless the effects are off. */

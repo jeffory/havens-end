@@ -86,6 +86,14 @@ describe('SoundDirector at sea', () => {
     sounds.sails(1, 0, 0);
     expect(sink.ids).toEqual(['sails-set', 'sails-set']);
   });
+
+  it('back aboard after the sails were counted furled ashore, the first order is heard', () => {
+    sounds.sails(0.5, 0, 0);
+    sounds.sails(0, 0, 0); // ashore: Game counts the sails as furled
+    sounds.sails(0, 0, 0);
+    sounds.sails(0.5, 0, 0);
+    expect(sink.ids).toEqual(['sails-set', 'sails-set']);
+  });
 });
 
 describe('SoundDirector ashore', () => {

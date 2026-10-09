@@ -1185,8 +1185,9 @@ silence, never an error, so the game runs and tests pass with the folder empty.
 - **One audio context,** made on the first key press or click, as the music's is.
 - **The effects volume** is a setting beside the music's (`VOLUME_CHOICES`, with Off).
   It's applied to each voice as it starts. With it off nothing is fetched.
-- **A one-shot** plays a random take, never the one it played last
-  (`mix.pickVariant`), with a slight pitch shift.
+- **A one-shot** plays a random take of those that have loaded, never the one it
+  played last (`mix.pickVariant`), with a slight pitch shift. A take that failed to
+  load is passed over, so the others still play.
 - **Where it is.** `Game.placeSound` gives a sound's distance from the camera's focus
   and its pan. It falls off quadratically to nothing at the sound's reach
   (`mix.falloff`); a reach of 0 is heard everywhere, centred. It pans by its place on
@@ -1194,7 +1195,10 @@ silence, never an error, so the game runs and tests pass with the folder empty.
 - **Voices.** At most 24 at once (`MAX_VOICES`), each sound or group held to its cap:
   footsteps 2 between them, cannon 8. Past either, the oldest is cut (`VoicePool`).
 - **Loops** start the first time their level rises above 0, from silence, and run on.
-  A new level glides in with a 0.6 s time constant, so they crossfade.
+  A new level glides in with a 0.6 s time constant, so they crossfade; a level that
+  hasn't moved (by more than 0.001) isn't glided to again.
+- **A hidden tab** suspends the context (`visibilitychange`), as the game's frames stop
+  there and couldn't quieten the loops; it resumes when the tab comes back.
 
 **The ambience** (`audio/sfx/ambience.ts`) sets each loop's level from where the
 captain is:
@@ -1207,11 +1211,15 @@ captain is:
 - **Gulls** by day within 150 of a port, at sea or ashore.
 - **Silence** in a duel, in any menu, asleep, with the tab hidden, and when sunk.
 
+Under the fade (asleep, or going down) no event is heard: a night's work, stepped all at
+once, would otherwise sound in one burst on waking.
+
 **The director** (`render/SoundDirector.ts`, free of three.js) turns events into
 sounds, beside `Effects`:
 - **The sea:** fire, hits (with a sail tear for chain shot), splashes, thuds, barrels,
   blasts and sinking; the sails set when the order rises from furled, or by half or
-  more at once.
+  more at once. Ashore or sunk the sails count as furled, so the first order back
+  aboard is heard.
 - **The land:** each kind of work (`WORK`); building and razing; the sawpit's saw and
   the forge's hammer as they make something (the building is looked up by id); shots
   and where they land; the captain hurt; a bandit's shout on `alarm`; goats and boar on
@@ -1222,7 +1230,8 @@ sounds, beside `Effects`:
   jumped. None while paused.
 - **Menus** (`Overlay.onClick`): a click for any click in an open menu, a page as the
   chart, journal or a story opens, coins when gold changes with a port or store menu
-  open, and "can't" on the Shore's bad-tone notices and the harbour's refusals.
+  open, and "can't" whenever something tried on foot can't be done (the Shore's
+  `refused`, once per try), when going ashore fails, and on the harbour's refusals.
 
 **Making the sounds** (`scripts/sfx/process.ts`). Takes are generated with ElevenLabs
 (`elevenlabs/sound-generation` through Comfy Cloud's MCP) and saved in `sfx-raw/`

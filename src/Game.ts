@@ -357,10 +357,7 @@ export class Game {
       openSystem: () => this.openSystem(false),
       rest: () => this.rest(),
       aboard: (message) => this.toSea(message),
-      toast: (text, tone) => {
-        if (tone === 'bad') this.sounds.ui('cant');
-        this.hud.toast(text, tone);
-      },
+      refused: () => this.sounds.ui('cant'),
       hidden: (x, y, z, id) => this.terrain.hides(x, y, z, id),
     });
     this.scene.add(
@@ -603,7 +600,10 @@ export class Game {
     if (board && !orders.board && this.sea.player.status === 'afloat') {
       const result = this.land.goAshore();
       if (result.ok) this.toFoot(result.message);
-      else this.hud.toast(result.message, 'bad');
+      else {
+        this.sounds.ui('cant');
+        this.hud.toast(result.message, 'bad');
+      }
     }
 
     this.sea.step(dt, orders);
@@ -763,7 +763,9 @@ export class Game {
   private soundFrame(where: 'sea' | 'land' | null, walker: Walker | null, pose: { x: number; z: number }, wind: number, paused: boolean, frameSeconds: number): void {
     const { sounds, sea } = this;
     const player = sea.player;
-    if (!walker && player.status === 'afloat' && !paused) sounds.sails(this.orders.sails, pose.x, pose.z);
+    // Ashore or sunk the sails count as furled, so the first order after coming back aboard is heard.
+    if (walker || player.status !== 'afloat') sounds.sails(0, pose.x, pose.z);
+    else if (!paused) sounds.sails(this.orders.sails, pose.x, pose.z);
     this.shoreAge += frameSeconds;
     if (walker) {
       // Paused (a menu, the sleep fade), the walk cycle runs on in place: no steps. The count
@@ -823,7 +825,8 @@ export class Game {
   /** Turns what happened in the sim into smoke, splashes and news. */
   private handleEvents(events: SeaEvent[], time: number): void {
     const fx = this.effects;
-    this.sounds.sea(events, (id) => this.fleet.pose(id) ?? null);
+    // Under the fade (a night's sleep passing at once) nothing is heard.
+    if (!this.fade.active) this.sounds.sea(events, (id) => this.fleet.pose(id) ?? null);
     for (const e of events) {
       switch (e.kind) {
         case 'fire':
@@ -1077,7 +1080,7 @@ export class Game {
   /** A chest dug up glitters; a cursed one's guardian rises. */
   private handleTreasure(): void {
     const events = this.treasure.takeEvents();
-    this.sounds.treasure(events);
+    if (!this.fade.active) this.sounds.treasure(events);
     for (const e of events) {
       if (e.kind === 'found') {
         this.effects.emit('parrySparks', e.x + 0.5, e.y + 1.2, e.z + 0.5);
@@ -1092,7 +1095,8 @@ export class Game {
     const focus = this.rig.focus;
     const near = (x: number, z: number) => Math.hypot(x - focus.x, z - focus.z) < 120;
     const events = this.land.takeEvents();
-    this.sounds.land(events, (id) => this.land.building(id)?.kind);
+    // A night's work, stepped at once under the sleep fade, would be heard all together: under the fade nothing is.
+    if (!this.fade.active) this.sounds.land(events, (id) => this.land.building(id)?.kind);
     for (const e of events) {
       if (e.kind === 'work' && near(e.x, e.z)) {
         const woody = e.action === 'fell' || e.action === 'chop';
