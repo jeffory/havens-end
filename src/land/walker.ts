@@ -157,8 +157,12 @@ export function blockerGround(world: VoxelReader, x: number, y: number, z: numbe
   return false;
 }
 
-/** How far below the walker's feet a column's blocker is still walled off: well past any prop. */
-const BLOCKER_REACH = 8;
+/**
+ * How far below the walker's feet a column's blocker is still walled off: past any drop in
+ * town, off a roof's ridge or a bank. The scan stops at the first thing below the feet that
+ * stops a walker, so in all but open air it's a cell or two.
+ */
+const BLOCKER_REACH = 64;
 
 /** The cells the walker's box spans along one axis, centred at `c`. */
 const spanOf = (c: number): readonly [number, number] => [Math.floor(c - HALF_WIDTH + EPSILON), Math.floor(c + HALF_WIDTH - EPSILON)];

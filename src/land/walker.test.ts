@@ -106,6 +106,19 @@ describe('stepWalker', () => {
     expect(w.x).toBeLessThan(stopped);
   });
 
+  it('refuses to drop onto a prop from high above it: off a ledge twelve up, down beside it instead', () => {
+    const world = beach();
+    for (let x = -20; x < 0; x++) for (let z = -20; z < 20; z++) for (let y = SEA_LEVEL; y < SEA_LEVEL + 12; y++) world.setVoxel(x, y, z, Block.Stone);
+    // A prop a cell out from the foot of the ledge: walking off the top, the drop's straight onto it.
+    for (let x = 1; x < 5; x++) for (let z = -2; z <= 2; z++) for (const y of [SEA_LEVEL, SEA_LEVEL + 1, SEA_LEVEL + 2]) world.setVoxel(x, y, z, Block.Blocker);
+    const w = walk(createWalker(-2.5, SEA_LEVEL + 12, 0.5), world, 1, 0, 3);
+    expect(w.onGround).toBe(true);
+    expect(w.y).toBe(SEA_LEVEL); // down on the ground,
+    expect(w.x).toBeGreaterThan(0);
+    expect(w.x).toBeLessThan(1 - 0.29); // beside it, never over it
+    expect(blockerGround(world, w.x, w.y, w.z)).toBe(false);
+  });
+
   it('walks over a floor or a roof with a prop under it: only the first thing below the feet counts', () => {
     const world = beach();
     // Furniture on the ground floor, its blocker three high, and the floor above laid right over it.
