@@ -29,5 +29,11 @@ export default defineConfig({
       },
     },
   },
-  test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'] },
+  test: {
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
+    // Capped: an uncapped run spawns ~85 workers at once on this machine and intermittently
+    // times out the slow world-building tests under the contention. A fixed, modest count
+    // is reliable without slowing the suite down.
+    maxWorkers: 4,
+  },
 });
