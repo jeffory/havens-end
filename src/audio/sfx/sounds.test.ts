@@ -43,4 +43,8 @@ describe('the catalogue', () => {
     });
     expect(m.get('cannon')).toEqual(['/1', '/2', '/10']);
   });
+
+  it('a cannon is heard over the splash of its shot', () => {
+    expect(SOUNDS.cannon.volume).toBeGreaterThan(SOUNDS.splash.volume * 2);
+  });
 });

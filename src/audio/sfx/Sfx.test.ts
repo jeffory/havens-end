@@ -62,6 +62,8 @@ function fakeContext(decodeFails: (bytes: ArrayBuffer) => boolean = () => false)
     },
     createGain: () => node('gain', { gain: param() }),
     createStereoPanner: () => node('panner', { pan: param(0) }),
+    createDynamicsCompressor: () =>
+      node('compressor', { threshold: param(-24), knee: param(30), ratio: param(12), attack: param(0.003), release: param(0.25) }),
     createBufferSource() {
       const s = node('source', {
         buffer: null,
@@ -158,6 +160,21 @@ describe('the sound effects', () => {
     sfx.play('cannon', { at: { distance: 400, pan: 0 } });
     expect(started).toHaveLength(0);
     expect(sfx.voices).toBe(0);
+  });
+
+  it('every sound goes through a limiter on its way out, so a broadside doesn\'t clip', async () => {
+    const { sfx, started, ctx } = setup();
+    sfx.unlock();
+    await settle();
+    sfx.play('cannon');
+    let n: { kind: string; out: unknown } | null = started[0];
+    const path: string[] = [];
+    while (n) {
+      path.push(n.kind);
+      n = n.out as typeof n;
+    }
+    expect(path).toEqual(['source', 'gain', 'panner', 'gain', 'compressor', 'destination']);
+    expect(ctx.destination.out).toBeNull();
   });
 
   it('caps a sound\'s voices and cuts the oldest', async () => {

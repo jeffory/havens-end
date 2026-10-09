@@ -1194,6 +1194,11 @@ silence, never an error, so the game runs and tests pass with the folder empty.
   screen, kept to ±0.7 (`mix.panFor`).
 - **Voices.** At most 24 at once (`MAX_VOICES`), each sound or group held to its cap:
   footsteps 2 between them, cannon 8. Past either, the oldest is cut (`VoicePool`).
+- **Balance and a limiter.** Every take is levelled to the same loudness, but a deep
+  boom reads quieter than a bright splash on small speakers, so each sound has a
+  `volume` tuned by ear: cannon 1.6, a shot's splash 0.65, the rest 1. Everything
+  ends in a limiter (a `DynamicsCompressor`, −6 dB, 20:1), so a full broadside is
+  loud but doesn't clip.
 - **Loops** start the first time their level rises above 0, from silence, and run on.
   A new level glides in with a 0.6 s time constant, so they crossfade; a level that
   hasn't moved (by more than 0.001) isn't glided to again.

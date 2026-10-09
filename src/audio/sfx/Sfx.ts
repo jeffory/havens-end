@@ -34,6 +34,14 @@ interface PannerLike extends NodeLike {
   readonly pan: ParamLike;
 }
 
+interface CompressorLike extends NodeLike {
+  readonly threshold: ParamLike;
+  readonly knee: ParamLike;
+  readonly ratio: ParamLike;
+  readonly attack: ParamLike;
+  readonly release: ParamLike;
+}
+
 interface SourceLike extends NodeLike {
   buffer: object | null;
   loop: boolean;
@@ -52,6 +60,7 @@ export interface AudioContextLike {
   suspend(): Promise<void>;
   createGain(): GainLike;
   createStereoPanner(): PannerLike;
+  createDynamicsCompressor(): CompressorLike;
   createBufferSource(): SourceLike;
   decodeAudioData(data: ArrayBuffer): Promise<object>;
 }
@@ -148,7 +157,15 @@ export class Sfx {
         return; // no Web Audio here: the game stays silent
       }
       this.master = this.context.createGain();
-      this.master.connect(this.context.destination);
+      // A limiter at the end, so a full broadside (eight cannon at once) is loud but never clips.
+      const limiter = this.context.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 3;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.2;
+      this.master.connect(limiter);
+      limiter.connect(this.context.destination);
       this.load();
     }
     if (this.context.state === 'suspended' && !this.tabHidden) this.context.resume().catch(() => {});
