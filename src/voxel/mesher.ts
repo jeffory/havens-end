@@ -23,7 +23,9 @@ export interface MeshData {
   /**
    * Per vertex, with the flags: which corner of its block's box it is, bits 1, 2 and 4 set on
    * the high side in x, y and z. A quarter block in from there is inside its own block, so the
-   * terrain shader finds the block every fragment of a face belongs to, edges and all.
+   * terrain shader finds the block every fragment of a face belongs to, edges and all. Bit 8
+   * marks a tree's or building's top kept under more of it: seen only when what's over it is
+   * lifted away, so it's the cut's top, and drawn as its cap.
    */
   corners?: Uint8Array;
 }
@@ -198,6 +200,7 @@ export function meshPaddedVolume(
           const liftable = !!flags && (flags[next] & FLAG_CUTAWAY) !== 0;
           const mine = !!flags && (flags[id] & FLAG_CUTAWAY) !== 0;
           const covered = inner && !(liftable && (!mine || face.normal[1] === 1));
+          const cap = inner && liftable && mine && face.normal[1] === 1 ? 8 : 0;
           // An inner face is lit as though what's against it had gone. The blocker casts no shade.
           const blocks = (v: number) => solid[v] === 1 && !hidden?.[v] && !(inner && flags && flags[v] & FLAG_CUTAWAY);
           for (let c = 0; c < 4; c++) {
@@ -225,7 +228,7 @@ export function meshPaddedVolume(
               colors.push(r * lit[c], g * lit[c], b * lit[c]);
               if (flags) {
                 marks.push(flags[id]);
-                corners.push(corner.x | (corner.y << 1) | (corner.z << 2));
+                corners.push(corner.x | (corner.y << 1) | (corner.z << 2) | (onSide ? cap : 0));
               }
             }
             // Split the quad along the diagonal with the brighter ends, so occlusion shades one

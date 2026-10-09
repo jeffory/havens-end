@@ -18,7 +18,15 @@ export interface LightSource {
 /** A fixed number of point lights, so the shaders never recompile as lights come and go. */
 const POOL = 6;
 const RANGE = 16;
-const INTENSITY = 16;
+/**
+ * Soft lamplight: a gentle falloff over a wide pool, rather than a hot spot under the lamp that
+ * burns out whoever stands beneath it (a lantern hangs by every shop's door).
+ */
+const INTENSITY = 5;
+const DECAY = 1;
+/** A lamp's halo: how wide (blocks) and how strong at full dark. */
+const HALO_SIZE = 2.5;
+const HALO_OPACITY = 0.55;
 /** Only sources this close to the view get a light. */
 const REACH = 90;
 
@@ -34,11 +42,11 @@ export class NightLights {
   constructor() {
     this.group.name = 'night-lights';
     for (let i = 0; i < POOL; i++) {
-      const light = new PointLight(0xffa040, 0, RANGE, 1.6);
+      const light = new PointLight(0xffa040, 0, RANGE, DECAY);
       light.castShadow = false;
       this.lights.push(light);
       const halo = new Sprite(glowMaterial(0xffb45a));
-      halo.scale.setScalar(4);
+      halo.scale.setScalar(HALO_SIZE);
       halo.visible = false;
       this.halos.push(halo);
       this.group.add(light, halo);
@@ -69,7 +77,7 @@ export class NightLights {
       light.intensity = INTENSITY * s.strength * dark * flicker;
       if (s.halo !== undefined) {
         halo.position.set(s.x, s.halo, s.z);
-        halo.material.opacity = dark * 0.85;
+        halo.material.opacity = dark * HALO_OPACITY;
       }
     });
   }

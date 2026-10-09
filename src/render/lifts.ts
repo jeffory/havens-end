@@ -1,10 +1,12 @@
-import { Vector2, Vector4 } from 'three';
+import { Color, Vector2, Vector4 } from 'three';
 
 /** At most this many lifted at once (the terrain shader's limit). */
 export const MAX_LIFTS = 12;
 
 /** A lift not in use sits under a height nothing reaches. */
 const NEVER = 1e6;
+/** Lamplight in a lifted room after dark: warm, and enough that its walls read as walls. */
+const ROOM_LIGHT = new Color(0xffb36b).multiplyScalar(0.6);
 
 /**
  * A box lifted away: on the grid from (x0, z0) up to but not including (x1, z1), everything
@@ -64,12 +66,22 @@ bool lifted(vec3 cell) {
       && cell.y > (facingEye(uLiftRoom[k], cell) ? uLiftFrom[k].y : uLiftFrom[k].x)) return true;
   }
   return false;
+}
+/** Lamplight in a lifted room (none by day). */
+uniform vec3 uRoomLight;
+/** Is a voxel (by its centre) within a lifted room's walls? */
+bool inRoom(vec3 cell) {
+  for (int k = 0; k < ${MAX_LIFTS}; k++) {
+    vec4 r = uLiftRoom[k];
+    if (cell.x > r.x && cell.x < r.z && cell.z > r.y && cell.z < r.w) return true;
+  }
+  return false;
 }`;
 
 /**
  * What's lifted away on foot, as shader uniforms shared by everything drawn that lifts:
- * the terrain, and props hung on buildings. Up to MAX_LIFTS boxes, and the camera they're
- * seen from (which of a room's walls face it).
+ * the terrain, and props hung on buildings. Up to MAX_LIFTS boxes, the camera they're seen
+ * from (which of a room's walls face it), and the lamplight in a lifted room after dark.
  */
 export class Lifts {
   readonly uniforms = {
@@ -77,6 +89,7 @@ export class Lifts {
     uLiftFrom: { value: Array.from({ length: MAX_LIFTS }, () => new Vector2(NEVER, NEVER)) },
     uLiftRoom: { value: Array.from({ length: MAX_LIFTS }, () => new Vector4()) },
     uLiftEye: { value: new Vector2() },
+    uRoomLight: { value: new Color(0, 0, 0) },
   };
   private lifts: readonly Lift[] = [];
   private readonly eye: Eye = { x: 0, z: 0 };
@@ -94,6 +107,11 @@ export class Lifts {
       const from = l ? l.from : NEVER;
       this.uniforms.uLiftFrom.value[k].set(from, r ? Math.min(from, r.front) : from);
     }
+  }
+
+  /** How brightly lamplight fills a lifted room: 0 by day, 1 at night. */
+  setRoomLight(amount: number): void {
+    this.uniforms.uRoomLight.value.copy(ROOM_LIGHT).multiplyScalar(amount);
   }
 
   /** Is the voxel at (x, y, z) lifted away? The shader's test, at the voxel's centre. */

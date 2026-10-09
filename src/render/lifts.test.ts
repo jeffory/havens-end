@@ -28,6 +28,17 @@ describe('lifts', () => {
     expect(lifts.holds(1, 1, 1)).toBe(true);
   });
 
+  it('light a lifted room warmly after dark, and not at all by day', () => {
+    const lifts = new Lifts();
+    lifts.setRoomLight(0);
+    expect(lifts.uniforms.uRoomLight.value.toArray()).toEqual([0, 0, 0]);
+    lifts.setRoomLight(1);
+    const [r, g, b] = lifts.uniforms.uRoomLight.value.toArray();
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(b).toBeGreaterThan(0);
+  });
+
   describe('a building’s room', () => {
     // Walls round x 1 to 8 and z 1 to 6, the floor at y 10; the box takes in the roof's
     // overhang (a block all round) and a porch two deep beyond the south wall.

@@ -44,11 +44,13 @@ export class PropsView {
       goWithLifts(shader, lifts);
       shader.uniforms.uGlow = this.glow;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying float vGlow;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = step(1.5, flags);');
+        .replace('#include <common>', '#include <common>\nattribute float flags;\nvarying float vGlow;\nvarying vec3 vSpot;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = step(1.5, flags);\nvSpot = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nvarying float vGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;');
+        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nvarying float vGlow;\nvarying vec3 vSpot;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;')
+        // In a lifted room after dark, lamplight on it, as on the room's walls.
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nif (uRoomLight.r > 0.0 && inRoom(vSpot)) reflectedLight.indirectDiffuse += uRoomLight * diffuseColor.rgb;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-props';
     this.depthMaterial.onBeforeCompile = (shader) => goWithLifts(shader, lifts);

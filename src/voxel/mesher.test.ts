@@ -126,6 +126,26 @@ describe('mesher options for models', () => {
     }
   });
 
+  it('marks the top of a building block kept under one that may be lifted away, and no other face, for the cut’s cap', () => {
+    const world = new VoxelWorld();
+    world.setVoxel(5, 5, 5, Block.Plaster);
+    world.setVoxel(5, 6, 5, Block.Thatch); // the plaster's top kept under it
+    world.setVoxel(9, 5, 5, Block.Window);
+    world.setVoxel(9, 6, 5, Block.Plaster); // the window's top kept under it
+    world.setVoxel(13, 5, 5, Block.Plaster); // open to the sky: a top, not a cut
+    world.setVoxel(17, 5, 5, Block.Stone);
+    world.setVoxel(17, 6, 5, Block.Plaster); // the ground's face against a building: kept, but not a building's top
+    world.setVoxel(21, 5, 5, Block.StoneStairE);
+    const mesh = meshChunk(world, 0, 0, 0)!;
+    const capped = new Set<string>();
+    for (let v = 0; v < mesh.positions.length / 3; v++) {
+      if (!(mesh.corners![v] & 8)) continue;
+      expect(mesh.normals[v * 3 + 1], 'a capped face looks up').toBe(1);
+      capped.add([0, 1, 2].map((a) => Math.floor(mesh.positions[v * 3 + a] + 0.25 - 0.5 * ((mesh.corners![v] >> a) & 1))).join(','));
+    }
+    expect([...capped].sort()).toEqual(['5,5,5', '9,5,5']);
+  });
+
   it('keeps the ground’s face against a tree or building, so lifting it leaves no hole', () => {
     const world = new VoxelWorld();
     world.setVoxel(5, 5, 5, Block.Stone);

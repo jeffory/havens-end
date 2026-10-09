@@ -11,6 +11,8 @@ import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
 const ZONE_COLOR = 0xe0583a;
+/** The top of a cut, where what was over it is lifted away: a dark timber plate, on every building alike. */
+const CAP_COLOR = 0x5b3f29;
 
 /**
  * GLSL, the vertex shader's part of cutting away what's lifted: the block a vertex's face
@@ -63,6 +65,7 @@ export class ChunkRenderer {
   /** Land marked out on the ground (a town's): centre x, z, radius, and how strongly it shows (0 = not at all). */
   private readonly zone = { value: new Vector4(0, 0, 0, 0) };
   private readonly zoneColor = { value: new Color(ZONE_COLOR) };
+  private readonly capColor = { value: new Color(CAP_COLOR) };
   /** Seconds, to move the caustics on the seabed. */
   private readonly time = { value: 0 };
 
@@ -73,13 +76,15 @@ export class ChunkRenderer {
       shader.uniforms.uGlow = this.glow;
       shader.uniforms.uZone = this.zone;
       shader.uniforms.uZoneColor = this.zoneColor;
+      shader.uniforms.uCapColor = this.capColor;
       shader.uniforms.uTime = this.time;
-      // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows.
+      // Block flags (see voxel/palette.ts): 1 = may be cut away, 2 = glows. A corner's 8: the
+      // top of a cut (see the mesher's corners), drawn as its cap, never glowing.
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nvarying float vGlow;\nvarying float vUp;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nvarying vec3 vFaceWorld;\nvarying float vCap;\nvarying float vGlow;\nvarying float vUp;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGlow = step(1.5, flags);\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
+          '#include <begin_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvFaceWorld = normalize(mat3(modelMatrix) * objectNormal);\nvCap = step(7.5, corner);\nvGlow = step(1.5, flags) * (1.0 - vCap);\nvUp = vFaceWorld.y;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -88,8 +93,11 @@ export class ChunkRenderer {
 uniform float uGlow;
 uniform vec4 uZone;
 uniform vec3 uZoneColor;
+uniform vec3 uCapColor;
 uniform float uTime;
 varying vec3 vCutWorld;
+varying vec3 vFaceWorld;
+varying float vCap;
 varying float vGlow;
 varying float vUp;
 /** Light focused by the swell onto the seabed: a drifting web of bright lines, 0 to 1. */
@@ -109,6 +117,12 @@ float caustics(vec2 p, float t) {
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
+// The top of a cut: one cap colour, on every building alike.
+if (vCap > 0.5) diffuseColor.rgb = uCapColor;
+// A face looking into a lifted room (its walls' insides, its floor): lit by the room's lamps
+// after dark, so it reads as a wall, not a hole; and a lit window glows outward, not into it.
+// (After dark only: by day there's no lamplight, and a window's glow is faint.)
+bool lookingIn = uRoomLight.r > 0.0 && vCutaway > 0.5 && inRoom(floor(vCell) + 0.5 + round(vFaceWorld));
 // Marked-out land: stripes across the ground inside it, and a line along its edge.
 float zoneEdge = 0.0;
 if (uZone.w > 0.0) {
@@ -122,6 +136,7 @@ if (uZone.w > 0.0) {
         .replace(
           '#include <lights_fragment_end>',
           /* glsl */ `#include <lights_fragment_end>
+if (lookingIn) reflectedLight.indirectDiffuse += uRoomLight * diffuseColor.rgb;
 // Under the water, sunlight (and lamplight) dances on the seabed: brightest just under the surface,
 // gone a few voxels down. In blocks, four to a voxel, to suit the rest of the world.
 float under = ${glslFloat(WATER_LEVEL)} - vCutWorld.y;
@@ -132,7 +147,7 @@ if (under > 0.0) {
   reflectedLight.directDiffuse *= 1.0 + caustic * smoothstep(0.0, 0.5, under) * (1.0 - smoothstep(2.0, 8.0, under));
 }`,
         )
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow + uZoneColor * zoneEdge * 0.5;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow * (lookingIn ? 0.0 : 1.0) + uZoneColor * zoneEdge * 0.5;');
     };
     this.material.customProgramCacheKey = () => 'havens-end-terrain';
     this.depthMaterial.onBeforeCompile = (shader) => cutAway(shader, this.lifts);
@@ -149,6 +164,11 @@ if (under > 0.0) {
   setTime(seconds: number): void {
     // Wrapped so the shader's sines keep their precision; the pattern jumps once an hour, unnoticed.
     this.time.value = seconds % 3600;
+  }
+
+  /** How brightly lamplight fills a lifted room: 0 by day, 1 at night. */
+  setRoomLight(amount: number): void {
+    this.lifts.setRoomLight(amount);
   }
 
   /** How strongly glowing blocks light themselves: 0 not at all, ~2 on a dark night. */
