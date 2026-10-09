@@ -42,7 +42,7 @@ export interface Townsman {
   gone?: boolean;
 }
 
-/** How many are about by day (fewer in the Brethren's haven), and by night. Guards aren't counted. */
+/** How many are about by day (fewer in the Brethren's haven), and by night. Guards and keepers aren't counted. */
 const DAY_FOLK = 8;
 const NIGHT_FOLK = 3;
 /** One comes out of a door every so often, till the town's as busy as it gets. */
@@ -80,6 +80,8 @@ const TURN = 3;
 
 /** A keeper this close to a spot stands in the way of those round it. */
 const KEEPER_NEAR = 3;
+/** Nobody ever stands this close to a keeper's post: hard-clear of it, present or not, day or night. */
+const KEEPER_CLEAR = 0.8;
 
 /** Who stands fixed at a post: the Crown's guards and the shops' keepers. They don't count toward the town's numbers. */
 const fixed = (f: Townsman): boolean => f.task.kind === 'guard' || f.task.kind === 'keep';
@@ -142,7 +144,7 @@ export function stepTownsfolk(land: Land, dt: number, random: () => number): voi
     const places = spots.filter((s) => s.kind !== 'door');
     for (let i = 0; i < want && places.length > 0; i++) {
       const spot = pickSpot(places, (s) => standingAt(land.townsfolk, s).length, random)!;
-      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...postedBy(land.townsfolk, spot)], random);
+      const at = standAt(land.world, spot, [...standingAt(land.townsfolk, spot), ...postedBy(land.townsfolk, spot)], random, port.keepers);
       const { look, dress } = freshLook(dressKind(port), land.townsfolk.filter((f) => f.task.kind !== 'keep').map((f) => f.dress), random, land.lastOut ?? undefined);
       land.lastOut = dress;
       const walker = createWalker(at.x, at.y, at.z, random() * Math.PI * 2);
@@ -218,7 +220,7 @@ function step(land: Land, f: Townsman, spots: readonly TownSpot[], doors: readon
     f.gone = f.home;
     return;
   }
-  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...postedBy(others, to)], random);
+  const at = f.home ? to : standAt(land.world, to, [...standingAt(others, to), ...postedBy(others, to)], random, land.sea.docked?.keepers);
   const path = findPath(land.world, f.walker, at, 0.6, PATH_NODES);
   if (path && !f.home) path.push({ x: at.x, y: path[path.length - 1]?.y ?? f.walker.y, z: at.z });
   f.task = path ? { kind: 'walk', path, next: 0, stuck: 0, to, at } : { kind: 'wait', left: 2 };
@@ -236,11 +238,13 @@ function standingAt(others: readonly Townsman[], spot: TownSpot): Point[] {
 
 /**
  * Where to stand at a spot: one of a ring of places round it, as far as can be from
- * those already there or thereabouts (`taken`: the others at the spot, and any guards),
- * on the spot's own level and clear of walls, stalls and the well. The spot itself if
- * there's no room round it.
+ * those already there or thereabouts (`taken`: the others at the spot, and any guards or
+ * a keeper close by), on the spot's own level and clear of walls, stalls and the well. A
+ * ring place within `KEEPER_CLEAR` of any of the port's keeper posts (`keepers`) is never
+ * used, whether that keeper's there or not: nobody ever stands where one comes back to.
+ * The spot itself if there's no room round it.
  */
-export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x: number; z: number }[], random: () => number): Point {
+export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x: number; z: number }[], random: () => number, keepers: readonly KeeperPost[] = []): Point {
   const turn = hash2(Math.floor(spot.x), Math.floor(spot.z), 7) * Math.PI * 2;
   const first = Math.floor(random() * RING_PLACES);
   let best: Point | null = null;
@@ -249,6 +253,7 @@ export function standAt(world: VoxelReader, spot: TownSpot, taken: readonly { x:
     const a = turn + ((first + i) % RING_PLACES) * ((Math.PI * 2) / RING_PLACES);
     const p = { x: spot.x + Math.sin(a) * RING, y: spot.y, z: spot.z + Math.cos(a) * RING };
     if (collides(world, p.x, p.y, p.z) || groundBelow(world, p.x, p.z, p.y + 0.5) !== p.y) continue;
+    if (keepers.some((k) => Math.hypot(k.x - p.x, k.z - p.z) < KEEPER_CLEAR)) continue;
     const clear = taken.reduce((m, o) => Math.min(m, Math.hypot(o.x - p.x, o.z - p.z)), Infinity);
     if (clear > room) {
       best = p;

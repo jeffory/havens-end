@@ -339,13 +339,57 @@ describe('the shops’ keepers', () => {
     expect(keepers(land).map((f) => f.look).sort()).toEqual(looks);
   });
 
-  it('don’t count toward the town’s numbers, and take nothing from its dice: the town goes on just as it would without them', () => {
+  it('don’t count toward the town’s numbers, and take no draws from its dice (moving a lingering place off a post isn’t a draw)', () => {
     const a = town({ ...TOWN, places: [SHIPYARD, { ...OFFICE }] }, 5);
     const b = town(shops(), 5);
     run(a.sea, a.land, 30);
     run(b.sea, b.land, 30);
     const where = (land: Land) => about(land).map((f) => [f.look, f.walker.x, f.walker.z]);
     expect(about(b.land).length).toBeGreaterThanOrEqual(5);
+    // The fixture's posts all stand well clear of every spot (see KEEPERS above), so no
+    // lingering place ever moves off one here: this stays byte-for-byte what it would be
+    // without the keepers, witnessing that they draw nothing from the town's dice.
     expect(where(b.land)).toEqual(where(a.land));
+  });
+
+  it('keep every lingering place clear of a post, whether its keeper’s there or not', () => {
+    // The yard spot's ring has six places; wall off five of them (as the real shipyard's
+    // shed walls leave a yard spot only a couple open), so every visit must use the one
+    // left — right beside a post, as close as the real shipyard's stands to its own (≈1.41
+    // from the spot, 0.17–0.64 from that one ring place).
+    const CLOSE: KeeperPost = { kind: 'shipyard', x: 16.1, y: FLOOR, z: -11.6, facing: 0 };
+    const WALLED_OFF: ReadonlyArray<readonly [number, number]> = [
+      [16.72, -12.24],
+      [16.33, -13.43],
+      [15.11, -13.69],
+      [14.28, -12.76],
+      [14.67, -11.57],
+    ];
+    const where: Port = { ...TOWN, places: [SHIPYARD, { ...OFFICE }], keepers: [CLOSE] };
+    const { sea, land, world } = town(where, 11);
+    for (const [x, z] of WALLED_OFF) world.setVoxel(Math.floor(x), FLOOR, Math.floor(z), Block.Stone);
+    const clear = () => {
+      for (const f of land.townsfolk) {
+        if (f.task.kind !== 'linger') continue;
+        expect(Math.hypot(f.walker.x - CLOSE.x, f.walker.z - CLOSE.z), `lingerer#${f.id} at ${f.task.spot.kind}`).toBeGreaterThanOrEqual(0.8);
+      }
+    };
+    for (let t = 0; t < 120; t += 1 / 20) {
+      sea.pass(1 / 20);
+      land.step(1 / 20);
+      clear();
+    }
+    sea.clock.phase = phaseOf(23); // dusk: the keeper goes, but the post stays off limits
+    for (let t = 0; t < 90; t += 1 / 20) {
+      sea.pass(1 / 20);
+      land.step(1 / 20);
+      clear();
+    }
+    sea.clock.phase = phaseOf(8); // dawn: the keeper's back — checked the instant he reappears
+    for (let t = 0; t < 30; t += 1 / 20) {
+      sea.pass(1 / 20);
+      land.step(1 / 20);
+      clear();
+    }
   });
 });
