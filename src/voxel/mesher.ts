@@ -24,8 +24,8 @@ export interface MeshData {
    * Per vertex, with the flags: which corner of its block's box it is, bits 1, 2 and 4 set on
    * the high side in x, y and z. A quarter block in from there is inside its own block, so the
    * terrain shader finds the block every fragment of a face belongs to, edges and all. Bit 8
-   * marks a tree's or building's top kept under more of it: seen only when what's over it is
-   * lifted away, so it's the cut's top, and drawn as its cap.
+   * marks a building's or a trunk's top kept under more of it (never foliage's): seen only when
+   * what's over it is lifted away, so it's the cut's top, and drawn as its cap.
    */
   corners?: Uint8Array;
 }
@@ -120,6 +120,9 @@ for (let axis = 0; axis < 3; axis++) {
   }
 }
 
+/** Cut through, it stays foliage: no timber cap on a canopy. */
+const FOLIAGE: ReadonlySet<number> = new Set([Block.Leaves, Block.PalmLeaves]);
+
 /** Brightness for 0-3 unoccluded neighbours around a vertex. */
 const AO_CURVE = [0.5, 0.68, 0.85, 1];
 /** Per-voxel brightness variation, for a hand-painted rather than flat-shaded look. */
@@ -200,7 +203,7 @@ export function meshPaddedVolume(
           const liftable = !!flags && (flags[next] & FLAG_CUTAWAY) !== 0;
           const mine = !!flags && (flags[id] & FLAG_CUTAWAY) !== 0;
           const covered = inner && !(liftable && (!mine || face.normal[1] === 1));
-          const cap = inner && liftable && mine && face.normal[1] === 1 ? 8 : 0;
+          const cap = inner && liftable && mine && face.normal[1] === 1 && !FOLIAGE.has(id) ? 8 : 0;
           // An inner face is lit as though what's against it had gone. The blocker casts no shade.
           const blocks = (v: number) => solid[v] === 1 && !hidden?.[v] && !(inner && flags && flags[v] & FLAG_CUTAWAY);
           for (let c = 0; c < 4; c++) {

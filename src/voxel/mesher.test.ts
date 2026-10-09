@@ -136,6 +136,8 @@ describe('mesher options for models', () => {
     world.setVoxel(17, 5, 5, Block.Stone);
     world.setVoxel(17, 6, 5, Block.Plaster); // the ground's face against a building: kept, but not a building's top
     world.setVoxel(21, 5, 5, Block.StoneStairE);
+    world.setVoxel(25, 5, 5, Block.Leaves);
+    world.setVoxel(25, 6, 5, Block.Leaves); // a canopy cut through: foliage, not a plate
     const mesh = meshChunk(world, 0, 0, 0)!;
     const capped = new Set<string>();
     for (let v = 0; v < mesh.positions.length / 3; v++) {

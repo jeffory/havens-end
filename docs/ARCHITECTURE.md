@@ -736,7 +736,8 @@ opens up whatever hides the captain, as in a doll's house.
   costs the shadow pass its early depth test, so other chunks use the plain one).
 - **The cut's top.** The mesher draws the top of a cutaway block under another, so a
   lifted wall has a clean top, and marks it: it's only ever seen as the top of a cut,
-  and it's drawn in one dark timber colour, never glowing, on every building alike.
+  and it's drawn in one dark timber colour, never glowing, on every building alike (a
+  canopy cut through stays leaves).
   After dark, a face looking into a lifted room (its walls' insides, its floor) and a
   prop standing in one get a warm lamplight, so the room reads as lit, not as navy
   holes, and a lit window glows outward only.
