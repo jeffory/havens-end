@@ -1,24 +1,13 @@
 import { Block, BLOCK_PALETTE } from '../voxel/blocks';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import { raycastVoxels, type VoxelReader } from '../voxel/raycast';
-
-/** A box lifted away: on the grid from (x0, z0) up to but not including (x1, z1), everything a tree or building has above `from`. */
-export interface Lift {
-  x0: number;
-  z0: number;
-  x1: number;
-  z1: number;
-  from: number;
-}
+import { type Lift, liftedBy, MAX_LIFTS } from './lifts';
 
 /** A tree or building found whole: the box to lift, whether it has a roof, and whether anything of it stands above the cut. */
 interface Found extends Lift {
   roofed: boolean;
   above: boolean;
 }
-
-/** At most this many lifted at once (the terrain shader's limit). */
-export const MAX_LIFTS = 12;
 /** A structure is flood-filled out to this many blocks at most (a big house is well under). */
 const MAX_BLOCKS = 6000;
 /** A lift stays this long after the captain moves clear, so it doesn't flicker at the edge. */
@@ -26,9 +15,14 @@ const HOLD_SECONDS = 0.6;
 /**
  * Blocks from this far above the floor lift: head height, where a one-storey house's eaves
  * are, so every building's room shows alike (the floor above, the roof, a porch's canopy
- * and the top of a doorway go; the walls stay two high).
+ * and the top of a doorway go; the far walls stay two high).
  */
 const STOREY = 2;
+/**
+ * A room's walls facing the camera, and whatever stands in front of them, lift from this far
+ * above the floor: one course stands, so the room shows from the camera as a doll's house does.
+ */
+const FRONT = 1;
 /**
  * A line of sight goes on through what it has lifted to what's behind, through this many trees
  * and buildings at most: a stall's post in front of a shop would otherwise keep the shop's roof on.
@@ -59,9 +53,7 @@ const NEIGHBOURS: ReadonlyArray<readonly [number, number, number]> = (() => {
 })();
 
 const key = (l: Lift) => `${l.x0},${l.z0},${l.x1},${l.z1}`;
-const box = ({ x0, z0, x1, z1, from }: Lift): Lift => ({ x0, z0, x1, z1, from });
-/** Is the voxel at (x, y, z) lifted away by this box? The shader's test, at the voxel's middle. */
-const holds = (l: Lift, x: number, y: number, z: number) => y + 0.5 > l.from && x + 0.5 > l.x0 && x + 0.5 < l.x1 && z + 0.5 > l.z0 && z + 0.5 < l.z1;
+const box = ({ x0, z0, x1, z1, from, room }: Lift): Lift => ({ x0, z0, x1, z1, from, ...(room ? { room } : {}) });
 
 /** How far (x, z) is from a lift's box, across the ground (0 inside it). */
 function distance(l: Lift, x: number, z: number): number {
@@ -72,9 +64,10 @@ function distance(l: Lift, x: number, z: number): number {
  * Lifts roofs and canopies out of the way on foot. Each frame it looks from the captain
  * toward the camera; a tree or building in the way is found whole (its connected blocks)
  * and lifted from head height above its floor, or from its eaves, so the rooms below show,
- * as in a doll's house, and the line of sight goes on through it to whatever's behind. In
- * town it also lifts every building near the captain, so the streets, doors and rooms round
- * them show too. Plain presentation over the world.
+ * as in a doll's house (a room's walls facing the camera lower still, one course high), and
+ * the line of sight goes on through it to whatever's behind. In town it also lifts every
+ * building near the captain, so the streets, doors and rooms round them show too. Plain
+ * presentation over the world.
  */
 export class RoofLifter {
   private held: Array<Lift & { until: number }> = [];
@@ -107,6 +100,8 @@ export class RoofLifter {
    */
   update(focus: { x: number; y: number; z: number }, feet: number, camera: { x: number; y: number; z: number }, dt: number, near = 0): Lift[] {
     this.clock += dt;
+    const eye = { x: camera.x, z: camera.z };
+    const holds = (l: Lift, x: number, y: number, z: number) => liftedBy(l, eye, x, y, z);
     // A few lines of sight: chest and head, and a little either side, so a wide
     // canopy can't hide the captain between two rays.
     const origins = [
@@ -141,10 +136,12 @@ export class RoofLifter {
           continue;
         }
         // Lifted from where it would be anyway, or lower if that's where the line of sight
-        // runs through it (the captain just behind a tall building's wall).
+        // runs through it (the captain just behind a tall building's wall) and it isn't cut
+        // there anyway (a wall facing the camera).
         const found = this.structureAt(hit.x, hit.y, hit.z, feet, new Set());
         if (!found) break;
-        const lift = { ...box(found), from: Math.min(found.from, hit.y - 0.5), until: this.clock + HOLD_SECONDS };
+        const lift = { ...box(found), until: this.clock + HOLD_SECONDS };
+        if (!holds(lift, hit.x, hit.y, hit.z)) lift.from = Math.min(found.from, hit.y - 0.5);
         this.held.push(lift);
         passed.push(lift);
       }
@@ -200,12 +197,17 @@ export class RoofLifter {
    * The tree or building with a block at (x, y, z), found whole, as the box to lift; null if
    * it's too big to be one. Only what stands from the captain's feet up counts (never the
    * boards they stand on), and it lifts from head height above its floor, or from its eaves if
-   * those are lower, so no roof is left hanging. `seen` gathers the blocks it finds.
+   * those are lower, so no roof is left hanging. A roofed building's room is its walls'
+   * footprint: where it stands a second course and a third over it (not a porch's deck, the
+   * barrels by a door or a lamp post against a wall; never a prop's blocker). `seen` gathers
+   * the blocks it finds.
    */
   private structureAt(x: number, y: number, z: number, feet: number, seen: Set<string>): Found | null {
     const floor = Math.floor(feet);
     const queue: Array<[number, number, number]> = [[x, y, z]];
     let [x0, x1, z0, z1, y0, y1, eaves, count] = [x, x, z, z, y, y, Infinity, 0];
+    /** Its own blocks, but for props' blockers. */
+    const mine = new Set<string>();
     while (queue.length > 0) {
       const [cx, cy, cz] = queue.pop()!;
       const k = `${cx},${cy},${cz}`;
@@ -225,12 +227,33 @@ export class RoofLifter {
       // lets a stepped roof's courses meet at their edges isn't for a stall or a cart
       // grazing the corner of a building it stands nowhere near otherwise.
       const fromBlocker = this.raw.getVoxel(cx, cy, cz) === Block.Blocker;
+      if (!fromBlocker) mine.add(k);
       for (const [dx, dy, dz] of NEIGHBOURS) {
         if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) === 2 && (fromBlocker || this.raw.getVoxel(cx + dx, cy + dy, cz + dz) === Block.Blocker)) continue;
         queue.push([cx + dx, cy + dy, cz + dz]);
       }
     }
     const from = Math.min(y0 + STOREY, eaves) - 0.5;
-    return { x0, z0, x1: x1 + 1, z1: z1 + 1, from, roofed: eaves !== Infinity, above: y1 + 0.5 > from };
+    const roofed = eaves !== Infinity;
+    const room = roofed ? this.roomOf(mine, y0, eaves) : undefined;
+    return { x0, z0, x1: x1 + 1, z1: z1 + 1, from, ...(room ? { room } : {}), roofed, above: y1 + 0.5 > from };
+  }
+
+  /**
+   * A building's room, from its blocks (`mine`, "x,y,z") from `y0` up: its walls' footprint,
+   * where they stand a second course and a third over it, and the height those facing the
+   * camera lift from, one course above their foot (never below their first course, nor above
+   * the eaves). Undefined if it has no such walls.
+   */
+  private roomOf(mine: ReadonlySet<string>, y0: number, eaves: number): Lift['room'] {
+    let [x0, z0, x1, z1, foot] = [Infinity, Infinity, -Infinity, -Infinity, Infinity];
+    for (const k of mine) {
+      const [x, y, z] = k.split(',').map(Number);
+      if (y !== y0 + 1 || !mine.has(`${x},${y0 + 2},${z}`)) continue;
+      [x0, z0, x1, z1] = [Math.min(x0, x), Math.min(z0, z), Math.max(x1, x), Math.max(z1, z)];
+      foot = Math.min(foot, mine.has(`${x},${y0},${z}`) ? y0 : y0 + 1);
+    }
+    if (foot === Infinity) return undefined;
+    return { x0, z0, x1: x1 + 1, z1: z1 + 1, front: Math.min(foot + FRONT, eaves) - 0.5 };
   }
 }

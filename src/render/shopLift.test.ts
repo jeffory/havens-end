@@ -6,11 +6,11 @@ import { planArchipelago } from '../worldgen/archipelago';
 import type { Footprint } from '../worldgen/buildings';
 import { buildHarbour } from '../worldgen/harbour';
 import { generateIsland } from '../worldgen/island';
-import { type Lift, RoofLifter } from './RoofLifter';
+import { type Eye, type Lift, liftedBy } from './lifts';
+import { RoofLifter } from './RoofLifter';
 
-/** As the terrain shader tests it: the middle of the voxel, inside a box and above where it lifts from. */
-const lifted = (lifts: Lift[], x: number, y: number, z: number) =>
-  lifts.some((l) => y + 0.5 > l.from && x + 0.5 > l.x0 && x + 0.5 < l.x1 && z + 0.5 > l.z0 && z + 0.5 < l.z1);
+/** As the terrain shader tests it, the camera at `eye`. */
+const lifted = (lifts: Lift[], eye: Eye, x: number, y: number, z: number) => lifts.some((l) => liftedBy(l, eye, x, y, z));
 const cutaway = (id: number) => ((BLOCK_PALETTE.flags?.[id] ?? 0) & FLAG_CUTAWAY) !== 0;
 /** How far (x, z) lies outside a plot, in blocks either way (0 inside it). */
 const outside = (f: Footprint, x: number, z: number) => Math.max(f.x0 - x, x - (f.x0 + f.w - 1), f.z0 - z, z - (f.z0 + f.d - 1), 0);
@@ -47,8 +47,9 @@ describe('shops in the real ports', () => {
           }
           for (const p of at) {
             stands++;
-            const lifts = new RoofLifter(world).update({ x: p.x, y: p.y + 1.2, z: p.z }, p.y, { x: p.x, y: p.y + 40, z: p.z + 0.01 }, 1 / 60, 2);
-            const left = shop.filter(([x, y, z]) => !lifted(lifts, x, y, z));
+            const camera = { x: p.x, y: p.y + 40, z: p.z + 0.01 };
+            const lifts = new RoofLifter(world).update({ x: p.x, y: p.y + 1.2, z: p.z }, p.y, camera, 1 / 60, 2);
+            const left = shop.filter(([x, y, z]) => !lifted(lifts, camera, x, y, z));
             expect(left, `${plan.port!.name} ${place.kind}, the captain at ${p.x},${p.y},${p.z}`).toEqual([]);
           }
         }

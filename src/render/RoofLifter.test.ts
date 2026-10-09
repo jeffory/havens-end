@@ -3,7 +3,8 @@ import { Block, BLOCK_PALETTE } from '../voxel/blocks';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import { VoxelWorld } from '../voxel/VoxelWorld';
 import { buildHouse, type Footprint } from '../worldgen/buildings';
-import { type Lift, RoofLifter } from './RoofLifter';
+import { type Eye, type Lift, liftedBy } from './lifts';
+import { RoofLifter } from './RoofLifter';
 
 const GROUND = 10;
 const BASE = GROUND + 1;
@@ -17,9 +18,8 @@ function village() {
   return world;
 }
 
-/** As the terrain shader tests it: the middle of the voxel, inside a box and above where it lifts from. */
-const lifted = (lifts: Lift[], x: number, y: number, z: number) =>
-  lifts.some((l) => y + 0.5 > l.from && x + 0.5 > l.x0 && x + 0.5 < l.x1 && z + 0.5 > l.z0 && z + 0.5 < l.z1);
+/** As the terrain shader tests it, the camera at `eye`. */
+const lifted = (lifts: Lift[], eye: Eye, x: number, y: number, z: number) => lifts.some((l) => liftedBy(l, eye, x, y, z));
 
 function blocksOf(world: VoxelWorld, id: number): Array<[number, number, number]> {
   const out: Array<[number, number, number]> = [];
@@ -29,21 +29,68 @@ function blocksOf(world: VoxelWorld, id: number): Array<[number, number, number]
   return out;
 }
 
+/** The camera high behind the house (the side away from its door), across the ground. */
+const BEHIND: Eye = { x: 3.5, z: 16 };
+
 /** The captain in front of the house (feet at `feet`), the camera high behind it, so the house is in the way. */
 function liftFor(world: VoxelWorld, feet: number): Lift[] {
   const lifter = new RoofLifter(world);
-  return lifter.update({ x: 3.5, y: feet + 1.2, z: -2.5 }, feet, { x: 3.5, y: feet + 8, z: 16 }, 1 / 60);
+  return lifter.update({ x: 3.5, y: feet + 1.2, z: -2.5 }, feet, { x: BEHIND.x, y: feet + 8, z: BEHIND.z }, 1 / 60);
 }
 
 describe('RoofLifter', () => {
-  it('lifts a house’s whole roof, eaves and all, and leaves its walls to head height', () => {
+  it('lifts a house’s whole roof, eaves and all, and leaves its far walls to head height, the wall facing the camera one course high', () => {
     const world = village();
     const lifts = liftFor(world, BASE);
     expect(lifts.length).toBeGreaterThan(0);
-    const left = blocksOf(world, Block.Thatch).filter(([x, y, z]) => !lifted(lifts, x, y, z));
+    const left = blocksOf(world, Block.Thatch).filter(([x, y, z]) => !lifted(lifts, BEHIND, x, y, z));
     expect(left, 'thatch left standing').toEqual([]);
-    const walls = blocksOf(world, Block.Plaster).filter(([, y]) => y < BASE + 2);
-    expect(walls.filter(([x, y, z]) => lifted(lifts, x, y, z)), 'walls lifted below head height').toEqual([]);
+    // The camera's straight behind the house's back wall (z = 4): only that wall faces it.
+    const back = HOUSE.z0 + HOUSE.d - 1;
+    const walls = [...blocksOf(world, Block.Plaster), ...blocksOf(world, Block.Window)].filter(([, y]) => y < BASE + 2);
+    expect(walls.filter(([x, y, z]) => z !== back && lifted(lifts, BEHIND, x, y, z)), 'far walls lifted below head height').toEqual([]);
+    expect(walls.filter(([, y, z]) => z === back && y === BASE + 1).filter(([x, y, z]) => !lifted(lifts, BEHIND, x, y, z)), 'the wall facing the camera, left above its first course').toEqual([]);
+    expect(walls.filter(([, y]) => y === BASE).filter(([x, y, z]) => lifted(lifts, BEHIND, x, y, z)), 'first course lifted').toEqual([]);
+  });
+
+  it('knows a house’s room: its walls, and how high those facing the camera stand', () => {
+    const world = village();
+    const [house] = liftFor(world, BASE);
+    expect(house.room).toEqual({ x0: HOUSE.x0, z0: HOUSE.z0, x1: HOUSE.x0 + HOUSE.w, z1: HOUSE.z0 + HOUSE.d, front: BASE + 0.5 });
+  });
+
+  it('keeps a lamp post against a house’s wall out of its room: walls stand higher', () => {
+    const world = village();
+    // Two high, against the west wall (x = 0), out under the roof's overhang.
+    for (const y of [BASE, BASE + 1]) world.setVoxel(-1, y, 2, Block.Wood);
+    const [house] = liftFor(world, BASE);
+    expect(house.x0, 'the post is part of the house').toBe(-1);
+    expect(house.room?.x0, 'but not of its room').toBe(HOUSE.x0);
+  });
+
+  it('leaves the walls facing the camera their first course when the captain stands below the house’s floor', () => {
+    const world = village();
+    // A boarded floor, the captain a step below it.
+    for (let x = HOUSE.x0 + 1; x < HOUSE.x0 + HOUSE.w - 1; x++) for (let z = HOUSE.z0 + 1; z < HOUSE.z0 + HOUSE.d - 1; z++) world.setVoxel(x, BASE - 1, z, Block.Planks);
+    const lifts = liftFor(world, BASE - 1);
+    const back = HOUSE.z0 + HOUSE.d - 1;
+    const facing = [...blocksOf(world, Block.Plaster), ...blocksOf(world, Block.Window)].filter(([, y, z]) => z === back && y === BASE);
+    expect(facing.length).toBeGreaterThan(0);
+    expect(facing.filter(([x, y, z]) => lifted(lifts, BEHIND, x, y, z)), 'the wall facing the camera, its first course lifted').toEqual([]);
+  });
+
+  it('doesn’t cut a house lower all round when the line of sight only passes through a wall facing the camera', () => {
+    const world = village();
+    // Inside, just behind the south wall (z = 4), the camera off the south-east corner: the line
+    // of sight leaves through that wall, one course above the floor, where it's cut anyway.
+    const camera = { x: 30, y: BASE + 30, z: 30 };
+    const lifts = new RoofLifter(world).update({ x: 3.5, y: BASE + 1.2, z: 3.5 }, BASE, camera, 1 / 60);
+    expect(lifts.length).toBeGreaterThan(0);
+    const north = HOUSE.z0;
+    const west = HOUSE.x0;
+    const far = [...blocksOf(world, Block.Plaster), ...blocksOf(world, Block.Window)].filter(([x, y, z]) => y === BASE + 1 && (z === north || x === west) && x < HOUSE.x0 + HOUSE.w - 1);
+    expect(far.length).toBeGreaterThan(0);
+    expect(far.filter(([x, y, z]) => lifted(lifts, camera, x, y, z)), 'far walls cut below head height').toEqual([]);
   });
 
   it('takes a lantern hung on a wall away with the wall', () => {
@@ -51,7 +98,7 @@ describe('RoofLifter', () => {
     // Hung outside by the door (the house's door faces the captain's side, at z = -1).
     world.setVoxel(2, BASE + 2, -1, Block.Lantern);
     const lifts = liftFor(world, BASE);
-    expect(lifted(lifts, 2, BASE + 2, -1)).toBe(true);
+    expect(lifted(lifts, BEHIND, 2, BASE + 2, -1)).toBe(true);
     // And the shader will take it: it's one of the blocks that lift.
     expect((BLOCK_PALETTE.flags![Block.Lantern] & FLAG_CUTAWAY) !== 0).toBe(true);
   });
@@ -60,7 +107,7 @@ describe('RoofLifter', () => {
     const world = village();
     const lifts = liftFor(world, BASE + 1);
     expect(lifts.length).toBeGreaterThan(0);
-    const left = blocksOf(world, Block.Thatch).filter(([x, y, z]) => !lifted(lifts, x, y, z));
+    const left = blocksOf(world, Block.Thatch).filter(([x, y, z]) => !lifted(lifts, BEHIND, x, y, z));
     expect(left, 'thatch left standing').toEqual([]);
   });
 
@@ -76,7 +123,7 @@ describe('RoofLifter', () => {
     const inTheWay: string[] = [];
     for (let t = 0; t < d; t += 0.05) {
       const [x, y, z] = [chest.x, chest.y, chest.z].map((c, i) => Math.floor(c + (([camera.x, camera.y, camera.z][i] - c) * t) / d));
-      if ([Block.Plaster, Block.Window, Block.Thatch, Block.Wood].includes(world.getVoxel(x, y, z) as never) && !lifted(lifts, x, y, z)) inTheWay.push(`${x},${y},${z}`);
+      if ([Block.Plaster, Block.Window, Block.Thatch, Block.Wood].includes(world.getVoxel(x, y, z) as never) && !lifted(lifts, camera, x, y, z)) inTheWay.push(`${x},${y},${z}`);
     }
     expect(inTheWay).toEqual([]);
   });
@@ -86,9 +133,10 @@ describe('RoofLifter', () => {
     const world = new VoxelWorld();
     for (let x = -6; x <= 6; x++) for (let z = -6; z <= 6; z++) world.setVoxel(x, GROUND, z, Block.Planks);
     for (let y = GROUND + 1; y < GROUND + 7; y++) world.setVoxel(0, y, 2, Block.Wood);
-    const lifts = new RoofLifter(world).update({ x: 0.5, y: GROUND + 2.2, z: -1.5 }, GROUND + 1, { x: 0.5, y: GROUND + 14, z: 14 }, 1 / 60);
+    const camera = { x: 0.5, y: GROUND + 14, z: 14 };
+    const lifts = new RoofLifter(world).update({ x: 0.5, y: GROUND + 2.2, z: -1.5 }, GROUND + 1, camera, 1 / 60);
     expect(lifts.length).toBeGreaterThan(0);
-    for (let x = -6; x <= 6; x++) for (let z = -6; z <= 6; z++) expect(lifted(lifts, x, GROUND, z), `deck at ${x},${z}`).toBe(false);
+    for (let x = -6; x <= 6; x++) for (let z = -6; z <= 6; z++) expect(lifted(lifts, camera, x, GROUND, z), `deck at ${x},${z}`).toBe(false);
   });
 
   describe('in town', () => {
@@ -115,10 +163,11 @@ describe('RoofLifter', () => {
     it('lifts every house near the captain, not only the one in the way', () => {
       const { world, beside, far } = street();
       const lifter = new RoofLifter(world);
-      const lifts = lifter.update(captain(3.5, -4.5), BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60, 12);
-      expect(roofOf(world, beside).filter(([x, y, z]) => !lifted(lifts, x, y, z)), 'the house beside').toEqual([]);
-      expect(roofOf(world, far).filter(([x, y, z]) => lifted(lifts, x, y, z)), 'the house down the street').toEqual([]);
-      expect(lifted(lifts, -4, BASE + 5, -8), 'the tree').toBe(false);
+      const camera = { x: 3.5, y: BASE + 8, z: 16 };
+      const lifts = lifter.update(captain(3.5, -4.5), BASE, camera, 1 / 60, 12);
+      expect(roofOf(world, beside).filter(([x, y, z]) => !lifted(lifts, camera, x, y, z)), 'the house beside').toEqual([]);
+      expect(roofOf(world, far).filter(([x, y, z]) => lifted(lifts, camera, x, y, z)), 'the house down the street').toEqual([]);
+      expect(lifted(lifts, camera, -4, BASE + 5, -8), 'the tree').toBe(false);
     });
 
     it('keeps a house lifted till the captain is well clear of it, so it doesn’t flicker at the edge', () => {
@@ -127,10 +176,11 @@ describe('RoofLifter', () => {
       // Away from the camera's line, so only nearness lifts: the camera straight overhead.
       const look = (x: number) => lifter.update(captain(x, -4.5), BASE, { x, y: BASE + 40, z: -4.5 }, 0.5, 12);
       const [bx, by, bz] = roofOf(world, beside)[0];
+      const from = (x: number) => ({ x, z: -4.5 });
       // The house, with its eaves, starts 9 along.
-      expect(lifted(look(-3), bx, by, bz), 'within 12').toBe(true);
-      expect(lifted(look(-4), bx, by, bz), 'a little further, 13').toBe(true);
-      expect(lifted(look(-7), bx, by, bz), 'well clear, 16').toBe(false);
+      expect(lifted(look(-3), from(-3), bx, by, bz), 'within 12').toBe(true);
+      expect(lifted(look(-4), from(-4), bx, by, bz), 'a little further, 13').toBe(true);
+      expect(lifted(look(-7), from(-7), bx, by, bz), 'well clear, 16').toBe(false);
     });
 
     it('spends its lifts on roofed buildings, not on the stalls, benches and flags about the square', () => {
@@ -139,9 +189,10 @@ describe('RoofLifter', () => {
       for (let i = 0; i < 16; i++) world.setVoxel(-8 + (i % 8) * 2, BASE, -12 + Math.floor(i / 8) * 2, Block.Planks);
       for (let y = BASE; y < BASE + 6; y++) world.setVoxel(6, y, -12, Block.Wood);
       for (let a = 1; a <= 5; a++) world.setVoxel(6 + a, BASE + 5, -12, Block.FlagBlack);
-      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, { x: 3.5, y: BASE + 40, z: -4.5 }, 1 / 60, 12);
-      expect(roofOf(world, beside).filter(([x, y, z]) => !lifted(lifts, x, y, z)), 'the house beside').toEqual([]);
-      expect(lifted(lifts, 8, BASE + 5, -12), 'the flag').toBe(false);
+      const camera = { x: 3.5, y: BASE + 40, z: -4.5 };
+      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, camera, 1 / 60, 12);
+      expect(roofOf(world, beside).filter(([x, y, z]) => !lifted(lifts, camera, x, y, z)), 'the house beside').toEqual([]);
+      expect(lifted(lifts, camera, 8, BASE + 5, -12), 'the flag').toBe(false);
     });
 
     it('lifts an open shed’s roof whole, though its courses only meet at their edges', () => {
@@ -156,15 +207,17 @@ describe('RoofLifter', () => {
           roof.push([x, y, z]);
         }
       }
-      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, { x: 3.5, y: BASE + 40, z: -4.5 }, 1 / 60, 12);
-      expect(roof.filter(([x, y, z]) => !lifted(lifts, x, y, z)), 'thatch left standing').toEqual([]);
+      const camera = { x: 3.5, y: BASE + 40, z: -4.5 };
+      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, camera, 1 / 60, 12);
+      expect(roof.filter(([x, y, z]) => !lifted(lifts, camera, x, y, z)), 'thatch left standing').toEqual([]);
       expect(lifts.length, 'lifts spent on it').toBeLessThanOrEqual(3);
     });
 
     it('lifts nothing for nearness out of town', () => {
       const { world, beside } = street();
-      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, { x: 3.5, y: BASE + 40, z: -4.5 }, 1 / 60);
-      expect(roofOf(world, beside).filter(([x, y, z]) => lifted(lifts, x, y, z))).toEqual([]);
+      const camera = { x: 3.5, y: BASE + 40, z: -4.5 };
+      const lifts = new RoofLifter(world).update(captain(3.5, -4.5), BASE, camera, 1 / 60);
+      expect(roofOf(world, beside).filter(([x, y, z]) => lifted(lifts, camera, x, y, z))).toEqual([]);
     });
   });
 
@@ -177,6 +230,13 @@ describe('RoofLifter', () => {
     }
     /** The camera straight over the captain, so only nearness lifts. */
     const overhead = (x: number, z: number) => ({ x, y: BASE + 40, z: z + 0.01 });
+    /**
+     * Below head height, what's lifted of these blocks, the camera at `eye`, but for the first
+     * course of the side facing it (−z, the shops' fronts here: the camera's over the captain
+     * as they stand before it), which goes from one course up.
+     */
+    const cutBelowHead = (lifts: Lift[], eye: Eye, f: Footprint, found: Array<[number, number, number]>) =>
+      found.filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, eye, bx, by, bz) !== (eye.z < f.z0 && bz <= f.z0 && by > BASE));
     /** The blocks of these kinds in a plot and a block round it. */
     function blocks(world: VoxelWorld, f: Footprint, ids: readonly number[]): Array<[number, number, number]> {
       const out: Array<[number, number, number]> = [];
@@ -228,25 +288,25 @@ describe('RoofLifter', () => {
       for (let x = f.x0 + 1; x < x1; x++) for (let y = BASE; y < BASE + 2; y++) world.setVoxel(x, y, z1 - 1, Block.Wood);
     }
 
-    it('lifts an open market hall’s roof whole, from the middle of its open front and from inside, and leaves its posts to head height', () => {
+    it('lifts an open market hall’s roof whole, from the middle of its open front and from inside, and leaves its posts to head height, those facing the camera one course high', () => {
       const world = flat();
       const hall: Footprint = { x0: 10, z0: -6, w: 6, d: 6 };
       openHall(world, hall);
       for (const [x, z] of [[12.5, -6.5], [12.5, -3.5]]) {
         const lifts = new RoofLifter(world).update({ x, y: BASE + 1.2, z }, BASE, overhead(x, z), 1 / 60, 2);
-        expect(blocks(world, hall, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
-        expect(blocks(world, hall, [Block.Wood, Block.Plaster]).filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), `lifted below head height, from ${x},${z}`).toEqual([]);
+        expect(blocks(world, hall, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, overhead(x, z), bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
+        expect(cutBelowHead(lifts, overhead(x, z), hall, blocks(world, hall, [Block.Wood, Block.Plaster])), `cut wrongly below head height, from ${x},${z}`).toEqual([]);
       }
     });
 
-    it('lifts a three-sided shed’s roof whole, from its open front and from inside, and leaves its walls to head height', () => {
+    it('lifts a three-sided shed’s roof whole, from its open front and from inside, and leaves its walls to head height, those facing the camera one course high', () => {
       const world = flat();
       const yard: Footprint = { x0: 10, z0: -6, w: 5, d: 5 };
       shed(world, yard);
       for (const [x, z] of [[12.5, -6.5], [11.5, -4.5]]) {
         const lifts = new RoofLifter(world).update({ x, y: BASE + 1.2, z }, BASE, overhead(x, z), 1 / 60, 2);
-        expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
-        expect(blocks(world, yard, [Block.Wood, Block.Planks]).filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), `lifted below head height, from ${x},${z}`).toEqual([]);
+        expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => !lifted(lifts, overhead(x, z), bx, by, bz)), `thatch left, from ${x},${z}`).toEqual([]);
+        expect(cutBelowHead(lifts, overhead(x, z), yard, blocks(world, yard, [Block.Wood, Block.Planks])), `cut wrongly below head height, from ${x},${z}`).toEqual([]);
       }
     });
 
@@ -260,12 +320,13 @@ describe('RoofLifter', () => {
       for (let y = BASE; y < BASE + 3; y++) world.setVoxel(8, y, -8, Block.Blocker);
       // Straight and level down the line x = 8.5, z = -20 to 10, well clear of the shed
       // itself (x 9 to 15 with its eaves), through the blocker's own height.
-      const lifts = new RoofLifter(world).update({ x: 8.5, y: BASE + 1, z: -20 }, BASE, { x: 8.5, y: BASE + 1, z: 10 }, 1 / 60);
-      expect(lifted(lifts, 8, BASE + 2, -8), 'the prop, in the way').toBe(true);
-      expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => lifted(lifts, bx, by, bz)), 'the shed, only grazed at the corner').toEqual([]);
+      const camera = { x: 8.5, y: BASE + 1, z: 10 };
+      const lifts = new RoofLifter(world).update({ x: 8.5, y: BASE + 1, z: -20 }, BASE, camera, 1 / 60);
+      expect(lifted(lifts, camera, 8, BASE + 2, -8), 'the prop, in the way').toBe(true);
+      expect(blocks(world, yard, [Block.Thatch]).filter(([bx, by, bz]) => lifted(lifts, camera, bx, by, bz)), 'the shed, only grazed at the corner').toEqual([]);
     });
 
-    it('cuts a two-storey shop at head height from its porch, canopy, jambs and all, as a house is cut', () => {
+    it('cuts a two-storey shop at head height from its porch, canopy, jambs and all, as a house is cut, its front facing the camera one course high', () => {
       const world = flat();
       const plot: Footprint = { x0: 0, z0: 0, w: 7, d: 6 };
       const door = buildHouse(world, plot, BASE, { walls: Block.Plaster, roof: Block.Thatch }, 3.5, -10, 2);
@@ -284,8 +345,8 @@ describe('RoofLifter', () => {
       const lifts = new RoofLifter(world).update({ x, y: BASE + 1.7, z }, BASE + 0.5, overhead(x, z), 1 / 60, 2);
       const withPorch: Footprint = { x0: plot.x0, z0: plot.z0 - 2, w: plot.w, d: plot.d + 2 };
       const shop = blocks(world, withPorch, [Block.Plaster, Block.Window, Block.Wood, Block.Thatch, Block.PlanksSlab]);
-      expect(shop.filter(([bx, by, bz]) => by >= BASE + 2 && !lifted(lifts, bx, by, bz)), 'left standing from head height up').toEqual([]);
-      expect(shop.filter(([bx, by, bz]) => by < BASE + 2 && lifted(lifts, bx, by, bz)), 'lifted below head height').toEqual([]);
+      expect(shop.filter(([bx, by, bz]) => by >= BASE + 2 && !lifted(lifts, overhead(x, z), bx, by, bz)), 'left standing from head height up').toEqual([]);
+      expect(cutBelowHead(lifts, overhead(x, z), plot, shop), 'cut wrongly below head height').toEqual([]);
     });
 
     it('looks past a stall in the way to the roof behind it', () => {
@@ -299,7 +360,7 @@ describe('RoofLifter', () => {
       const inTheWay: string[] = [];
       for (let t = 0; t < d; t += 0.05) {
         const [x, y, z] = [chest.x, chest.y, chest.z].map((c, i) => Math.floor(c + (([camera.x, camera.y, camera.z][i] - c) * t) / d));
-        if ([Block.Plaster, Block.Window, Block.Thatch, Block.Wood].includes(world.getVoxel(x, y, z) as never) && !lifted(lifts, x, y, z)) inTheWay.push(`${x},${y},${z}`);
+        if ([Block.Plaster, Block.Window, Block.Thatch, Block.Wood].includes(world.getVoxel(x, y, z) as never) && !lifted(lifts, camera, x, y, z)) inTheWay.push(`${x},${y},${z}`);
       }
       expect(inTheWay).toEqual([]);
     });
@@ -308,9 +369,9 @@ describe('RoofLifter', () => {
       const world = village();
       // A stall's cells, as the town builder keeps people out of them (three high), between the captain and the house.
       for (let y = BASE; y < BASE + 3; y++) world.setVoxel(3, y, -4, Block.Blocker);
-      const lifts = new RoofLifter(world).update({ x: 3.5, y: BASE + 1.2, z: -6.5 }, BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60);
+      const lifts = new RoofLifter(world).update({ x: 3.5, y: BASE + 1.2, z: -6.5 }, BASE, { x: BEHIND.x, y: BASE + 8, z: BEHIND.z }, 1 / 60);
       // Its anchor is the cell its top is in: lifted, so the prop goes.
-      expect(lifted(lifts, 3, BASE + 2, -4)).toBe(true);
+      expect(lifted(lifts, BEHIND, 3, BASE + 2, -4)).toBe(true);
     });
 
     it('doesn’t take a prop away just for the captain leaning on it, only when it’s really in the way', () => {
@@ -321,11 +382,12 @@ describe('RoofLifter', () => {
       const chest = { x: 3.5, y: BASE + 1.2, z: -4.3 };
       // The camera behind the captain, the same side as them: the prop isn't in the way of
       // anything, so it stays, however hard they're leaning on it.
-      const near = new RoofLifter(world).update(chest, BASE, { x: 3.5, y: BASE + 8, z: -16 }, 1 / 60);
-      expect(lifted(near, 3, BASE + 2, -4), 'not in the way: stays').toBe(false);
+      const before = { x: 3.5, y: BASE + 8, z: -16 };
+      const near = new RoofLifter(world).update(chest, BASE, before, 1 / 60);
+      expect(lifted(near, before, 3, BASE + 2, -4), 'not in the way: stays').toBe(false);
       // The camera beyond it, toward the house: genuinely in the way, so it still goes.
-      const through = new RoofLifter(world).update(chest, BASE, { x: 3.5, y: BASE + 8, z: 16 }, 1 / 60);
-      expect(lifted(through, 3, BASE + 2, -4), 'in the way: goes').toBe(true);
+      const through = new RoofLifter(world).update(chest, BASE, { x: BEHIND.x, y: BASE + 8, z: BEHIND.z }, 1 / 60);
+      expect(lifted(through, BEHIND, 3, BASE + 2, -4), 'in the way: goes').toBe(true);
     });
   });
 });

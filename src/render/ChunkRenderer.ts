@@ -6,7 +6,7 @@ import { CHUNK_SIZE } from '../voxel/Chunk';
 import { buildPaddedVolume, meshPaddedVolume, PADDED } from '../voxel/mesher';
 import { FLAG_CUTAWAY } from '../voxel/palette';
 import type { VoxelWorld } from '../voxel/VoxelWorld';
-import { LIFT_GLSL, Lifts } from './lifts';
+import { type Eye, LIFT_GLSL, type Lift, Lifts } from './lifts';
 import { toGeometry } from './voxelGeometry';
 
 /** The colour land is marked out in: a warm red, "not yours". */
@@ -135,10 +135,11 @@ if (vCutaway > 0.5 && lifted(floor(vCutWorld - vFace * 0.5) + 0.5)) discard;`,
   /**
    * Lifts away the trees' and buildings' blocks in each box (on the grid, from x0, z0 up
    * to but not including x1, z1) from the height `from` up: roofs and canopies in the
-   * captain's way. An empty list lifts nothing.
+   * captain's way, and a room's walls facing the camera (at `eye`) lower. An empty list
+   * lifts nothing.
    */
-  setLifts(lifts: ReadonlyArray<{ x0: number; z0: number; x1: number; z1: number; from: number }>): void {
-    this.lifts.set(lifts);
+  setLifts(lifts: ReadonlyArray<Lift>, eye: Eye): void {
+    this.lifts.set(lifts, eye);
   }
 
   /** Is this voxel lifted away, so the mouse should pick through it? The shader's test, at the voxel's centre. */

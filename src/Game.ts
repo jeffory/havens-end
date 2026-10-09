@@ -641,10 +641,10 @@ export class Game {
     // round them), and fade your own ship beside you.
     if (walker) {
       const inTown = this.sea.docked && rig.distance < TOWN_LIFT_UNDER;
-      this.terrain.setLifts(this.lifter.update(this.shore.focus, walker.y, rig.camera.position, frameSeconds, inTown ? TOWN_LIFT_RADIUS : 0));
+      this.terrain.setLifts(this.lifter.update(this.shore.focus, walker.y, rig.camera.position, frameSeconds, inTown ? TOWN_LIFT_RADIUS : 0), rig.camera.position);
     } else {
       this.lifter.clear();
-      this.terrain.setLifts([]);
+      this.terrain.setLifts([], rig.camera.position);
     }
     const near = walker ? Math.hypot(pose.x - walker.x, pose.z - walker.z) : Infinity;
     this.fleet.view(player.id)?.setFade(near < 16 ? 0.3 + 0.7 * Math.max(0, (near - 10) / 6) : 1);
